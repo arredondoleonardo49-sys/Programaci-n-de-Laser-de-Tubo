@@ -1,0 +1,1347 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Múltiples de Tubular</title>
+<style>
+:root{--bg:#f6f5f2;--card:#fff;--tx:#1f1f1d;--mut:#6b6a65;--bd:#dcdad3;--ac:#185fa5;
+--ok:#3b6d11;--okb:#eaf3de;--wa:#854f0b;--wab:#faeeda;--er:#a32d2d;--erb:#fcebeb;--in:#5f5e5a;--inb:#f1efe8;--tube:#d3d1c7;--chuck:#888780}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1b1b1a;--card:#262624;--tx:#ecebe6;--mut:#a3a29c;--bd:#3d3d3a;--ac:#85b7eb;
+--ok:#c0dd97;--okb:#27500a;--wa:#fac775;--wab:#633806;--er:#f7c1c1;--erb:#791f1f;--in:#d3d1c7;--inb:#444441;--tube:#55534d;--chuck:#6b6a65}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 system-ui,"Segoe UI",sans-serif}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--bd);position:sticky;top:0;z-index:20}
+header h1{font-size:17px;margin:0 8px 0 0;font-weight:600}
+.conn{font-size:12px;padding:2px 10px;border-radius:10px}
+input,select,textarea,button{font:inherit;color:var(--tx);background:var(--card);border:1px solid var(--bd);border-radius:6px;padding:5px 8px}
+input[type=number]{width:90px}
+button{cursor:pointer}button:hover:not(:disabled){border-color:var(--ac)}button:disabled{opacity:.5;cursor:not-allowed}
+button.pri{background:var(--ac);color:#fff;border-color:var(--ac)}
+@media (prefers-color-scheme:dark){button.pri{color:#042c53}}
+.layout{display:grid;grid-template-columns:230px minmax(0,1fr);align-items:start}
+aside{background:var(--card);border-right:1px solid var(--bd);padding:10px 8px;position:sticky;top:53px;height:calc(100vh - 53px);overflow:auto}
+.grp{margin-bottom:4px}
+.grp>button.gh{width:100%;display:flex;align-items:center;gap:6px;border:none;background:none;padding:8px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);font-weight:600}
+.grp>button.gh .car{margin-left:auto;transition:transform .15s}.grp.closed>button.gh .car{transform:rotate(-90deg)}.grp.closed .its{display:none}
+.its button{width:100%;display:flex;align-items:center;gap:8px;border:none;background:none;padding:7px 10px;border-radius:6px;text-align:left}
+.its button:hover{background:var(--inb)}.its button.on{background:var(--ac);color:#fff}
+@media (prefers-color-scheme:dark){.its button.on{color:#042c53}}
+.its .cnt{margin-left:auto;font-size:11px;padding:0 7px}
+main{padding:16px 20px;min-width:0;max-width:1500px}
+.ph{margin:0;font-size:20px;font-weight:600}.psub{margin:2px 0 14px;color:var(--mut)}
+section{display:none}section.on{display:block}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px;margin-bottom:14px}
+.card h3{margin:0 0 10px;font-size:15px}
+details.card>summary{cursor:pointer;list-style:none;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+details.card>summary::-webkit-details-marker{display:none}
+details.card>summary::before{content:'▸';color:var(--mut);transition:transform .15s}details.card[open]>summary::before{transform:rotate(90deg)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border-bottom:1px solid var(--bd);padding:5px 8px;text-align:left;vertical-align:top}
+th{color:var(--mut);font-weight:500;position:sticky;top:0;background:var(--card);z-index:1}
+td.n,th.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.tw{overflow:auto;max-height:70vh}
+.b{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;white-space:nowrap}
+.ok{background:var(--okb);color:var(--ok)}.wa{background:var(--wab);color:var(--wa)}.er{background:var(--erb);color:var(--er)}.in{background:var(--inb);color:var(--in)}
+.kpis{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+.kpi{flex:1 1 140px;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px 14px}
+.kpi b{font-size:22px;display:block;font-variant-numeric:tabular-nums}.kpi span{color:var(--mut);font-size:12px}
+.mut{color:var(--mut)}.sm{font-size:12px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.drop{border:2px dashed var(--bd);border-radius:10px;padding:18px;text-align:center;color:var(--mut);background:var(--card)}
+.drop.over{border-color:var(--ac);color:var(--ac)}
+.empty{color:var(--mut);padding:20px;text-align:center}
+.grid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px 16px}
+.cfl{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mut)}.cfl input{color:var(--tx)}
+.bar{margin:6px 0 14px}.bar svg{width:100%;height:auto;display:block}
+.barhd{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px}
+.barhd b{font-size:14px}
+.prog{height:8px;background:var(--inb);border-radius:4px;overflow:hidden;min-width:80px;flex:1}.prog i{display:block;height:100%;background:#639922}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:50;padding:10px 16px;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.25);display:none}
+.toast.ok{background:#27500a;color:#eaf3de}.toast.er{background:#791f1f;color:#fcebeb}.toast.in{background:#444441;color:#f1efe8}
+#menuBtn{display:none}
+@media (max-width:820px){.layout{grid-template-columns:1fr}aside{position:static;height:auto;display:none}aside.open{display:block}#menuBtn{display:inline-block}header{position:static}main{padding:10px 12px}}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;margin-bottom:8px}.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+@media print{body *{visibility:hidden}#printArea,#printArea *{visibility:visible}#printArea{position:absolute;left:0;top:0;width:100%}}
+#printArea{display:none}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;display:flex;align-items:flex-start;justify-content:center;padding:20px 12px;overflow:auto}
+.modal>.card{width:min(1300px,100%);margin:0}
+.vgrid{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px}
+@media (max-width:900px){.vgrid{grid-template-columns:1fr}}
+#vSvg{width:100%;height:440px;background:var(--bg);border:1px solid var(--bd);border-radius:8px;cursor:grab;touch-action:none;display:block}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:13px}.kv>span:nth-child(odd){color:var(--mut)}
+.tabs button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+@media (prefers-color-scheme:dark){.tabs button.on{color:#042c53}}
+
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+<header>
+<button id="menuBtn">☰</button>
+<h1>🔩 Múltiples de Tubular</h1>
+<span id="conn" class="conn in">Local</span>
+<span style="flex:1"></span>
+<span id="progName" class="mut sm"></span>
+</header>
+<div class="layout"><aside id="side"></aside>
+<main>
+<h2 class="ph" id="pageTitle"></h2><p class="psub" id="pageSub"></p>
+<section id="t-prog"></section>
+<section id="t-lib"></section>
+<section id="t-mult"></section>
+<section id="t-cons"></section>
+<section id="t-piso"></section>
+<section id="t-rec"></section>
+<section id="t-cfg"></section>
+</main></div>
+<div id="printArea"></div>
+<script>
+/* ===== Motor IGES: lectura, medición y combinado de piezas a lo largo de un tubo ===== */
+const IGES = (() => {
+  const SUP = new Set([100,102,104,106,108,110,116,118,120,122,123,124,126,128,130,140,141,142,143,144,186,190,192,194,196,198,308,314,402,406,408,502,504,508,510,514]);
+  function tokenize(s, pd, rd){
+    const out = []; let i = 0, n = s.length;
+    while(i < n){
+      while(i < n && s[i] === ' ') i++;
+      const st = i; let j = i; while(j < n && s[j] >= '0' && s[j] <= '9') j++;
+      if(j > i && s[j] === 'H'){ const L = parseInt(s.slice(i, j)); i = j + 1 + L; }
+      while(i < n && s[i] !== pd && s[i] !== rd) i++;
+      out.push(s.slice(st, i).trim());
+      if(i >= n || s[i] === rd) break;
+      i++;
+    }
+    return out;
+  }
+  const holl = t => { const m = /^(\d+)H/.exec(t || ''); return m ? t.substr(m[0].length, +m[1]) : (t || ''); };
+  const num = t => { if(t == null || t === '') return 0; return parseFloat(String(t).replace(/D/i, 'E')); };
+  function parse(text){
+    const lines = text.split(/\r?\n/).filter(l => l.length >= 73);
+    let S = [], G = '', D = [], P = {};
+    for(const l of lines){
+      const c = l[72];
+      if(c === 'S') S.push(l.slice(0, 72));
+      else if(c === 'G') G += l.slice(0, 72);
+      else if(c === 'D') D.push(l.slice(0, 72));
+      else if(c === 'P'){ const de = parseInt(l.slice(64, 72)); P[de] = (P[de] || '') + l.slice(0, 64); }
+    }
+    let pd = ',', rd = ';';
+    if(/^1H./.test(G)){ pd = G[2]; const r = G.slice(4); if(/^1H./.test(r)) rd = r[2]; }
+    const g = tokenize(G, pd, rd);
+    const ents = [];
+    for(let k = 0; k + 1 < D.length; k += 2){
+      const a = D[k], b = D[k + 1], f = (s, i) => s.slice(i*8, i*8 + 8).trim();
+      const de = k + 1;
+      const e = {de, type: parseInt(f(a,0)), pptr: parseInt(f(a,1)) || 0,
+        d: [f(a,2), f(a,3), f(a,4), f(a,5), f(a,6), f(a,7), f(a,8)].map(x => parseInt(x) || 0),
+        status: f(a,8).padStart(8, '0'), form: parseInt(f(b,4)) || 0,
+        weight: f(b,1), color: parseInt(f(b,2)) || 0, label: b.slice(56, 64), sub: f(b,8), r1: f(b,5), r2: f(b,6)};
+      e.t = tokenize(P[de] || '', pd, rd);
+      ents.push(e);
+    }
+    const byDe = {}; ents.forEach(e => byDe[e.de] = e);
+    return {S, G: g, pd, rd, ents, byDe,
+      unitFlag: parseInt(g[13]) || 0, unitName: holl(g[14]), scale: num(g[12]) || 1, system: holl(g[3]), file: holl(g[2])};
+  }
+  /* índices (en e.t) de los parámetros que son punteros; null = tipo no soportado */
+  function spec(e){
+    const t = e.t, I = k => parseInt(t[k]) || 0; let p = [], end = 1;
+    switch(e.type){
+      case 100: end = 8; break;
+      case 102: { const n = I(1); for(let k = 0; k < n; k++) p.push(2 + k); end = 2 + n; break; }
+      case 104: end = 12; break;
+      case 106: { const ip = I(1), n = I(2); end = 3 + (ip === 1 ? 1 + 2*n : ip === 2 ? 3*n : 6*n); break; }
+      case 108: p = [5]; end = 10; break;
+      case 110: end = 7; break;
+      case 116: p = [4]; end = Math.min(t.length, 5); if(t.length < 5) p = []; break;
+      case 118: p = [1, 2]; end = 5; break;
+      case 120: p = [1, 2]; end = 5; break;
+      case 122: p = [1]; end = 5; break;
+      case 123: end = 4; break;
+      case 124: end = 13; break;
+      case 126: { const K = I(1), M = I(2), N = 1 + K - M, A = N + 2*M; end = 7 + (A + 1) + (K + 1) + 3*(K + 1) + 2 + 3; break; }
+      case 128: { const K1 = I(1), K2 = I(2), M1 = I(3), M2 = I(4), A = 1 + K1 - M1 + 2*M1, B = 1 + K2 - M2 + 2*M2;
+        end = 10 + (A + 1) + (B + 1) + (K1 + 1)*(K2 + 1)*4 + 4; break; }
+      case 130: p = [1, 3]; end = 15; break;
+      case 140: p = [5]; end = 6; break;
+      case 141: { p = [3]; const n = I(4); let k = 5; for(let j = 0; j < n; j++){ p.push(k); const K = I(k + 2); for(let q = 0; q < K; q++) p.push(k + 3 + q); k += 3 + K; } end = k; break; }
+      case 142: p = [2, 3, 4]; end = 6; break;
+      case 143: { p = [2]; const n = I(3); for(let k = 0; k < n; k++) p.push(4 + k); end = 4 + n; break; }
+      case 144: { p = [1, 4]; const n2 = I(3); for(let k = 0; k < n2; k++) p.push(5 + k); end = 5 + n2; break; }
+      case 186: { p = [1]; const n = I(3); for(let k = 0; k < n; k++) p.push(4 + 2*k); end = 4 + 2*n; break; }
+      case 190: p = e.form === 1 ? [1, 2, 3] : [1, 2]; end = 1 + p.length; break;
+      case 192: p = e.form === 1 ? [1, 2, 4] : [1, 2]; end = e.form === 1 ? 5 : 4; break;
+      case 194: p = e.form === 1 ? [1, 2, 5] : [1, 2]; end = e.form === 1 ? 6 : 5; break;
+      case 196: p = e.form === 1 ? [1, 3, 4] : [1]; end = e.form === 1 ? 5 : 3; break;
+      case 198: p = e.form === 1 ? [1, 2, 5] : [1, 2]; end = e.form === 1 ? 6 : 5; break;
+      case 308: { const n = I(3); for(let k = 0; k < n; k++) p.push(4 + k); end = 4 + n; break; }
+      case 314: end = /^\d+H/.test(t[4] || '') ? 5 : 4; break;
+      case 402: { if(![1, 7, 14, 15].includes(e.form)) return null; const n = I(1); for(let k = 0; k < n; k++) p.push(2 + k); end = 2 + n; break; }
+      case 406: end = 2 + I(1); break;
+      case 408: p = [1]; end = 6; break;
+      case 502: end = 2 + 3*I(1); break;
+      case 504: { const n = I(1); for(let k = 0; k < n; k++){ const b = 2 + 5*k; p.push(b, b + 1, b + 3); } end = 2 + 5*n; break; }
+      case 508: { const n = I(1); let k = 2; for(let j = 0; j < n; j++){ p.push(k + 1); const K = I(k + 4); for(let q = 0; q < K; q++) p.push(k + 6 + 2*q); k += 5 + 2*K; } end = k; break; }
+      case 510: { p = [1]; const n = I(2); for(let k = 0; k < n; k++) p.push(4 + k); end = 4 + n; break; }
+      case 514: { const n = I(1); for(let k = 0; k < n; k++) p.push(2 + 2*k); end = 2 + 2*n; break; }
+      default: return null;
+    }
+    // apuntadores adicionales al final (asociatividades y propiedades)
+    if(end < t.length){ let k = end; for(let r = 0; r < 2 && k < t.length; r++){ const n = parseInt(t[k]) || 0; for(let q = 0; q < n; q++) p.push(k + 1 + q); k += 1 + n; } }
+    return p;
+  }
+  /* ---- matrices ---- */
+  const IDM = () => [1,0,0,0, 0,1,0,0, 0,0,1,0];
+  const mul = (A, B) => { const r = []; for(let i = 0; i < 3; i++){ for(let j = 0; j < 3; j++) r[i*4 + j] = A[i*4]*B[j] + A[i*4 + 1]*B[4 + j] + A[i*4 + 2]*B[8 + j]; r[i*4 + 3] = A[i*4]*B[3] + A[i*4 + 1]*B[7] + A[i*4 + 2]*B[11] + A[i*4 + 3]; } return r; };
+  const app = (M, p) => [M[0]*p[0] + M[1]*p[1] + M[2]*p[2] + M[3], M[4]*p[0] + M[5]*p[1] + M[6]*p[2] + M[7], M[8]*p[0] + M[9]*p[1] + M[10]*p[2] + M[11]];
+  function ownM(m, e, seen){ seen = seen || new Set(); const tp = e.d[4]; if(!tp || seen.has(tp)) return IDM(); seen.add(tp);
+    const x = m.byDe[tp]; if(!x || x.type !== 124) return IDM(); const v = x.t.slice(1, 13).map(num); return mul(ownM(m, x, seen), v); }
+  /* ---- coordenadas en espacio de modelo ---- */
+  function ownPts(e){
+    const t = e.t, n = k => num(t[k]), I = k => parseInt(t[k]) || 0, P = [];
+    switch(e.type){
+      case 100: { const zt = n(1), cx = n(2), cy = n(3), sx = n(4), sy = n(5), ex = n(6), ey = n(7), r = Math.hypot(sx - cx, sy - cy);
+        let a1 = Math.atan2(sy - cy, sx - cx), a2 = Math.atan2(ey - cy, ex - cx); if(a2 <= a1 + 1e-9) a2 += 2*Math.PI;
+        for(let k = 0; k <= 24; k++){ const a = a1 + (a2 - a1)*k/24; P.push([cx + r*Math.cos(a), cy + r*Math.sin(a), zt]); } break; }
+      case 104: P.push([n(8), n(9), n(7)], [n(10), n(11), n(7)]); break;
+      case 106: { const ip = I(1), N = I(2); if(ip === 1){ const z = n(3); for(let k = 0; k < N; k++) P.push([n(4 + 2*k), n(5 + 2*k), z]); } else { const st = ip === 2 ? 3 : 6; for(let k = 0; k < N; k++) P.push([n(3 + st*k), n(4 + st*k), n(5 + st*k)]); } break; }
+      case 110: P.push([n(1), n(2), n(3)], [n(4), n(5), n(6)]); break;
+      case 116: P.push([n(1), n(2), n(3)]); break;
+      case 122: P.push([n(2), n(3), n(4)]); break;
+      case 126: { const K = I(1), M = I(2), A = 1 + K - M + 2*M, b = 7 + (A + 1) + (K + 1); for(let k = 0; k <= K; k++) P.push([n(b + 3*k), n(b + 3*k + 1), n(b + 3*k + 2)]); break; }
+      case 128: { const K1 = I(1), K2 = I(2), M1 = I(3), M2 = I(4), A = 1 + K1 - M1 + 2*M1, B = 1 + K2 - M2 + 2*M2, c = (K1 + 1)*(K2 + 1), b = 10 + (A + 1) + (B + 1) + c;
+        for(let k = 0; k < c; k++) P.push([n(b + 3*k), n(b + 3*k + 1), n(b + 3*k + 2)]); break; }
+      case 502: { const N = I(1); for(let k = 0; k < N; k++) P.push([n(2 + 3*k), n(3 + 3*k), n(4 + 3*k)]); break; }
+    }
+    return P;
+  }
+  /* recorrido desde las entidades independientes, siguiendo solo curvas en espacio de modelo */
+  function childrenModel(e){
+    const t = e.t, I = k => parseInt(t[k]) || 0;
+    switch(e.type){
+      case 102: return t.slice(2, 2 + I(1)).map(x => parseInt(x));
+      case 108: return [I(5)];
+      case 118: return [I(1), I(2)];
+      case 120: return [I(2)];
+      case 122: return [I(1)];
+      case 130: return [I(1)];
+      case 141: { const r = []; const n = I(4); let k = 5; for(let j = 0; j < n; j++){ r.push(I(k)); k += 3 + I(k + 2); } return r; }
+      case 142: return [I(4)];
+      case 143: { const n = I(3); return t.slice(4, 4 + n).map(x => parseInt(x)); }
+      case 144: { const n2 = I(3); return [I(4)].concat(t.slice(5, 5 + n2).map(x => parseInt(x))); }
+      case 186: return [I(1)].concat(Array.from({length: I(3)}, (_, k) => I(4 + 2*k)));
+      case 514: return Array.from({length: I(1)}, (_, k) => I(2 + 2*k));
+      case 510: return Array.from({length: I(2)}, (_, k) => I(4 + k));
+      case 508: { const r = []; const n = I(1); let k = 2; for(let j = 0; j < n; j++){ r.push({edge: I(k + 1), idx: I(k + 2)}); k += 5 + 2*I(k + 4); } return r; }
+      case 504: return Array.from({length: I(1)}, (_, k) => I(2 + 5*k));
+      case 308: return t.slice(4, 4 + I(3)).map(x => parseInt(x));
+      case 408: return [I(1)];
+      default: return [];
+    }
+  }
+  /* hijos en espacio de modelo, incluidas superficies (para mover la geometría) */
+  function childrenAll(e){
+    const t = e.t, I = k => parseInt(t[k]) || 0, n = e.type;
+    switch(n){
+      case 102: return t.slice(2, 2 + I(1)).map(x => parseInt(x));
+      case 108: return [I(5)];
+      case 118: return [I(1), I(2)];
+      case 120: return [I(1), I(2)];
+      case 122: return [I(1)];
+      case 130: return [I(1)];
+      case 140: return [I(5)];
+      case 141: { const r = [I(3)]; const N = I(4); let k = 5; for(let j = 0; j < N; j++){ r.push(I(k)); k += 3 + I(k + 2); } return r; }
+      case 142: return [I(2), I(4)];
+      case 143: { const N = I(3); return [I(2)].concat(t.slice(4, 4 + N).map(x => parseInt(x))); }
+      case 144: { const n2 = I(3); return [I(1), I(4)].concat(t.slice(5, 5 + n2).map(x => parseInt(x))); }
+      case 186: return [I(1)].concat(Array.from({length: I(3)}, (_, k) => I(4 + 2*k)));
+      case 514: return Array.from({length: I(1)}, (_, k) => I(2 + 2*k));
+      case 510: return [I(1)].concat(Array.from({length: I(2)}, (_, k) => I(4 + k)));
+      case 508: { const r = []; const N = I(1); let k = 2; for(let j = 0; j < N; j++){ r.push(I(k + 1)); k += 5 + 2*I(k + 4); } return r; }
+      case 504: { const r = []; for(let k = 0; k < I(1); k++){ const b = 2 + 5*k; r.push(I(b), I(b + 1), I(b + 3)); } return r; }
+      case 190: case 192: case 194: case 196: case 198: return (spec(e) || []).map(k => I(k));
+      case 308: return t.slice(4, 4 + I(3)).map(x => parseInt(x));
+      case 408: return [I(1)];
+      default: return [];
+    }
+  }
+  const BAKE = new Set([110, 116, 123, 126, 128, 502, 106, 122, 130, 140]);
+  const VIA124 = new Set([100, 104, 108, 112, 114]);
+  function rootsOf(m){
+    const dep = new Set(); m.ents.forEach(e => { if([402, 406, 308].includes(e.type)) return; (spec(e) || []).forEach(k => { const v = parseInt(e.t[k]); if(v > 0) dep.add(v); }); });
+    return m.ents.filter(e => { const sub = e.status.slice(2, 4); return (sub === '00' || sub === '02') && !dep.has(e.de) && ![124, 402, 406, 314, 123].includes(e.type); });
+  }
+  function modelMap(m){
+    const map = new Map(), conflict = [];
+    const visit = (de, M) => { if(!de) return; const e = m.byDe[de]; if(!e) return;
+      const MM = mul(M, ownM(m, e)), key = MM.map(v => v.toFixed(6)).join(',');
+      if(map.has(de)){ if(map.get(de).key !== key) conflict.push(de); return; }
+      map.set(de, {M: MM, key});
+      childrenAll(e).forEach(c => visit(c, MM)); };
+    rootsOf(m).forEach(e => visit(e.de, IDM()));
+    return {map, conflict};
+  }
+  function bake(e, t, M){
+    const n = k => num(t[k]), I = k => parseInt(t[k]) || 0;
+    const P = k => { const r = app(M, [n(k), n(k + 1), n(k + 2)]); t[k] = fnum(r[0]); t[k + 1] = fnum(r[1]); t[k + 2] = fnum(r[2]); };
+    const V = k => { const R = M.slice(); R[3] = R[7] = R[11] = 0; const r = app(R, [n(k), n(k + 1), n(k + 2)]); t[k] = fnum(r[0]); t[k + 1] = fnum(r[1]); t[k + 2] = fnum(r[2]); };
+    switch(e.type){
+      case 110: P(1); P(4); break;
+      case 116: P(1); break;
+      case 123: V(1); break;
+      case 122: P(2); break;
+      case 130: V(10); break;
+      case 140: V(1); break;
+      case 502: for(let k = 0; k < I(1); k++) P(2 + 3*k); break;
+      case 106: { const ip = I(1), N = I(2); if(ip === 2) for(let k = 0; k < N; k++) P(3 + 3*k); else if(ip === 3) for(let k = 0; k < N; k++){ P(3 + 6*k); V(6 + 6*k); } else return false; break; }
+      case 126: { const K = I(1), M2 = I(2), A = 1 + K - M2 + 2*M2, b = 7 + (A + 1) + (K + 1); for(let k = 0; k <= K; k++) P(b + 3*k);
+        const nb = b + 3*(K + 1) + 2; if(I(3) === 1 && t.length > nb + 2) V(nb); break; }
+      case 128: { const K1 = I(1), K2 = I(2), M1 = I(3), M2 = I(4), A = 1 + K1 - M1 + 2*M1, B = 1 + K2 - M2 + 2*M2, c = (K1 + 1)*(K2 + 1), b = 10 + (A + 1) + (B + 1) + c;
+        for(let k = 0; k < c; k++) P(b + 3*k); break; }
+    }
+    return true;
+  }
+  function points(m){
+    const pts = [], seen = new Set();
+    const fallbackSurf = new Set();
+    const visit = (de, M) => {
+      if(!de) return; const e = m.byDe[de]; if(!e) return;
+      const key = de; if(seen.has(key) && !e.d[4]) return; seen.add(key);
+      const MM = mul(M, ownM(m, e));
+      ownPts(e).forEach(p => pts.push(app(MM, p)));
+      if(e.type === 144 && (parseInt(e.t[2]) || 0) === 0) visit(parseInt(e.t[1]), MM);
+      if(e.type === 142 && !(parseInt(e.t[4]) || 0)) fallbackSurf.add(parseInt(e.t[2]));
+      for(const c of childrenModel(e)){
+        if(typeof c === 'object'){ const ed = m.byDe[c.edge]; if(ed && ed.type === 504){ const b = 2 + 5*(c.idx - 1); visit(parseInt(ed.t[b]), mul(MM, ownM(m, ed))); } else visit(c.edge, MM); }
+        else visit(c, MM);
+      }
+    };
+    const dep = new Set(); m.ents.forEach(e => { if([402, 406, 308].includes(e.type)) return; const p = spec(e) || []; p.forEach(k => { const v = parseInt(e.t[k]); if(v > 0) dep.add(v); }); });
+    m.ents.forEach(e => { const sub = e.status.slice(2, 4), blank = e.status.slice(0, 2) === '01';
+      if(((sub === '00' || sub === '02') && !dep.has(e.de)) && !blank && ![124, 402, 406, 314, 123].includes(e.type)) visit(e.de, IDM()); });
+    if(pts.length < 4) fallbackSurf.forEach(s => visit(s, IDM()));
+    return pts;
+  }
+  /* ---- alambre (curvas en espacio de modelo) para el visor ---- */
+  function nurbs(t){
+    const n = k => num(t[k]), I = k => parseInt(t[k]) || 0;
+    const K = I(1), M = I(2), A = 1 + K - M + 2*M, kb = 7, wb = kb + A + 1, pb = wb + K + 1, vb = pb + 3*(K + 1);
+    const T = [], W = [], P = []; for(let i = 0; i <= A; i++) T.push(n(kb + i)); for(let i = 0; i <= K; i++){ W.push(n(wb + i) || 1); P.push([n(pb + 3*i), n(pb + 3*i + 1), n(pb + 3*i + 2)]); }
+    const u0 = n(vb), u1 = n(vb + 1), N = Math.max(8, Math.min(64, (K + 1)*4)), out = [];
+    for(let s = 0; s <= N; s++){
+      const u = Math.min(u1, u0 + (u1 - u0)*s/N);
+      let k = M; while(k < K && T[k + 1] <= u) k++;
+      const d = []; for(let j = 0; j <= M; j++){ const i = k - M + j, w = W[i]; d.push([P[i][0]*w, P[i][1]*w, P[i][2]*w, w]); }
+      for(let r = 1; r <= M; r++) for(let j = M; j >= r; j--){ const i = k - M + j, den = T[i + M - r + 1] - T[i], a = den ? (u - T[i])/den : 0;
+        d[j] = d[j].map((v, q) => (1 - a)*d[j - 1][q] + a*v); }
+      const h = d[M]; out.push([h[0]/h[3], h[1]/h[3], h[2]/h[3]]);
+    }
+    return out;
+  }
+  function ownPoly(e){
+    const t = e.t, n = k => num(t[k]), I = k => parseInt(t[k]) || 0;
+    switch(e.type){
+      case 110: return {p: [[n(1), n(2), n(3)], [n(4), n(5), n(6)]], arc: false};
+      case 100: { const zt = n(1), cx = n(2), cy = n(3), sx = n(4), sy = n(5), ex = n(6), ey = n(7), r = Math.hypot(sx - cx, sy - cy);
+        let a1 = Math.atan2(sy - cy, sx - cx), a2 = Math.atan2(ey - cy, ex - cx); if(a2 <= a1 + 1e-9) a2 += 2*Math.PI;
+        const N = Math.max(8, Math.ceil((a2 - a1)/(Math.PI/24))), p = []; for(let k = 0; k <= N; k++){ const a = a1 + (a2 - a1)*k/N; p.push([cx + r*Math.cos(a), cy + r*Math.sin(a), zt]); } return {p, arc: true}; }
+      case 126: { const p = nurbs(t); const pe = p[p.length - 1]; let rect = Math.hypot(pe[0] - p[0][0], pe[1] - p[0][1], pe[2] - p[0][2]) > 1e-6; for(let k = 1; k + 1 < p.length && rect; k++){ const a = p[k - 1], b = p[k], c = p[p.length - 1], L = Math.hypot(c[0] - p[0][0], c[1] - p[0][1], c[2] - p[0][2]) || 1;
+          const v = [c[0] - p[0][0], c[1] - p[0][1], c[2] - p[0][2]], w = [b[0] - p[0][0], b[1] - p[0][1], b[2] - p[0][2]];
+          const cr = Math.hypot(v[1]*w[2] - v[2]*w[1], v[2]*w[0] - v[0]*w[2], v[0]*w[1] - v[1]*w[0])/L; if(cr > 0.05) rect = false; }
+        return {p, arc: !rect}; }
+      case 106: { const ip = I(1), N = I(2), p = []; if(ip === 1){ for(let k = 0; k < N; k++) p.push([n(4 + 2*k), n(5 + 2*k), n(3)]); } else { const st = ip === 2 ? 3 : 6; for(let k = 0; k < N; k++) p.push([n(3 + st*k), n(4 + st*k), n(5 + st*k)]); } return {p, arc: false}; }
+      case 104: return {p: [[n(8), n(9), n(7)], [n(10), n(11), n(7)]], arc: true};
+    }
+    return null;
+  }
+  function wire(m){
+    const polys = [], seen = new Set();
+    const visit = (de, M) => {
+      if(!de) return; const e = m.byDe[de]; if(!e) return;
+      const MM = mul(M, ownM(m, e)), key = de + '|' + MM.map(v => v.toFixed(4)).join(',');
+      if(seen.has(key)) return; seen.add(key);
+      const pl = ownPoly(e); if(pl) polys.push({p: pl.p.map(q => app(MM, q)), arc: pl.arc, type: e.type});
+      if(e.type === 144 && (parseInt(e.t[2]) || 0) === 0) visit(parseInt(e.t[1]), MM);
+      for(const c of childrenModel(e)){
+        if(typeof c === 'object'){ const ed = m.byDe[c.edge]; if(ed && ed.type === 504){ const b = 2 + 5*(c.idx - 1); visit(parseInt(ed.t[b]), mul(MM, ownM(m, ed))); } else visit(c.edge, MM); }
+        else visit(c, MM);
+      }
+    };
+    rootsOf(m).filter(e => e.status.slice(0, 2) !== '01').forEach(e => visit(e.de, IDM()));
+    // quita duplicados (la misma arista vista desde dos caras)
+    const k = q => q.map(v => v.toFixed(2)).join(',');
+    const uniq = new Map(); polys.forEach(pl => { const a = k(pl.p[0]) + '>' + k(pl.p[pl.p.length - 1]) + '#' + pl.p.length, b = k(pl.p[pl.p.length - 1]) + '>' + k(pl.p[0]) + '#' + pl.p.length; if(!uniq.has(a) && !uniq.has(b)) uniq.set(a, pl); });
+    return [...uniq.values()];
+  }
+  /* medición completa de una pieza de tubo: alambre orientado (eje = X desde 0), pared, extremos y barrenos */
+  function inspect(text, nominal, forma){
+    const a = analyze(text, nominal); if(!a.ok) return {ok: false, error: a.error};
+    const M = placement(a, 0), polys = wire(a.model).map(pl => Object.assign(pl, {p: pl.p.map(q => app(M, q))}));
+    const L = a.len, W = a.secA, H = a.secB, round = forma === 'RED' || Math.abs(W - H) < 0.3 && polys.filter(p => p.arc).length > polys.length*0.4;
+    // pared: aristas longitudinales (paralelas al eje y largas); distancia a la cara exterior
+    const lon = polys.filter(pl => { const p0 = pl.p[0], p1 = pl.p[pl.p.length - 1], dx = Math.abs(p1[0] - p0[0]); return dx > 0.3*L && Math.hypot(p1[1] - p0[1], p1[2] - p0[2]) < 0.02*dx; });
+    const dist = lon.map(pl => { const q = pl.p[0]; return round ? W/2 - Math.hypot(q[1], q[2]) : Math.min(W/2 - Math.abs(q[1]), H/2 - Math.abs(q[2])); }).filter(d => d > 0.2 && d < Math.min(W, H)/2 - 0.2).sort((x, y) => x - y);
+    const wall = dist.length ? +dist[0].toFixed(2) : null;
+    // extremos: aristas conectadas a las aristas longitudinales en cada extremo
+    const k2 = q => q.map(v => Math.round(v*20)).join(',');
+    const lonSet = new Set(lon);
+    const axial = pl => { const p0 = pl.p[0], p1 = pl.p[pl.p.length - 1], dx = Math.abs(p1[0] - p0[0]); return !pl.arc && dx > 1 && Math.hypot(p1[1] - p0[1], p1[2] - p0[2]) < 0.02*dx; };
+    const endComp = side => {
+      const allX = polys.flatMap(pl => [pl.p[0][0], pl.p[pl.p.length - 1][0]]), ext0 = side ? Math.max(...allX) : Math.min(...allX);
+      const front = new Set(); polys.forEach(pl => [pl.p[0], pl.p[pl.p.length - 1]].forEach(q => { if(Math.abs(q[0] - ext0) < 0.05) front.add(k2(q)); }));
+      const comp = new Set(); let grew = true;
+      while(grew){ grew = false; polys.forEach(pl => { if(lonSet.has(pl) || comp.has(pl) || axial(pl)) return; const e0 = k2(pl.p[0]), e1 = k2(pl.p[pl.p.length - 1]);
+        if(front.has(e0) || front.has(e1)){ comp.add(pl); front.add(e0); front.add(e1); grew = true; } }); }
+      const pts = [...comp].flatMap(pl => pl.p);
+      const allx = pts.map(q => q[0]).concat([ext0]);
+      const depth = allx.length ? Math.max(...allx) - Math.min(...allx) : 0;
+      let res = {recto: depth < 0.3, profundidad: +depth.toFixed(1), comp};
+      if(!res.recto && pts.length >= 3){
+        // ajuste de plano x = a + b·y + c·z
+        let n = 0, Sy = 0, Sz = 0, Sx = 0, Syy = 0, Szz = 0, Syz = 0, Sxy = 0, Sxz = 0;
+        pts.forEach(([x, y, z]) => { n++; Sx += x; Sy += y; Sz += z; Syy += y*y; Szz += z*z; Syz += y*z; Sxy += x*y; Sxz += x*z; });
+        const A = [[n, Sy, Sz], [Sy, Syy, Syz], [Sz, Syz, Szz]], B = [Sx, Sxy, Sxz];
+        const det = m => m[0][0]*(m[1][1]*m[2][2] - m[1][2]*m[2][1]) - m[0][1]*(m[1][0]*m[2][2] - m[1][2]*m[2][0]) + m[0][2]*(m[1][0]*m[2][1] - m[1][1]*m[2][0]);
+        const D = det(A);
+        if(Math.abs(D) > 1e-9){ const sol = [0, 1, 2].map(i => det(A.map((r, j) => r.map((v, q) => q === i ? B[j] : v)))/D);
+          const resid = Math.max(...pts.map(([x, y, z]) => Math.abs(sol[0] + sol[1]*y + sol[2]*z - x)));
+          if(resid < 0.3){ const incl = Math.atan(Math.hypot(sol[1], sol[2]))*180/Math.PI; res = Object.assign(res, {_pl: sol, inglete: true, inclinacion: +incl.toFixed(1), angulo: +(90 - incl).toFixed(1)}); } }
+      }
+      // la cara interior del corte no toca la arista extrema: se agrega si cae en el plano (inglete) o, sin arcos, dentro de la zona del corte
+      const xmin = Math.min(...allx), xmax = Math.max(...allx);
+      polys.forEach(pl => { if(comp.has(pl) || lonSet.has(pl) || axial(pl)) return;
+        const xs = pl.p.map(q => q[0]); if(Math.min(...xs) < xmin - 0.05 || Math.max(...xs) > xmax + 0.05) return;
+        if(res.inglete){ if(pl.p.every(([x, y, z]) => Math.abs(res._pl[0] + res._pl[1]*y + res._pl[2]*z - x) < 0.3)) comp.add(pl); }
+        else if(!res.recto && !pl.arc) comp.add(pl); });
+      delete res._pl;
+      return res;
+    };
+    const ends = [endComp(0), endComp(1)];
+    const endSet = new Set([...ends[0].comp, ...ends[1].comp]); ends.forEach(e => delete e.comp);
+    // barrenos, muescas y cortes intermedios: curvas que no son aristas longitudinales ni del corte de los extremos
+    const inner = polys.filter(pl => !lonSet.has(pl) && !endSet.has(pl)).map(pl => { const xs = pl.p.map(q => q[0]), ys = pl.p.map(q => q[1]), zs = pl.p.map(q => q[2]);
+      return {pl, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys), z0: Math.min(...zs), z1: Math.max(...zs)}; })
+      .filter(c => c.x1 - c.x0 < 0.6*L && c.x0 > 0.3 && c.x1 < L - 0.3);
+    inner.forEach(c => c.pl.feat = true); endSet.forEach(pl => pl.end = true);
+    const grupos = []; inner.sort((p, q) => p.x0 - q.x0).forEach(c => { const g = grupos.find(g => c.x0 <= g.x1 + 0.5 && c.x1 >= g.x0 - 0.5 && Math.hypot((c.y0 + c.y1)/2 - (g.y0 + g.y1)/2, (c.z0 + c.z1)/2 - (g.z0 + g.z1)/2) < Math.max(3, 2*Math.max(c.x1 - c.x0, g.x1 - g.x0)) && Math.hypot((c.y0 + c.y1)/2 - (g.y0 + g.y1)/2, (c.z0 + c.z1)/2 - (g.z0 + g.z1)/2) < Math.min(W, H)*0.6);
+      if(g){ g.x0 = Math.min(g.x0, c.x0); g.x1 = Math.max(g.x1, c.x1); g.y0 = Math.min(g.y0, c.y0); g.y1 = Math.max(g.y1, c.y1); g.z0 = Math.min(g.z0, c.z0); g.z1 = Math.max(g.z1, c.z1); g.arc = g.arc || c.pl.arc; g.n++; }
+      else grupos.push({x0: c.x0, x1: c.x1, y0: c.y0, y1: c.y1, z0: c.z0, z1: c.z1, arc: c.pl.arc, n: 1}); });
+    // un barreno pasado aparece en dos caras opuestas con el mismo x: se unen
+    const feats = []; const usado = new Set();
+    const cara = g => { if(round){ const cy = (g.y0 + g.y1)/2, cz = (g.z0 + g.z1)/2, ang = Math.round(Math.atan2(cz, cy)*180/Math.PI/15)*15; return ['R' + ang]; }
+      const f = []; if(g.z1 > H/2 - 0.3) f.push('Z+'); if(g.z0 < -H/2 + 0.3) f.push('Z-'); if(g.y1 > W/2 - 0.3) f.push('Y+'); if(g.y0 < -W/2 + 0.3) f.push('Y-'); return f; };
+    grupos.forEach((g, i) => { if(usado.has(i)) return; let caras = cara(g);
+      const par = grupos.findIndex((h, j) => j !== i && !usado.has(j) && Math.abs((h.x0 + h.x1)/2 - (g.x0 + g.x1)/2) < 0.3 && Math.abs((h.x1 - h.x0) - (g.x1 - g.x0)) < 0.3);
+      if(par >= 0){ usado.add(par); caras = [...new Set(caras.concat(cara(grupos[par])))]; }
+      usado.add(i);
+      const ancho = g.x1 - g.x0, enZ = caras.some(c => c[0] === 'Z'), otro = round ? Math.min(Math.max(g.y1 - g.y0, g.z1 - g.z0), ancho*1.5) : enZ ? g.y1 - g.y0 : g.z1 - g.z0;
+      if(round && par >= 0) caras = caras.slice(0, 2);
+      const circ = g.arc && Math.abs(ancho - otro) < Math.max(0.3, ancho*0.05);
+      const pasado = round ? (caras.length === 2 && Math.abs(Math.abs(+caras[0].slice(1) - +caras[1].slice(1)) - 180) <= 15) : (caras.includes('Z+') && caras.includes('Z-')) || (caras.includes('Y+') && caras.includes('Y-'));
+      const caraTxt = c => c[0] === 'R' ? `a ${((+c.slice(1)) + 360) % 360}° del eje Y` : c[0] === 'Z' ? `cara de ${(+W.toFixed(1))} mm` : `cara de ${(+H.toFixed(1))} mm`;
+      feats.push({x: (g.x0 + g.x1)/2, x0: g.x0, x1: g.x1, ancho, alto: otro, tipo: circ ? 'Barreno' : 'Ranura / corte', diam: circ ? +ancho.toFixed(2) : null,
+        caras, pasado, caraTxt: caras.length ? (pasado ? 'Pasado · ' + caraTxt(caras[0]) : caras[0][0] === 'R' ? caraTxt(caras[0]) : caraTxt(caras[0]) + ' (' + (caras[0].endsWith('+') ? (caras[0][0] === 'Z' ? 'superior' : 'derecha') : (caras[0][0] === 'Z' ? 'inferior' : 'izquierda')) + ')') : 'interior'});
+    });
+    feats.sort((p, q) => p.x - q.x);
+    return {ok: true, len: L, secA: W, secB: H, wall, round, ends, feats, polys, units: a.units, types: a.types, combinable: a.combinable, unsup: a.unsup};
+  }
+  function measure(m, nominal){
+    const pts = points(m);
+    if(!pts.length) return {ok: false, error: 'No se encontró geometría en espacio de modelo'};
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    pts.forEach(p => { for(let k = 0; k < 3; k++){ if(p[k] < lo[k]) lo[k] = p[k]; if(p[k] > hi[k]) hi[k] = p[k]; } });
+    const ext = [0, 1, 2].map(k => hi[k] - lo[k]);
+    let axis = ext.indexOf(Math.max(...ext));
+    if(nominal && nominal.length === 2){
+      // eje = la dirección que no corresponde a la sección nominal
+      const tol = 1.5, nn = nominal.slice().sort((a, b) => b - a);
+      const tryAx = [0, 1, 2].filter(a => { const s = [0, 1, 2].filter(k => k !== a).map(k => ext[k]).sort((x, y) => y - x); return Math.abs(s[0] - nn[0]) <= tol && Math.abs(s[1] - nn[1]) <= tol; });
+      if(tryAx.length === 1) axis = tryAx[0];
+      else if(tryAx.length > 1) axis = tryAx.sort((a, b) => ext[b] - ext[a])[0];
+    }
+    const others = [0, 1, 2].filter(k => k !== axis).sort((a, b) => ext[b] - ext[a] || a - b);
+    return {ok: true, lo, hi, ext, axis, len: ext[axis], secA: ext[others[0]], secB: ext[others[1]], axY: others[0], axZ: others[1], npts: pts.length};
+  }
+  function analyze(text, nominal){
+    const m = parse(text);
+    const unsup = {}; m.ents.forEach(e => { if(!SUP.has(e.type) || spec(e) === null) unsup[e.type] = (unsup[e.type] || 0) + 1; });
+    const types = {}; m.ents.forEach(e => types[e.type] = (types[e.type] || 0) + 1);
+    const ms = measure(m, nominal);
+    return Object.assign({model: m, types, unsup, combinable: !Object.keys(unsup).length, units: (m.unitName || '').toUpperCase() || (m.unitFlag === 2 ? 'MM' : m.unitFlag === 1 ? 'IN' : '?')}, ms);
+  }
+  /* matriz que lleva la pieza al marco del tubo: eje → X desde x0, lado mayor → Y, lado menor → Z, sección centrada */
+  function placement(ms, x0){
+    const R = [[0,0,0],[0,0,0],[0,0,0]]; R[0][ms.axis] = 1; R[1][ms.axY] = 1; R[2][ms.axZ] = 1;
+    const det = R[0][0]*(R[1][1]*R[2][2] - R[1][2]*R[2][1]) - R[0][1]*(R[1][0]*R[2][2] - R[1][2]*R[2][0]) + R[0][2]*(R[1][0]*R[2][1] - R[1][1]*R[2][0]);
+    if(det < 0) R[2] = R[2].map(v => -v);
+    const c = [0, 1, 2].map(k => (ms.lo[k] + ms.hi[k])/2);
+    const rc = R.map(r => r[0]*c[0] + r[1]*c[1] + r[2]*c[2]);
+    const rlo = R[0][ms.axis] > 0 ? ms.lo[ms.axis] : -ms.hi[ms.axis];
+    const T = [x0 - rlo, -rc[1], -rc[2]];
+    return [R[0][0], R[0][1], R[0][2], T[0], R[1][0], R[1][1], R[1][2], T[1], R[2][0], R[2][1], R[2][2], T[2]];
+  }
+  /* ---- escritura ---- */
+  const fnum = v => { if(Math.abs(v) < 1e-12) return '0.'; let s = (+v.toPrecision(15)).toString(); if(!/[.eE]/.test(s)) s += '.'; return s.replace('e', 'E'); };
+  const asc = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\u00d7/g, 'x').replace(/[^\x20-\x7E]/g, '-');
+  const H = s => { s = asc(s); return s.length + 'H' + s; };
+  const pad8 = v => String(v).padStart(8, ' ');
+  function wrap(tokens, width, pd, rd){
+    const lines = []; let cur = '';
+    tokens.forEach((tk, i) => { const piece = tk + (i === tokens.length - 1 ? rd : pd);
+      if(cur.length + piece.length <= width){ cur += piece; return; }
+      if(cur) lines.push(cur); cur = '';
+      let rest = piece; while(rest.length > width){ lines.push(rest.slice(0, width)); rest = rest.slice(width); } cur = rest; });
+    if(cur) lines.push(cur);
+    return lines;
+  }
+  /* placements: [{model, M, label}] → texto IGES */
+  function combine(items, meta){
+    meta = meta || {};
+    const pd = ',', rd = ';', D = [], Pl = [];
+    let base = 0; const all = [];
+    const extra = [];
+    const total = items.reduce((s, it) => s + it.model.ents.length, 0);
+    items.forEach((it, pi) => {
+      const m = it.model, off = 2*base;
+      const {map, conflict} = modelMap(m);
+      if(conflict.length) throw new Error('Geometría compartida con distinta transformación');
+      const mats = new Map();
+      m.ents.forEach(e => {
+        const t = e.t.slice(), d = e.d.slice(0, 6);
+        (spec(e) || []).forEach(k => { const v = parseInt(t[k]); if(v) t[k] = String(Math.sign(v)*(Math.abs(v) + off)); });
+        const o = [d[0] < 0 ? d[0] - off : d[0], d[1] < 0 ? d[1] - off : d[1], d[2] < 0 ? d[2] - off : d[2], d[3] ? d[3] + off : 0, d[4] ? d[4] + off : 0, d[5] ? d[5] + off : 0];
+        const mm = map.get(e.de);
+        if(mm){
+          const MM = mul(it.M, mm.M);
+          if(BAKE.has(e.type) && bake(e, t, MM)) o[4] = 0;
+          else if(VIA124.has(e.type) || (e.type === 106)){ const k = MM.map(v => v.toFixed(9)).join(',');
+            if(!mats.has(k)){ mats.set(k, extra.length); extra.push({type: 124, form: 0, t: ['124'].concat(MM.map(fnum)), d: [0, 0, 0, 0, 0, 0], status: '00010001', weight: '0', color: 0, label: '   TUBO' + (pi + 1), sub: String(pi + 1)}); }
+            o[4] = 'X' + mats.get(k); }
+          else o[4] = 0;
+        }
+        all.push({type: e.type, form: e.form, t, d: o, status: e.status, weight: e.weight, color: e.color < 0 ? e.color - off : e.color, label: e.label, sub: e.sub});
+      });
+      base += m.ents.length;
+    });
+    all.forEach(e => { if(typeof e.d[4] === 'string') e.d[4] = 2*(total + parseInt(e.d[4].slice(1))) + 1; });
+    const list = all.concat(extra);
+    let pline = 1;
+    list.forEach((e, k) => {
+      const de = 2*k + 1, pl = wrap(e.t, 64, pd, rd);
+      const a = [e.type, pline, e.d[0], e.d[1], e.d[2], e.d[3], e.d[4], e.d[5]].map(pad8).join('') + String(e.status).padStart(8, '0');
+      const b = [e.type, e.weight || 0, e.color || 0, pl.length, e.form].map(pad8).join('') + ' '.repeat(16) + (e.label || '').padEnd(8, ' ').slice(0, 8) + pad8(e.sub || 0);
+      D.push(a, b);
+      pl.forEach(l => { Pl.push(l.padEnd(64, ' ') + pad8(de)); });
+      pline += pl.length;
+    });
+    const g0 = items[0].model.G.slice();
+    while(g0.length < 25) g0.push('');
+    g0[0] = '1H,'; g0[1] = '1H;';
+    g0[2] = H(meta.product || 'MULTIPLE'); g0[3] = H(meta.file || 'multiple.igs'); g0[4] = H('Plataforma de multiples de tubular');
+    const now = new Date(), dt = now.getFullYear() + String(now.getMonth() + 1).padStart(2, '0') + String(now.getDate()).padStart(2, '0') + '.' + [now.getHours(), now.getMinutes(), now.getSeconds()].map(v => String(v).padStart(2, '0')).join('');
+    g0[17] = H(dt); g0[19] = fnum(Math.max(meta.maxCoord || 0, 1)); if(g0.length > 24) g0[24] = H(dt);
+    const Gl = wrap(g0, 72, pd, rd);
+    const S = [asc(meta.title || 'Multiple de corte de tubular').slice(0, 72)];
+    const sec = (arr, c) => arr.map((l, i) => l.padEnd(72, ' ').slice(0, 72) + c + String(i + 1).padStart(7, '0'));
+    const out = [].concat(sec(S, 'S'), sec(Gl, 'G'), D.map((l, i) => l.padEnd(72, ' ').slice(0, 72) + 'D' + String(i + 1).padStart(7, '0')),
+      Pl.map((l, i) => l.slice(0, 72) + 'P' + String(i + 1).padStart(7, '0')));
+    out.push('S' + String(S.length).padStart(7, '0') + 'G' + String(Gl.length).padStart(7, '0') + 'D' + String(D.length).padStart(7, '0') + 'P' + String(Pl.length).padStart(7, '0') + ' '.repeat(40) + 'T0000001');
+    return out.join('\r\n') + '\r\n';
+  }
+  return {parse, analyze, measure, placement, combine, spec, holl, inspect, wire};
+})();
+
+
+/* ===== Optimizador de múltiples de tubular (1D) y consumos reales ===== */
+const OPT = (() => {
+  /* cfg: {tramo, chuck, refr, kerf, minRem, modo:'prio'|'max', ventana}
+     items: [{uid, tipo, L, prio, ...}]  recortes: [{id, tipo, largo}] */
+  function capOf(P, c){ return P - c.chuck - c.refr + c.kerf; }
+  function knap(pool, cap){
+    // 0/1 de máximo llenado, resolución 0.1 mm
+    const S = 10, C = Math.floor(cap*S + 1e-6), n = pool.length;
+    if(C <= 0 || !n) return [];
+    const w = pool.map(p => Math.ceil((p.L + p._k)*S - 1e-6));
+    const reach = new Int32Array(C + 1).fill(-1); reach[0] = n; // índice del último objeto que llegó
+    const from = new Int32Array(C + 1).fill(-1);
+    const took = []; // took[i] = lista de capacidades marcadas por i (para reconstruir)
+    const prevOf = new Map();
+    let best = 0;
+    for(let i = 0; i < n; i++){
+      const wi = w[i]; if(wi > C) continue;
+      for(let c = C; c >= wi; c--){
+        if(reach[c] === -1 && reach[c - wi] !== -1 && reach[c - wi] !== i){ reach[c] = i; from[c] = c - wi; if(c > best) best = c; }
+      }
+      if(best === C) break;
+    }
+    const sel = []; let c = best; const guard = new Set();
+    while(c > 0 && reach[c] >= 0 && reach[c] < n){ if(guard.has(reach[c])) break; guard.add(reach[c]); sel.push(pool[reach[c]]); c = from[c]; }
+    return sel;
+  }
+  function fillBar(pending, cap, c, forceFirst){
+    let pool;
+    if(c.modo === 'prio'){
+      pool = []; let acc = 0; const lim = Math.max(1, c.ventana || 2)*cap;
+      let corte = null; for(const p of pending){ if(corte !== null && p.prio !== corte) break; pool.push(p); acc += p.L + c.kerf; if(corte === null && acc >= lim && pool.length >= 2) corte = p.prio; }
+    } else pool = pending.slice(0, 600);
+    pool.forEach(p => p._k = c.kerf);
+    let first = null, cap2 = cap;
+    if(forceFirst && c.modo === 'prio'){ first = pool[0]; if(first.L + c.kerf > cap + 1e-6) return []; cap2 = cap - first.L - c.kerf; pool = pool.slice(1); }
+    const sel = knap(pool, cap2);
+    return first ? [first].concat(sel) : sel;
+  }
+  function layout(bar, c){
+    // ordena: piezas largas primero (más estables en el chuck), conserva prioridad como desempate
+    bar.piezas.sort((a, b) => b.L - a.L || a.prio - b.prio);
+    let x = c.refr; bar.piezas.forEach((p, i) => { if(i) x += c.kerf; p.x = x; x += p.L; });
+    bar.usado = x; bar.sobra = bar.P - x;            // incluye la zona del chuck
+    const util = bar.sobra - c.chuck - c.refr;        // lo que se podría aprovechar al reutilizarlo
+    bar.recorte = util >= c.minRem ? Math.floor(bar.sobra) : 0;
+    bar.desecho = bar.P - bar.usado - bar.recorte;
+    bar.consumo = bar.P - bar.recorte;
+    const sumW = bar.piezas.reduce((s, p) => s + p.L + c.kerf, 0);
+    bar.piezas.forEach(p => { p.consumo = (p.L + c.kerf)/sumW*bar.consumo; });
+    bar.aprov = bar.piezas.reduce((s, p) => s + p.L, 0)/bar.consumo;
+  }
+  function run(items, recortes, c){
+    const tipos = {}; items.forEach(it => (tipos[it.tipo] = tipos[it.tipo] || []).push(it));
+    const res = [];
+    for(const [tipo, list] of Object.entries(tipos)){
+      const pend = list.slice().sort((a, b) => a.prio - b.prio || b.L - a.L);
+      const largas = pend.filter(p => p.L + c.refr + c.chuck > c.tramo + 1e-6);
+      let pending = pend.filter(p => !largas.includes(p));
+      if(c.modo === 'max') pending.sort((a, b) => b.L - a.L);
+      const bars = [];
+      const take = sel => { const ids = new Set(sel.map(p => p.uid)); pending = pending.filter(p => !ids.has(p.uid)); };
+      // 1) recortes del inventario, del más chico al más grande
+      const rec = recortes.filter(r => r.tipo === tipo).sort((a, b) => a.largo - b.largo);
+      for(const r of rec){
+        if(!pending.length) break;
+        const cap = capOf(r.largo, c); if(cap <= 0) continue;
+        // en un recorte se busca el mejor llenado entre todas las piezas pendientes: cada recorte usado ahorra material
+        const sel = fillBar(pending, cap, Object.assign({}, c, {modo: 'max'}), false);
+        if(!sel.length) continue;
+        take(sel); bars.push({tipo, P: r.largo, origen: 'recorte', recorteId: r.id, piezas: sel.map(p => Object.assign({}, p))});
+      }
+      // 2) tramos nuevos
+      const capN = capOf(c.tramo, c);
+      let guard = 0;
+      while(pending.length && guard++ < 5000){
+        const sel = fillBar(pending, capN, c, true);
+        if(!sel.length){ largas.push(pending.shift()); continue; }
+        take(sel); bars.push({tipo, P: c.tramo, origen: 'nuevo', piezas: sel.map(p => Object.assign({}, p))});
+      }
+      // compactación: los huecos de un tramo se llenan con piezas de tramos posteriores (se adelantan, nunca se atrasan)
+      for(let pass = 0; pass < 3; pass++){
+        let movio = false;
+        for(let i = 0; i < bars.length; i++){
+          const b = bars[i], cap = capOf(b.P, c) - b.piezas.reduce((s, p) => s + p.L + c.kerf, 0);
+          if(cap < 1) continue;
+          const cand = []; for(let j = bars.length - 1; j > i; j--) bars[j].piezas.forEach(p => { p._k = c.kerf; p._bar = j; cand.push(p); });
+          if(!cand.length) break;
+          const sel = knap(cand.slice(0, 600), cap); if(!sel.length) continue;
+          const ids = new Set(sel.map(p => p.uid));
+          for(let j = i + 1; j < bars.length; j++) bars[j].piezas = bars[j].piezas.filter(p => !ids.has(p.uid));
+          b.piezas = b.piezas.concat(sel); movio = true;
+          for(let j = bars.length - 1; j > i; j--) if(!bars[j].piezas.length) bars.splice(j, 1);
+        }
+        if(!movio) break;
+      }
+      bars.forEach(b => b.piezas.forEach(p => { delete p._bar; }));
+      bars.forEach(b => layout(b, c));
+      bars.sort((a, b) => (a.origen === 'recorte' ? 0 : 1) - (b.origen === 'recorte' ? 0 : 1) || Math.min(...a.piezas.map(p => p.prio)) - Math.min(...b.piezas.map(p => p.prio)));
+      const nuevos = bars.filter(b => b.origen === 'nuevo');
+      const tot = {
+        tramos: nuevos.length, recUsados: bars.length - nuevos.length,
+        piezas: bars.reduce((s, b) => s + b.piezas.length, 0),
+        largoPiezas: bars.reduce((s, b) => s + b.piezas.reduce((t, p) => t + p.L, 0), 0),
+        consumo: bars.reduce((s, b) => s + b.consumo, 0),
+        recGenerados: bars.filter(b => b.recorte).length, largoRec: bars.reduce((s, b) => s + b.recorte, 0),
+        desecho: bars.reduce((s, b) => s + b.desecho, 0),
+        mmNuevos: nuevos.length*c.tramo, mmRecUsados: bars.filter(b => b.origen === 'recorte').reduce((s, b) => s + b.P, 0)
+      };
+      tot.aprov = tot.consumo ? tot.largoPiezas/tot.consumo : 0;
+      res.push({tipo, bars, largas, tot});
+    }
+    return res;
+  }
+  return {run, knap};
+})();
+
+
+/* ======================= Configuración ======================= */
+const API_URL = 'https://script.google.com/macros/s/AKfycbxZw8KfhHeSUdTfBQ3b4VNAXkQKrTtUkx1X4wWRyR8L1sRFT-R5umGcgcgq2evEiBhO/exec';
+const DEF = {version: 1, tramo: 6100, chuck: 400, refr: 5, kerf: 3, minRem: 500, modo: 'prio', ventana: 2, densidad: 7.85,
+  tolSeccion: 1.5, apiUrl: API_URL, carpetaClave: 'TUBULAR|IGES|IGS',
+  calibres: {'10': 3.42, '11': 3.04, '12': 2.66, '13': 2.28, '14': 1.90, '16': 1.52, '18': 1.21, '20': 0.91, '22': 0.76, '24': 0.61}};
+let CFG = (() => { let c; try{ c = Object.assign({}, DEF, JSON.parse(localStorage.getItem('mt-cfg') || '{}')); }catch(e){ c = Object.assign({}, DEF); } if(!c.apiUrl) c.apiUrl = API_URL; return c; })();
+const saveCfg = () => { try{ localStorage.setItem('mt-cfg', JSON.stringify(CFG)); }catch(e){} };
+let ELEC = (() => { try{ return JSON.parse(localStorage.getItem('mt-elec') || '{}'); }catch(e){ return {}; } })();
+const saveElec = () => { try{ localStorage.setItem('mt-elec', JSON.stringify(ELEC)); }catch(e){} };
+
+/* ======================= Utilidades ======================= */
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+const badge = (lv, t) => `<span class="b ${lv}">${esc(t)}</span>`;
+const f0 = n => n == null || isNaN(n) ? '—' : Math.round(n).toLocaleString('es-MX');
+const f1 = n => n == null || isNaN(n) ? '—' : (Math.round(n*10)/10).toLocaleString('es-MX', {maximumFractionDigits: 1});
+const f2 = n => n == null || isNaN(n) ? '—' : n.toLocaleString('es-MX', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const f4 = n => n == null || isNaN(n) ? '—' : n.toLocaleString('es-MX', {minimumFractionDigits: 4, maximumFractionDigits: 4});
+const pct = n => n == null || isNaN(n) ? '—' : (n*100).toFixed(1) + ' %';
+const fecha = ms => ms ? new Date(ms).toLocaleString('es-MX', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'}) : '—';
+function toast(t, lv){ let d = $('toast'); if(!d){ d = document.createElement('div'); d.id = 'toast'; document.body.appendChild(d); } d.className = 'toast ' + (lv || 'ok'); d.textContent = t; d.style.display = 'block'; clearTimeout(toast._t); toast._t = setTimeout(() => d.style.display = 'none', 3800); }
+const norm = s => String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+const PAL = ['#9fe1cb', '#cecbf6', '#f5c4b3', '#c0dd97', '#fac775', '#b5d4f4', '#f4c0d1', '#d3e8a8', '#e6d2b5', '#a8d8e8'];
+const dl = (name, data, type) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data], {type: type || 'application/octet-stream'})); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); };
+const hoyId = () => { const d = new Date(), p = v => String(v).padStart(2, '0'); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`; };
+async function gunzipAll(buf){
+  let u = new Uint8Array(buf);
+  while(u.length > 2 && u[0] === 0x1f && u[1] === 0x8b){
+    const ds = new DecompressionStream('gzip'); const out = new Response(new Blob([u]).stream().pipeThrough(ds));
+    u = new Uint8Array(await out.arrayBuffer());
+  }
+  return new TextDecoder('latin1').decode(u);
+}
+
+/* ======================= Nombres de Ingeniería ======================= */
+const NUMRE = '(\\d+(?:[.,]\\d+)?(?:[- ]\\d+\\/\\d+)?|\\d+\\/\\d+)';
+function frac(s){ s = String(s).replace(',', '.'); return s.split(/[- ]/).reduce((t, p) => { const m = p.match(/^(\d+)\/(\d+)$/); return t + (m ? m[1]/m[2] : (parseFloat(p) || 0)); }, 0); }
+function parseMedida(s){
+  const u = norm(s).replace(/"/g, ' IN ').replace(/_/g, ' ');
+  let m = u.match(new RegExp('(?:REDONDO|RED|DIA|DIAM|Ø)\\s*-?\\s*' + NUMRE + '\\s*(MM|IN)?'));
+  if(m){ const v = frac(m[1]), mm = m[2] === 'MM' || (!m[2] && v > 8); return {forma: 'RED', a: mm ? v : v*25.4, b: mm ? v : v*25.4, pulg: !mm, txt: m[0].trim()}; }
+  m = u.match(new RegExp(NUMRE + '\\s*X\\s*' + NUMRE + '\\s*(MM|IN)?'));
+  if(m){ const v1 = frac(m[1]), v2 = frac(m[2]), mm = m[3] === 'MM' || (!m[3] && Math.max(v1, v2) > 8);
+    const a = mm ? v1 : v1*25.4, b = mm ? v2 : v2*25.4; return {forma: Math.abs(a - b) < 0.05 ? 'CUAD' : 'RECT', a: Math.min(a, b), b: Math.max(a, b), pulg: !mm, txt: m[0].trim()}; }
+  return null;
+}
+const inTxt = mm => { const v = mm/25.4, w = Math.floor(v + 1e-6), r = Math.round((v - w)*16); if(r === 0) return String(w); if(r === 16) return String(w + 1); let n = r, d = 16; while(n % 2 === 0){ n /= 2; d /= 2; } return (w ? w + '-' : '') + n + '/' + d; };
+function tipoDe(med, cal){
+  const k = `${med.forma}-${(+med.a.toFixed(1))}x${(+med.b.toFixed(1))}-C${cal || '?'}`;
+  const dim = med.pulg ? (med.forma === 'RED' ? `Ø${inTxt(med.a)} in` : `${inTxt(med.b)} × ${inTxt(med.a)} in`) : (med.forma === 'RED' ? `Ø${f1(med.a)} mm` : `${f1(med.b)} × ${f1(med.a)} mm`);
+  return {key: k, label: `${dim} · cal ${cal || '?'}`, corto: (med.pulg ? (med.forma === 'RED' ? 'D' + inTxt(med.a) : inTxt(med.b) + 'X' + inTxt(med.a)) : Math.round(med.b) + 'X' + Math.round(med.a)) + '-C' + (cal || 'X')};
+}
+function kgPorM(med, cal){
+  const t = CFG.calibres[String(cal)]; if(!t || !med) return null;
+  const area = med.forma === 'RED' ? Math.PI/4*(med.a**2 - (med.a - 2*t)**2) : med.a*med.b - (med.a - 2*t)*(med.b - 2*t);
+  return area*CFG.densidad/1000;
+}
+function parseNombre(name, path){
+  const r = {name, path: path || '', ok: false, errores: []};
+  if(/subiendo/i.test(name)){ r.excluir = 'Carga incompleta (subiendo)'; return r; }
+  if(/prototipo/i.test(path || '')){ r.excluir = 'Carpeta de prototipos'; return r; }
+  const m = name.match(/^(.+?)_(\d+)\s*PZA?S?_(.+?)\s+v(\d+)\s*\(([^)]*)\)\.(igs|iges)((?:\.gz)*)$/i);
+  if(!m){ r.errores.push('El nombre no sigue la convención RUTA_NPZAS_MATERIAL_CALxx_PIEZA vN (fecha).igs'); return r; }
+  r.ruta = m[1].trim(); r.n = +m[2]; r.v = +m[4]; r.fecha = m[5]; r.gz = !!m[7];
+  const toks = m[3].split('_'); let ci = toks.findIndex(t => /^CAL\.?\s*\d+$/i.test(t));
+  if(ci < 0){ r.errores.push('No indica calibre (CALxx)'); r.pieza = m[3]; r.matTxt = m[3]; }
+  else { r.cal = (toks[ci].match(/\d+/) || [])[0]; r.matTxt = toks.slice(0, ci).join('_'); r.pieza = toks.slice(ci + 1).join('_') || '(sin nombre)'; }
+  r.med = parseMedida(r.matTxt) || (ci >= 0 ? parseMedida(toks.slice(ci + 1).join('_')) : null);
+  if(r.cal && !CFG.calibres[r.cal]) r.errores.push(`Calibre ${r.cal} sin espesor en Configuración`);
+  r.ok = !r.errores.length;
+  return r;
+}
+
+/* ======================= Estado ======================= */
+const S = {ops: [], progFile: '', lib: [], meas: {}, raw: {}, res: null, items: [], fuera: [], db: {programas: [], tramos: [], recortes: []}, libSrc: '', libMsg: ''};
+let MEAS = (() => { try{ return JSON.parse(localStorage.getItem('mt-meas') || '{}'); }catch(e){ return {}; } })();
+const saveMeas = () => { try{ localStorage.setItem('mt-meas', JSON.stringify(MEAS)); }catch(e){} };
+
+/* ======================= Backend (Apps Script o local) ======================= */
+const API = {
+  on: () => !!CFG.apiUrl,
+  jsonp(params, timeout){
+    return new Promise((ok, ko) => {
+      const cb = 'mt_cb_' + Date.now() + '_' + Math.floor(Math.random()*1e6), sc = document.createElement('script');
+      const t = setTimeout(() => { delete window[cb]; sc.remove(); ko(new Error('Sin respuesta del servidor')); }, timeout || 60000);
+      window[cb] = d => { clearTimeout(t); delete window[cb]; sc.remove(); d && d.error ? ko(new Error(d.error)) : ok(d); };
+      const q = new URLSearchParams(Object.assign({}, params, {callback: cb}));
+      sc.src = CFG.apiUrl + (CFG.apiUrl.includes('?') ? '&' : '?') + q; sc.onerror = () => { clearTimeout(t); delete window[cb]; ko(new Error('No se pudo conectar con Apps Script')); };
+      document.body.appendChild(sc);
+    });
+  },
+  async post(body){ await fetch(CFG.apiUrl, {method: 'POST', mode: 'no-cors', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify(body)}); },
+  async cargar(){
+    if(!this.on()){ try{ S.db = JSON.parse(localStorage.getItem('mt-db') || 'null') || {programas: [], tramos: [], recortes: []}; }catch(e){} return; }
+    const d = await this.jsonp({action: 'estado'});
+    S.db = {programas: d.programas || [], tramos: (d.tramos || []).map(t => Object.assign(t, {piezas: typeof t.piezas === 'string' ? JSON.parse(t.piezas || '[]') : t.piezas})), recortes: d.recortes || []};
+    S.db.recortes.forEach(r => r.largo = +r.largo);
+  },
+  /* upsert de filas por id; ts '__NOW__' lo pone el servidor */
+  async upsert(tabla, filas){
+    const now = Date.now();
+    const loc = filas.map(f => { const o = Object.assign({}, f); for(const k in o) if(o[k] === '__NOW__') o[k] = now; return o; });
+    const arr = S.db[tabla]; loc.forEach(f => { const i = arr.findIndex(x => x.id === f.id); if(i >= 0) arr[i] = Object.assign(arr[i], f); else arr.push(f); });
+    if(!this.on()){ try{ localStorage.setItem('mt-db', JSON.stringify(S.db)); }catch(e){ toast('No se pudo guardar en el navegador', 'er'); } return; }
+    const send = filas.map(f => tabla === 'tramos' && f.piezas ? Object.assign({}, f, {piezas: JSON.stringify(f.piezas)}) : f);
+    for(let i = 0; i < send.length; i += 40) await this.post({op: 'upsert', tabla, filas: send.slice(i, i + 40)});
+  },
+  async biblioteca(refrescar){ return this.jsonp({action: 'biblioteca', refrescar: refrescar ? 1 : 0}, 330000); },
+  async archivo(id){ const d = await this.jsonp({action: 'archivo', id}, 120000); const bin = atob(d.b64), u = new Uint8Array(bin.length); for(let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return gunzipAll(u.buffer); }
+};
+function setConn(){ const c = $('conn'); if(API.on()){ c.className = 'conn ok'; c.textContent = '☁ Apps Script'; } else { c.className = 'conn wa'; c.textContent = '💻 Solo este navegador'; } }
+
+/* ======================= Programa de producción ======================= */
+function leerPrograma(buf, name){
+  const wb = XLSX.read(buf, {type: 'array', cellDates: true});
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header: 1, defval: '', raw: true});
+  const hi = rows.findIndex(r => r.some(c => /RUTA/i.test(c)) && r.some(c => /^CANTIDAD$/i.test(String(c).trim())));
+  if(hi < 0) throw new Error('No encontré las columnas "Nº ruta" y "Cantidad"');
+  const H = rows[hi].map(c => norm(c).trim()), col = re => H.findIndex(h => re.test(h));
+  const cOP = col(/^N[º°O]?\.?$/), cR = col(/RUTA/), cQ = col(/^CANTIDAD$/), cI = col(/FECHA.?HORA INICIAL|HORA INICIAL|FECHA INICIAL|INICIO/), cD = col(/DESCRIPCI/), cC = col(/PROCEDENCIA/);
+  const ops = [];
+  rows.slice(hi + 1).forEach((r, i) => {
+    const ruta = String(r[cR] ?? '').trim(); if(!ruta) return;
+    let ini = cI >= 0 ? r[cI] : null; ini = ini instanceof Date ? ini.getTime() : (typeof ini === 'number' ? Math.round((ini - 25569)*864e5) : (Date.parse(ini) || null));
+    ops.push({op: String(r[cOP] ?? '').trim() || 'Fila ' + (hi + i + 2), ruta, cant: +r[cQ] || 0, inicio: ini, desc: cD >= 0 ? String(r[cD]) : '', cod: cC >= 0 ? String(r[cC]) : '', idx: i});
+  });
+  return ops;
+}
+
+/* ======================= Biblioteca ======================= */
+function vigentes(){
+  // por ruta+pieza: la versión más alta; empates sin elección → excluidos y marcados
+  const g = {}; S.lib.forEach(f => { if(!f.p.ok && !f.p.ruta) return; if(f.p.excluir) return; const k = norm(f.p.ruta) + '|' + norm(f.p.pieza); (g[k] = g[k] || []).push(f); });
+  const vig = [], conflictos = [];
+  for(const [k, l] of Object.entries(g)){
+    const vmax = Math.max(...l.map(f => f.p.v)), top = l.filter(f => f.p.v === vmax);
+    l.forEach(f => { f.estadoVer = f.p.v < vmax ? 'anterior' : ''; });
+    if(top.length === 1) vig.push(top[0]);
+    else { const e = ELEC[k] && top.find(f => f.id === ELEC[k]);
+      if(e){ vig.push(e); top.filter(f => f !== e).forEach(f => f.estadoVer = 'descartado'); }
+      else { top.forEach(f => f.estadoVer = 'empate'); conflictos.push({k, files: top}); } }
+  }
+  return {vig, conflictos};
+}
+function medKey(f){ return 'v2|' + f.id + '|' + (f.modified || f.size || ''); }
+const endTxt = e => !e ? '—' : e.recto ? 'Recto' : e.inglete ? `Inglete ${e.angulo}°` : `Especial (${f1(e.prof ?? e.profundidad)} mm)`;
+function evalPieza(f){
+  const p = f.p, m = MEAS[medKey(f)];
+  const r = {lv: 'ok', notas: []};
+  if(!p.ok){ r.lv = 'er'; r.notas.push(...p.errores); }
+  if(!m){ r.lv = r.lv === 'er' ? 'er' : 'in'; r.notas.push('Sin leer'); return r; }
+  if(m.error){ r.lv = 'er'; r.notas.push(m.error); return r; }
+  if(!p.med){ r.lv = r.lv === 'er' ? 'er' : 'wa'; r.notas.push('El nombre no trae la medida; se usó la sección del IGS'); }
+  else if(Math.abs(m.secA - p.med.b) > CFG.tolSeccion || Math.abs(m.secB - p.med.a) > CFG.tolSeccion){ r.lv = 'er'; r.notas.push(`La sección del IGS (${f1(m.secA)} × ${f1(m.secB)} mm) no coincide con el nombre (${f1(p.med.b)} × ${f1(p.med.a)} mm)`); }
+  if(m.units && !/MM|MILLIM/.test(m.units)) r.notas.push('Unidades ' + m.units + ' (convertidas a mm)');
+  if(!m.combinable){ r.lv = r.lv === 'er' ? 'er' : 'wa'; r.notas.push('Entidades no soportadas para el IGS combinado: ' + Object.keys(m.unsup).join(', ')); }
+  if(m.wall != null && f.p.cal && CFG.calibres[f.p.cal] && Math.abs(m.wall - CFG.calibres[f.p.cal]) > 0.15){ r.lv = r.lv === 'er' ? 'er' : 'wa'; r.notas.push(`Pared medida ${f2(m.wall)} mm; el calibre ${f.p.cal} es ${f2(CFG.calibres[f.p.cal])} mm`); }
+  if(m.len + CFG.refr + CFG.chuck > CFG.tramo){ r.lv = 'er'; r.notas.push(`Mide ${f0(m.len)} mm: no cabe en el tramo útil de ${f0(CFG.tramo - CFG.chuck - CFG.refr)} mm`); }
+  return r;
+}
+function medidaEfectiva(f){ const m = MEAS[medKey(f)]; if(f.p.med) return f.p.med; if(m && m.ok) return {forma: Math.abs(m.secA - m.secB) < 0.3 ? 'CUAD' : 'RECT', a: m.secB, b: m.secA, pulg: false, geo: true}; return null; }
+async function textoDe(f){
+  if(S.raw[f.id]) return S.raw[f.id];
+  let txt;
+  if(f.file) txt = await gunzipAll(await f.file.arrayBuffer());
+  else txt = await API.archivo(f.id);
+  S.raw[f.id] = txt; return txt;
+}
+async function medir(lista){
+  let n = 0, i = 0; const tot = lista.length;
+  const worker = async () => { while(i < lista.length){ const f = lista[i++];
+    try{ const txt = await textoDe(f); const nom = f.p.med ? [f.p.med.a, f.p.med.b] : null; const a = IGES.inspect(txt, nom, f.p.med && f.p.med.forma);
+      const um = IGES.parse(txt).unitFlag, k = um === 1 ? 25.4 : um === 4 ? 1000 : um === 10 ? 10 : 1;
+      MEAS[medKey(f)] = a.ok ? {ok: true, len: a.len*k, secA: a.secA*k, secB: a.secB*k, combinable: a.combinable, unsup: a.unsup, units: a.units, k,
+        wall: a.wall != null ? +(a.wall*k).toFixed(2) : null, ends: a.ends.map(e => ({recto: e.recto, inglete: !!e.inglete, angulo: e.angulo, prof: +(e.profundidad*k).toFixed(1)})), nFeat: a.feats.length} : {error: a.error};
+    }catch(e){ MEAS[medKey(f)] = {error: 'No se pudo leer: ' + e.message}; }
+    n++; S.libMsg = `Leyendo IGS ${n}/${tot}…`; if(n % 3 === 0 || n === tot) renderLib(); } };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  saveMeas(); S.libMsg = '';
+}
+async function cargarBibliotecaDrive(refrescar){
+  if(!API.on()) return toast('Configura primero la URL de Apps Script', 'er');
+  S.libMsg = refrescar ? 'Recorriendo la biblioteca de Drive (puede tardar unos minutos)…' : 'Cargando biblioteca…'; renderLib();
+  try{ const d = await API.biblioteca(refrescar);
+    S.lib = (d.archivos || []).map(a => ({id: a.id, name: a.nombre, path: a.ruta, size: a.tam, modified: a.modificado, p: parseNombre(a.nombre, a.ruta)}));
+    S.libSrc = 'Drive · actualizado ' + (d.actualizado ? new Date(d.actualizado).toLocaleString('es-MX') : '');
+    S.libMsg = ''; renderLib(); await medirNecesarios(); }
+  catch(e){ S.libMsg = ''; toast(e.message, 'er'); renderLib(); }
+}
+async function medirNecesarios(){
+  const {vig} = vigentes(); const rutas = new Set(S.ops.map(o => norm(o.ruta)));
+  const need = vig.filter(f => (!S.ops.length || rutas.has(norm(f.p.ruta))) && !MEAS[medKey(f)]);
+  if(need.length) await medir(need);
+  explotar(); renderAll();
+}
+function cargarLocal(files){
+  const arr = [...files].filter(f => /\.(igs|iges)(\.gz)*$/i.test(f.name));
+  if(!arr.length) return toast('No encontré archivos .igs', 'er');
+  arr.forEach(file => { const id = 'L:' + (file.webkitRelativePath || file.name); const prev = S.lib.findIndex(x => x.id === id);
+    const it = {id, name: file.name, path: file.webkitRelativePath || '', size: file.size, modified: file.lastModified, file, p: parseNombre(file.name, file.webkitRelativePath)};
+    if(prev >= 0) S.lib[prev] = it; else S.lib.push(it); delete S.raw[id]; });
+  S.libSrc = 'Archivos de este equipo'; toast(arr.length + ' IGS cargados'); medirNecesarios();
+}
+
+/* ======================= Explosión del programa ======================= */
+function explotar(){
+  S.items = []; S.fuera = []; S.sinTub = [];
+  const {vig} = vigentes(); const porRuta = {};
+  vig.forEach(f => (porRuta[norm(f.p.ruta)] = porRuta[norm(f.p.ruta)] || []).push(f));
+  let uid = 0;
+  S.ops.forEach(o => {
+    const pz = porRuta[norm(o.ruta)];
+    if(!pz){ S.sinTub.push(o); return; }
+    pz.forEach(f => {
+      const ev = evalPieza(f), m = MEAS[medKey(f)], med = medidaEfectiva(f);
+      const n = o.cant*f.p.n;
+      if(ev.lv === 'er' || ev.lv === 'in' || !med || !m || !m.ok){ S.fuera.push({o, f, n, motivo: ev.notas.join(' · ') || 'Sin medida'}); return; }
+      const t = tipoDe(med, f.p.cal);
+      for(let i = 0; i < n; i++) S.items.push({uid: uid++, tipo: t.key, tipoLabel: t.label, tipoCorto: t.corto, L: m.len, prio: (o.inicio || 0) + o.idx, op: o.op, ruta: f.p.ruta, pieza: f.p.pieza, fileId: f.id, med, cal: f.p.cal});
+    });
+  });
+}
+const TIPOS = () => { const t = {}; S.items.forEach(i => t[i.tipo] = t[i.tipo] || {key: i.tipo, label: i.tipoLabel, corto: i.tipoCorto, med: i.med, cal: i.cal}); (S.db.recortes || []).forEach(r => { if(!t[r.tipo]) t[r.tipo] = {key: r.tipo, label: r.tipoLabel || r.tipo, corto: r.tipoCorto || r.tipo}; }); return t; };
+
+/* ======================= Optimización ======================= */
+function generar(){
+  if(!S.items.length) return toast('No hay piezas de tubular para el programa', 'er');
+  const recDisp = (S.db.recortes || []).filter(r => r.estado === 'Disponible').map(r => ({id: r.id, tipo: r.tipo, largo: +r.largo}));
+  const c = {tramo: CFG.tramo, chuck: CFG.chuck, refr: CFG.refr, kerf: CFG.kerf, minRem: CFG.minRem, modo: CFG.modo, ventana: CFG.ventana};
+  const res = OPT.run(S.items, CFG.usarRecortes === false ? [] : recDisp, c);
+  const pid = 'MT-' + hoyId(), T = TIPOS();
+  res.forEach(g => { const t = T[g.tipo]; g.label = t.label; g.corto = t.corto; g.kgm = kgPorM(t.med, t.cal);
+    g.bars.forEach((b, i) => { b.id = `${pid}-${t.corto}-${String(i + 1).padStart(2, '0')}`; b.tipoLabel = t.label;
+      if(b.recorte) b.recorteNuevo = 'R' + t.corto + '-' + Date.now().toString(36).slice(-4).toUpperCase() + String(i + 1).padStart(2, '0'); }); });
+  S.res = {id: pid, fecha: Date.now(), cfg: c, grupos: res, archivo: S.progFile, guardado: false};
+  showTab('mult'); toast('Múltiples generados');
+}
+async function guardarPrograma(){
+  const R = S.res; if(!R) return; if(R.guardado) return toast('Este programa ya está guardado', 'in');
+  const tramos = [], recNuevos = [], recUsados = [];
+  R.grupos.forEach(g => g.bars.forEach((b, i) => {
+    tramos.push({id: b.id, programa: R.id, tipo: g.tipo, tipoLabel: g.label, orden: i + 1, largo: b.P, origen: b.origen, recorteUsado: b.recorteId || '', recorteNuevo: b.recorteNuevo || '', largoRecorte: b.recorte, consumo: b.consumo, aprov: b.aprov, estado: 'Pendiente', inicio: '', fin: '',
+      piezas: b.piezas.map(p => ({x: +p.x.toFixed(1), L: +p.L.toFixed(1), op: p.op, ruta: p.ruta, pieza: p.pieza, fileId: p.fileId, consumo: +p.consumo.toFixed(1)}))});
+    if(b.recorteId) recUsados.push({id: b.recorteId, estado: 'Reservado', programa: R.id, tramo: b.id});
+    if(b.recorteNuevo) recNuevos.push({id: b.recorteNuevo, tipo: g.tipo, tipoLabel: g.label, tipoCorto: g.corto, largo: b.recorte, estado: 'Por generar', origen: b.id, programa: R.id, ubicacion: '', alta: '__NOW__'});
+  }));
+  const tot = R.grupos.reduce((s, g) => (s.tramos += g.tot.tramos, s.piezas += g.tot.piezas, s), {tramos: 0, piezas: 0});
+  try{
+    await API.upsert('programas', [{id: R.id, fecha: '__NOW__', archivo: R.archivo || '', tramos: tot.tramos, piezas: tot.piezas, ops: [...new Set(S.items.map(i => i.op))].join(', '), resumen: JSON.stringify(R.grupos.map(g => ({tipo: g.tipo, label: g.label, ...g.tot}))), estado: 'Pendiente'}]);
+    await API.upsert('tramos', tramos);
+    if(recUsados.length) await API.upsert('recortes', recUsados);
+    if(recNuevos.length) await API.upsert('recortes', recNuevos);
+    R.guardado = true; toast('Programa ' + R.id + ' guardado'); if(API.on()) setTimeout(() => API.cargar().then(renderAll), 2500); renderAll();
+  }catch(e){ toast('No se pudo guardar: ' + e.message, 'er'); }
+}
+
+/* ======================= IGS combinado y hoja de corte ======================= */
+async function igsTramo(bar, label){
+  const items = [];
+  for(const p of bar.piezas){
+    const f = S.lib.find(x => x.id === p.fileId); if(!f) throw new Error('No está cargado el IGS de ' + p.pieza + ' (' + p.ruta + ')');
+    const txt = await textoDe(f); const nom = f.p.med ? [f.p.med.a, f.p.med.b] : null;
+    const a = IGES.analyze(txt, nom); if(!a.ok) throw new Error(p.pieza + ': ' + a.error);
+    if(!a.combinable) throw new Error(p.pieza + ': tiene entidades no soportadas (' + Object.keys(a.unsup).join(', ') + ')');
+    const k = a.model.unitFlag === 1 ? 25.4 : 1; if(k !== 1) throw new Error(p.pieza + ': el IGS está en pulgadas; pídelo en mm');
+    items.push({model: a.model, M: IGES.placement(a, p.x)});
+  }
+  return IGES.combine(items, {maxCoord: bar.P, file: bar.id + '.igs', product: bar.id, title: `${bar.id} ${label || ''} tramo ${bar.P} mm`.slice(0, 72)});
+}
+async function descargarTramo(bar, label, registrar){
+  try{ toast('Armando IGS de ' + bar.id + '…', 'in'); const txt = await igsTramo(bar, label); dl(bar.id + '.igs', txt, 'application/iges');
+    if(registrar) await iniciarCorte(bar.id); }
+  catch(e){ toast(e.message, 'er'); }
+}
+function svgBar(b, colorOf, opts){
+  opts = opts || {}; const W = 1000, H = 46, T = b.P, sc = W/Math.max(T, CFG.tramo), ch = CFG.chuck;
+  let s = `<svg viewBox="-2 -2 ${W + 4} ${H + 22}" role="img" aria-label="Tramo ${esc(b.id)}"><rect x="0" y="0" width="${T*sc}" height="${H}" rx="3" fill="var(--tube)" stroke="var(--mut)" stroke-width="1"/>`;
+  s += `<defs><pattern id="hR" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="#c0dd97"/><line x1="0" y1="0" x2="0" y2="7" stroke="#639922" stroke-width="2"/></pattern>
+    <pattern id="hD" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="#e8e6df"/><line x1="0" y1="0" x2="0" y2="7" stroke="#b4b2a9" stroke-width="2"/></pattern></defs>`;
+  b.piezas.forEach(p => { const x = p.x*sc, w = p.L*sc, c = colorOf(p);
+    s += `<rect x="${x}" y="2" width="${Math.max(w, 1)}" height="${H - 4}" fill="${c}" stroke="#2c2c2a" stroke-width=".8"><title>${esc(p.pieza)} · ${esc(p.ruta)} · ${esc(p.op)} · ${f1(p.L)} mm</title></rect>`;
+    if(w > 46) s += `<text x="${x + w/2}" y="${H/2 - 2}" font-size="11" text-anchor="middle" fill="#1f1f1d">${esc(p.pieza.length*6 > w ? p.pieza.slice(0, Math.max(3, Math.floor(w/6.5))) + '…' : p.pieza)}</text><text x="${x + w/2}" y="${H/2 + 12}" font-size="10" text-anchor="middle" fill="#444441">${f0(p.L)}</text>`; });
+  const used = b.usado, rec = b.recorte || 0;
+  if(rec){ const x0 = used*sc, w = (T - used)*sc; s += `<rect x="${x0}" y="2" width="${w}" height="${H - 4}" fill="url(#hR)"/>`; if(w > 60) s += `<text x="${x0 + w/2}" y="${H/2 + 4}" font-size="11" text-anchor="middle" fill="#27500a">♻ ${esc(b.recorteNuevo || 'recorte')} ${f0(rec)}</text>`; }
+  else { const x0 = used*sc, w = Math.max(0, (T - ch - used)*sc); if(w > 0){ s += `<rect x="${x0}" y="2" width="${w}" height="${H - 4}" fill="url(#hD)"/>`; if(w > 50) s += `<text x="${x0 + w/2}" y="${H/2 + 4}" font-size="10" text-anchor="middle" fill="#5f5e5a">sobra ${f0(T - ch - used)}</text>`; }
+    s += `<rect x="${(T - ch)*sc}" y="2" width="${ch*sc}" height="${H - 4}" fill="var(--chuck)"/>`; if(ch*sc > 40) s += `<text x="${(T - ch/2)*sc}" y="${H/2 + 4}" font-size="10" text-anchor="middle" fill="#fff">chuck</text>`; }
+  s += `<text x="0" y="${H + 16}" font-size="11" fill="var(--mut)">${b.origen === 'recorte' ? '♻ Recorte ' + esc(b.recorteId) + ' · ' : ''}${f0(T)} mm · ${b.piezas.length} pzas · usado ${f0(used)} mm · aprovechamiento ${pct(b.aprov)}</text></svg>`;
+  return s;
+}
+function colorMap(){ const keys = [...new Set(S.items.map(i => i.ruta + '|' + i.pieza))]; (S.db.tramos || []).forEach(t => (t.piezas || []).forEach(p => { const k = p.ruta + '|' + p.pieza; if(!keys.includes(k)) keys.push(k); }));
+  return p => PAL[keys.indexOf(p.ruta + '|' + p.pieza) % PAL.length] || PAL[0]; }
+function hojaCorte(titulo, bars){
+  const col = colorMap();
+  const html = `<div style="font:12px system-ui;color:#000;padding:10px"><h2 style="margin:0 0 4px">${esc(titulo)}</h2><div style="color:#555;margin-bottom:10px">Tramo nuevo ${f0(CFG.tramo)} mm · chuck ${f0(CFG.chuck)} mm · refrentado ${CFG.refr} mm · separación ${CFG.kerf} mm · impreso ${new Date().toLocaleString('es-MX')}</div>
+  ${bars.map(b => `<div style="page-break-inside:avoid;border:1px solid #999;border-radius:6px;padding:8px;margin-bottom:10px"><b style="font-size:14px">${esc(b.id)}</b> · ${esc(b.tipoLabel || '')} · ${b.origen === 'recorte' ? '<b>USAR RECORTE ' + esc(b.recorteId) + '</b> (' + f0(b.P) + ' mm)' : 'Tramo nuevo ' + f0(b.P) + ' mm'}
+  <div style="margin:6px 0">${svgBar(b, col)}</div>
+  <table style="width:100%;border-collapse:collapse;font-size:12px"><tr>${['#', 'Desde (mm)', 'Largo (mm)', 'Pieza', 'Ruta', 'OP'].map(h => `<th style="border-bottom:1px solid #999;text-align:left;padding:2px 4px">${h}</th>`).join('')}</tr>
+  ${b.piezas.map((p, i) => `<tr><td style="padding:2px 4px">${i + 1}</td><td>${f1(p.x)}</td><td>${f1(p.L)}</td><td>${esc(p.pieza)}</td><td>${esc(p.ruta)}</td><td>${esc(p.op)}</td></tr>`).join('')}</table>
+  <div style="margin-top:6px">${b.recorte ? `♻ <b>Guardar recorte ${esc(b.recorteNuevo)}</b>: ${f0(b.recorte)} mm (marcar el ID en el tubo) ` : `Sobrante a desecho: ${f0(b.P - b.usado)} mm (incluye chuck)`}</div></div>`).join('')}</div>`;
+  const pa = $('printArea'); pa.innerHTML = html; pa.style.display = 'block'; setTimeout(() => { window.print(); pa.style.display = 'none'; }, 50);
+}
+
+/* ======================= Seguimiento de corte ======================= */
+async function iniciarCorte(id){
+  const t = S.db.tramos.find(x => x.id === id); if(!t) return;
+  if(t.estado === 'En proceso' || t.estado === 'Cortado'){ renderAll(); return; } // una descarga repetida no reinicia el reloj
+  const abiertos = S.db.tramos.filter(x => x.estado === 'En proceso' && x.id !== id);
+  for(const a of abiertos) await terminarCorte(a.id, true);
+  await API.upsert('tramos', [{id, estado: 'En proceso', inicio: '__NOW__'}]); renderAll();
+}
+async function terminarCorte(id, silencioso){
+  const t = S.db.tramos.find(x => x.id === id); if(!t) return;
+  await API.upsert('tramos', [{id, estado: 'Cortado', fin: '__NOW__', inicio: t.inicio || '__NOW__'}]);
+  const r = [];
+  if(t.recorteNuevo) r.push({id: t.recorteNuevo, estado: 'Disponible', disponibleDesde: '__NOW__'});
+  if(t.recorteUsado) r.push({id: t.recorteUsado, estado: 'Usado', usadoEn: t.id});
+  if(r.length) await API.upsert('recortes', r);
+  const prog = S.db.programas.find(p => p.id === t.programa);
+  if(prog){ const ts = S.db.tramos.filter(x => x.programa === prog.id); const est = ts.every(x => x.estado === 'Cortado') ? 'Cortado' : 'En proceso'; if(prog.estado !== est) await API.upsert('programas', [{id: prog.id, estado: est}]); }
+  if(!silencioso){ toast('Tramo ' + id + ' cortado' + (t.recorteNuevo ? ' · recorte ' + t.recorteNuevo + ' disponible' : '')); renderAll(); }
+}
+
+/* ======================= Consumos ======================= */
+function consumos(){
+  // del programa generado en pantalla o, si no hay, de los tramos guardados del programa elegido
+  let bars = [];
+  if(S.res) S.res.grupos.forEach(g => g.bars.forEach(b => bars.push(Object.assign({tipo: g.tipo, label: g.label, kgm: g.kgm}, b))));
+  const T = TIPOS(), porPieza = {}, porTipo = {}, porOP = {};
+  bars.forEach(b => {
+    const kgm = b.kgm || null, tt = porTipo[b.tipo] = porTipo[b.tipo] || {tipo: b.label, kgm, tramos: 0, recUsados: 0, mmRecUsados: 0, recGen: 0, mmRecGen: 0, consumo: 0, piezas: 0, mmPiezas: 0, desecho: 0};
+    if(b.origen === 'nuevo') tt.tramos++; else { tt.recUsados++; tt.mmRecUsados += b.P; }
+    if(b.recorte){ tt.recGen++; tt.mmRecGen += b.recorte; }
+    tt.consumo += b.consumo; tt.desecho += b.desecho;
+    b.piezas.forEach(p => { tt.piezas++; tt.mmPiezas += p.L;
+      const k = p.ruta + '|' + p.pieza + '|' + b.tipo, e = porPieza[k] = porPieza[k] || {ruta: p.ruta, pieza: p.pieza, tipo: b.label, kgm, L: p.L, n: 0, consumo: 0};
+      e.n++; e.consumo += p.consumo;
+      const ko = p.op + '|' + b.tipo, o = porOP[ko] = porOP[ko] || {op: p.op, ruta: p.ruta, tipo: b.label, kgm, n: 0, mm: 0, consumo: 0}; o.n++; o.mm += p.L; o.consumo += p.consumo; });
+  });
+  return {porPieza: Object.values(porPieza).sort((a, b) => a.ruta.localeCompare(b.ruta) || a.pieza.localeCompare(b.pieza)), porTipo: Object.values(porTipo), porOP: Object.values(porOP).sort((a, b) => a.op.localeCompare(b.op)), hay: bars.length > 0};
+}
+function exportarConsumos(){
+  if(!window.XLSX) return toast('No cargó la librería de Excel (requiere internet)', 'er');
+  const C = consumos(); if(!C.hay) return toast('Genera primero los múltiples', 'er');
+  const T = CFG.tramo, wb = XLSX.utils.book_new();
+  const add = (n, rows) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{Nota: 'Sin datos'}]), n);
+  add('Por pieza', C.porPieza.map(e => ({Ruta: e.ruta, Pieza: e.pieza, Tubular: e.tipo, 'Largo pieza mm': +e.L.toFixed(1), 'Piezas': e.n, 'Consumo real mm/pz': +(e.consumo/e.n).toFixed(1), 'TRA/pz': +(e.consumo/e.n/T).toFixed(4), 'kg/pz': e.kgm ? +(e.consumo/e.n/1000*e.kgm).toFixed(3) : '', 'Aprovechamiento': +(e.L*e.n/e.consumo).toFixed(3)})));
+  add('Por tubular', C.porTipo.map(t => ({Tubular: t.tipo, 'Tramos nuevos': t.tramos, 'Recortes usados': t.recUsados, 'mm de recortes usados': Math.round(t.mmRecUsados), 'Recortes generados': t.recGen, 'mm de recortes generados': Math.round(t.mmRecGen), 'Consumo neto mm': Math.round(t.consumo), 'Tramos equivalentes': +(t.consumo/T).toFixed(3), 'kg': t.kgm ? +(t.consumo/1000*t.kgm).toFixed(2) : '', 'Piezas': t.piezas, 'Aprovechamiento': +(t.mmPiezas/t.consumo).toFixed(3), 'Desecho mm': Math.round(t.desecho)})));
+  add('Por OP', C.porOP.map(o => ({OP: o.op, Ruta: o.ruta, Tubular: o.tipo, Piezas: o.n, 'Largo de piezas mm': Math.round(o.mm), 'Consumo real mm': Math.round(o.consumo), 'Tramos equivalentes': +(o.consumo/T).toFixed(4), kg: o.kgm ? +(o.consumo/1000*o.kgm).toFixed(3) : ''})));
+  if(S.res) add('Tramos', S.res.grupos.flatMap(g => g.bars.map(b => ({Tramo: b.id, Tubular: g.label, Origen: b.origen === 'recorte' ? 'Recorte ' + b.recorteId : 'Nuevo', 'Largo mm': b.P, Piezas: b.piezas.map(p => `${p.pieza} (${p.ruta}) ${f1(p.L)}`).join(' | '), 'Usado mm': Math.round(b.usado), 'Recorte generado': b.recorteNuevo || '', 'Largo recorte mm': b.recorte, 'Desecho mm': Math.round(b.desecho), Aprovechamiento: +b.aprov.toFixed(3)}))));
+  XLSX.writeFile(wb, `Consumos_tubular_${S.res ? S.res.id : hoyId()}.xlsx`);
+}
+
+/* ======================= Vistas ======================= */
+function renderProg(){
+  const el = $('t-prog'), O = S.ops;
+  const rutasLib = new Set(vigentes().vig.map(f => norm(f.p.ruta)));
+  el.innerHTML = `<div class="drop" id="dropProg">📥 Arrastra aquí el Excel <b>Órdenes producción planificadas</b> de Business Central<br><button id="pickProg" style="margin-top:8px">Elegir archivo</button><input type="file" id="inProg" hidden accept=".xlsx,.xls"></div>
+  ${O.length ? `<div class="kpis" style="margin-top:14px"><div class="kpi"><span>OPs</span><b>${O.length}</b></div><div class="kpi"><span>Rutas</span><b>${new Set(O.map(o => o.ruta)).size}</b></div><div class="kpi"><span>Muebles</span><b>${f0(O.reduce((s, o) => s + o.cant, 0))}</b></div>
+  <div class="kpi"><span>Rutas con tubular</span><b>${new Set(O.filter(o => rutasLib.has(norm(o.ruta))).map(o => o.ruta)).size}</b></div><div class="kpi"><span>Piezas de tubular</span><b>${f0(S.items.length)}</b></div></div>
+  <div class="card"><h3>${esc(S.progFile)}</h3><div class="tw"><table><tr><th>OP</th><th>Ruta</th><th>Descripción</th><th class="n">Cantidad</th><th>Inicio</th><th>Tubular</th></tr>
+  ${O.slice().sort((a, b) => (a.inicio || 0) - (b.inicio || 0) || a.idx - b.idx).map(o => { const n = S.items.filter(i => i.op === o.op && i.ruta === o.ruta).length, fu = S.fuera.filter(x => x.o === o);
+    return `<tr><td>${esc(o.op)}</td><td><b>${esc(o.ruta)}</b></td><td class="sm">${esc(o.desc)}</td><td class="n">${o.cant}</td><td class="sm">${fecha(o.inicio)}</td>
+    <td>${!rutasLib.has(norm(o.ruta)) ? badge('in', S.lib.length ? 'Sin piezas de tubular' : 'Carga la biblioteca') : badge('ok', n + ' piezas')} ${fu.length ? badge('er', fu.length + ' dibujo(s) con problema') : ''}</td></tr>`; }).join('')}</table></div></div>` : ''}`;
+  const z = $('dropProg'); ['dragenter', 'dragover'].forEach(ev => z.addEventListener(ev, e => { e.preventDefault(); z.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(ev => z.addEventListener(ev, e => { e.preventDefault(); z.classList.remove('over'); }));
+  z.addEventListener('drop', e => e.dataTransfer.files[0] && abrirPrograma(e.dataTransfer.files[0]));
+  $('pickProg').onclick = () => $('inProg').click(); $('inProg').onchange = e => e.target.files[0] && abrirPrograma(e.target.files[0]);
+}
+async function abrirPrograma(file){
+  try{ S.ops = leerPrograma(await file.arrayBuffer(), file.name); S.progFile = file.name; S.res = null; toast(S.ops.length + ' OPs leídas');
+    if(S.lib.length) await medirNecesarios(); else { explotar(); renderAll(); if(API.on()) cargarBibliotecaDrive(false); } }
+  catch(e){ toast(e.message, 'er'); }
+}
+function renderLib(){
+  const el = $('t-lib'); if(!el) return;
+  const {vig, conflictos} = vigentes(), rutas = new Set(S.ops.map(o => norm(o.ruta)));
+  const filt = S.libFilt || (S.ops.length ? 'programa' : 'todo');
+  const lista = S.lib.filter(f => filt === 'todo' || (filt === 'programa' ? rutas.has(norm(f.p.ruta || '')) : filt === 'problemas' ? (f.p.excluir || !f.p.ok || f.estadoVer === 'empate' || evalPieza(f).lv === 'er') : true));
+  const ev = vig.map(evalPieza), nOk = ev.filter(e => e.lv === 'ok').length;
+  lista.sort((a, b) => String(a.p.ruta || '').localeCompare(String(b.p.ruta || '')) || String(a.p.pieza || '').localeCompare(String(b.p.pieza || '')) || (b.p.v || 0) - (a.p.v || 0));
+  el.innerHTML = `<div class="card"><div class="row"><b style="flex:1">${S.libSrc ? '📚 ' + esc(S.libSrc) : 'Sin biblioteca cargada'}</b>
+  ${API.on() ? `<button class="pri" id="libDrive">☁ Leer biblioteca de Drive</button><button id="libRefresh" title="Vuelve a recorrer todas las carpetas de Drive">🔄 Recorrer de nuevo</button>` : `<span class="mut sm">Sin Apps Script: carga los IGS desde tu equipo</span>`}
+  <button id="libFiles">📁 IGS de este equipo</button><button id="libDir">📂 Carpeta completa</button>
+  <input type="file" id="inFiles" hidden multiple accept=".igs,.iges,.gz"><input type="file" id="inDir" hidden webkitdirectory multiple></div>
+  ${S.libMsg ? `<p class="mut">⏳ ${esc(S.libMsg)}</p>` : ''}
+  <p class="mut sm" style="margin:8px 0 0">Formato esperado: <code>RUTA_NPZAS_TUBULAR2X1_CAL20_PIEZA vN (fecha).igs.gz</code>. Se usa siempre la versión más alta de cada ruta + pieza; se ignoran cargas "(subiendo)" y la carpeta de prototipos.</p></div>
+  ${S.lib.length ? `<div class="kpis"><div class="kpi"><span>Archivos</span><b>${S.lib.length}</b></div><div class="kpi"><span>Dibujos vigentes</span><b>${vig.length}</b></div><div class="kpi"><span>Listos</span><b style="color:var(--ok)">${nOk}</b></div>
+  <div class="kpi"><span>Con problema</span><b style="color:var(--er)">${ev.filter(e => e.lv === 'er').length}</b></div><div class="kpi"><span>Empates de versión</span><b style="color:${conflictos.length ? 'var(--er)' : 'inherit'}">${conflictos.length}</b></div></div>
+  ${conflictos.length ? `<div class="card"><h3>⚠ Dos dibujos con la misma versión</h3><p class="mut sm">No hay regla segura para elegir; Ingeniería debe borrar el que sobra. Mientras, elige cuál usar:</p>
+    ${conflictos.map(c => `<div class="row" style="margin:6px 0"><b>${esc(c.files[0].p.ruta)} · ${esc(c.files[0].p.pieza)}</b>${c.files.map(f => `<button data-elec="${esc(c.k)}" data-id="${esc(f.id)}">${esc(f.p.n)} pz · ${esc(f.p.fecha)}</button>`).join('')}</div>`).join('')}</div>` : ''}
+  <div class="card"><div class="row" style="margin-bottom:8px">${[['programa', 'Rutas del programa'], ['problemas', 'Con problema'], ['todo', 'Todo']].map(([k, t]) => `<button data-lf="${k}" class="${k === filt ? 'pri' : ''}">${t}</button>`).join('')}<span class="mut sm">${lista.length} archivos</span></div>
+  <div class="tw"><table><tr><th>Ruta</th><th>Pieza</th><th class="n">Pz/mueble</th><th>Tubular (nombre)</th><th class="n">Largo IGS</th><th>Sección IGS</th><th class="n">Pared</th><th>Extremos</th><th>v</th><th>Estado</th><th></th></tr>
+  ${lista.slice(0, 800).map(f => { const m = MEAS[medKey(f)], e = f.p.excluir ? {lv: 'in', notas: [f.p.excluir]} : f.estadoVer === 'anterior' ? {lv: 'in', notas: ['Versión anterior (no se usa)']} : f.estadoVer === 'descartado' ? {lv: 'in', notas: ['Descartado en el empate']} : f.estadoVer === 'empate' ? {lv: 'er', notas: ['Empate de versión: elige cuál usar']} : evalPieza(f);
+    const t = f.p.med ? tipoDe(f.p.med, f.p.cal).label : (f.p.cal ? 'cal ' + f.p.cal + ' · sin medida' : '—');
+    return `<tr><td><b>${esc(f.p.ruta || '?')}</b></td><td>${esc(f.p.pieza || f.name)}<div class="mut sm">${esc(f.name)}</div></td><td class="n">${f.p.n ?? '—'}</td><td>${esc(t)}</td><td class="n">${m && m.ok ? f1(m.len) : '—'}</td><td class="sm">${m && m.ok ? f1(m.secA) + ' × ' + f1(m.secB) : '—'}</td><td class="n">${m && m.ok && m.wall != null ? f2(m.wall) : '—'}</td><td class="sm">${m && m.ok && m.ends ? m.ends.map(endTxt).join(' / ') : '—'}${m && m.nFeat ? `<div class="mut">${m.nFeat} barreno(s)/corte(s)</div>` : ''}</td><td>${f.p.v ?? ''}</td>
+    <td>${badge(e.lv, e.lv === 'ok' ? '✓ Listo' : e.lv === 'in' ? (e.notas[0] || 'Info') : e.lv === 'wa' ? 'Revisar' : 'Error')}${e.lv !== 'ok' && e.lv !== 'in' ? `<div class="sm">${esc(e.notas.join(' · '))}</div>` : ''}</td><td>${f.p.excluir ? '' : `<button data-ver="${esc(f.id)}" title="Ver y medir el IGS">📐</button>`}</td></tr>`; }).join('')}</table></div>
+  ${lista.length > 800 ? '<p class="mut sm">Se muestran los primeros 800.</p>' : ''}</div>` : ''}`;
+  if($('libDrive')) $('libDrive').onclick = () => cargarBibliotecaDrive(false);
+  if($('libRefresh')) $('libRefresh').onclick = () => cargarBibliotecaDrive(true);
+  $('libFiles').onclick = () => $('inFiles').click(); $('libDir').onclick = () => $('inDir').click();
+  $('inFiles').onchange = e => { cargarLocal(e.target.files); e.target.value = ''; }; $('inDir').onchange = e => { cargarLocal(e.target.files); e.target.value = ''; };
+  el.querySelectorAll('[data-lf]').forEach(b => b.onclick = () => { S.libFilt = b.dataset.lf; renderLib(); });
+  el.querySelectorAll('[data-ver]').forEach(b => b.onclick = () => abrirVisor(S.lib.find(f => f.id === b.dataset.ver)));
+  el.querySelectorAll('[data-elec]').forEach(b => b.onclick = () => { ELEC[b.dataset.elec] = b.dataset.id; saveElec(); medirNecesarios(); });
+}
+function renderMult(){
+  const el = $('t-mult'), R = S.res, col = colorMap();
+  const cfgBar = `<div class="card"><div class="row">
+    <label class="cfl" style="flex-direction:row;align-items:center;gap:6px">Criterio <select id="mMode"><option value="prio" ${CFG.modo === 'prio' ? 'selected' : ''}>Prioridad por hora de inicio de OP</option><option value="max" ${CFG.modo === 'max' ? 'selected' : ''}>Máximo aprovechamiento (todo junto)</option></select></label>
+    ${CFG.modo === 'prio' ? `<label class="cfl" style="flex-direction:row;align-items:center;gap:6px" title="Cuántos tramos de piezas siguientes se consideran para llenar cada tramo">Ventana <input type="number" id="mWin" min="1" max="20" step="1" value="${CFG.ventana}" style="width:60px"> tramos</label>` : ''}
+    <label class="row sm" style="gap:4px"><input type="checkbox" id="mRec" ${CFG.usarRecortes === false ? '' : 'checked'}> Usar recortes del inventario (${(S.db.recortes || []).filter(r => r.estado === 'Disponible').length} disponibles)</label>
+    <span style="flex:1"></span><button class="pri" id="mGen" ${S.items.length ? '' : 'disabled'}>⚙ Generar múltiples</button></div>
+    <p class="mut sm" style="margin:8px 0 0">Tramo ${f0(CFG.tramo)} mm − chuck ${f0(CFG.chuck)} − refrentado ${CFG.refr} = <b>${f0(CFG.tramo - CFG.chuck - CFG.refr)} mm útiles</b> · separación entre piezas ${CFG.kerf} mm · recorte útil mínimo ${f0(CFG.minRem)} mm. ${S.items.length ? f0(S.items.length) + ' piezas en ' + Object.keys(TIPOS()).filter(k => S.items.some(i => i.tipo === k)).length + ' tipos de tubular.' : 'Carga el programa y la biblioteca.'}</p></div>`;
+  if(!R){ el.innerHTML = cfgBar + (S.fuera.length ? fueraHtml() : ''); bindMult(); return; }
+  const tot = R.grupos.reduce((s, g) => { s.tr += g.tot.tramos; s.ru += g.tot.recUsados; s.rg += g.tot.recGenerados; s.c += g.tot.consumo; s.l += g.tot.largoPiezas; s.kg += g.kgm ? g.tot.consumo/1000*g.kgm : 0; s.p += g.tot.piezas; return s; }, {tr: 0, ru: 0, rg: 0, c: 0, l: 0, kg: 0, p: 0});
+  el.innerHTML = cfgBar + `<div class="kpis"><div class="kpi"><span>Tramos nuevos</span><b>${tot.tr}</b></div><div class="kpi"><span>Recortes reutilizados</span><b style="color:var(--ok)">${tot.ru}</b></div>
+  <div class="kpi"><span>Recortes que se generan</span><b>${tot.rg}</b></div><div class="kpi"><span>Aprovechamiento</span><b>${pct(tot.l/tot.c)}</b></div><div class="kpi"><span>Consumo real</span><b>${f2(tot.kg)} kg</b><span>${f2(tot.c/CFG.tramo)} tramos equivalentes</span></div></div>
+  <div class="card"><div class="row"><b style="flex:1">${esc(R.id)} ${R.guardado ? badge('ok', 'Guardado') : badge('wa', 'Sin guardar')}</b>
+  <button id="mPrint">🖨 Hoja de corte</button><button id="mXls">📊 Consumos (Excel)</button><button class="pri" id="mSave" ${R.guardado ? 'disabled' : ''}>💾 Aprobar y guardar</button></div>
+  <p class="mut sm" style="margin:6px 0 0">Al guardar, los recortes usados quedan reservados y los nuevos se registran "Por generar"; pasan a Disponible cuando el tramo se marca cortado en "Corte en piso".</p></div>
+  ${R.grupos.map((g, gi) => `<details class="card" open><summary><b>${esc(g.label)}</b> ${badge('in', g.tot.tramos + ' tramos nuevos')} ${g.tot.recUsados ? badge('ok', '♻ ' + g.tot.recUsados + ' recortes') : ''} ${badge(g.tot.aprov > .9 ? 'ok' : g.tot.aprov > .8 ? 'wa' : 'er', 'Aprovechamiento ' + pct(g.tot.aprov))}
+    <span class="mut sm">${g.tot.piezas} pzas · ${f2(g.tot.consumo/CFG.tramo)} tramos eq.${g.kgm ? ' · ' + f2(g.tot.consumo/1000*g.kgm) + ' kg' : ''}</span>${g.largas.length ? badge('er', g.largas.length + ' piezas no caben') : ''}</summary>
+    <div class="legend" style="margin-top:10px">${[...new Map(g.bars.flatMap(b => b.piezas).map(p => [p.ruta + '|' + p.pieza, p])).values()].map(p => `<span><i style="background:${col(p)}"></i>${esc(p.pieza)} <span class="mut">${esc(p.ruta)} · ${f0(p.L)}</span></span>`).join('')}</div>
+    ${agrupar(g.bars).map(x => `<div class="bar"><div class="barhd"><b>${esc(x.b.id)}${x.n > 1 ? ` … ×${x.n} iguales` : ''}</b><span class="mut">${esc([...new Set(x.b.piezas.map(p => p.op))].join(', '))}</span><span style="flex:1"></span>
+      <button data-igs="${gi}|${g.bars.indexOf(x.b)}" title="IGS con las piezas acomodadas a lo largo del tubo">⬇ IGS</button><button data-hoja="${gi}|${g.bars.indexOf(x.b)}">🖨</button></div>${svgBar(x.b, col)}</div>`).join('')}
+    ${g.largas.length ? `<p style="color:var(--er)" class="sm">No caben en el tramo útil: ${[...new Set(g.largas.map(p => p.pieza + ' (' + f0(p.L) + ' mm)'))].map(esc).join(', ')}</p>` : ''}</details>`).join('')}
+  ${S.fuera.length ? fueraHtml() : ''}`;
+  bindMult();
+}
+function resumenPiezas(pz){ const m = new Map(); (pz || []).forEach(x => { const k = x.pieza + '|' + f0(x.L); m.set(k, (m.get(k) || 0) + 1); });
+  return [...m.entries()].map(([k, n]) => { const [p, L] = k.split('|'); return `<b>${n}×</b> ${esc(p)} <span class="mut">${L}</span>`; }).join(' · '); }
+function agrupar(bars){ const out = []; bars.forEach(b => { const sig = b.origen + '|' + b.P + '|' + b.piezas.map(p => p.ruta + p.pieza + p.op + Math.round(p.L)).join(','); const e = out.find(x => x.sig === sig); if(e){ e.n++; e.ids.push(b.id); } else out.push({sig, b, n: 1, ids: [b.id]}); }); return out; }
+function fueraHtml(){
+  const g = {}; S.fuera.forEach(x => { const k = x.f.id + '|' + x.motivo; (g[k] = g[k] || {f: x.f, motivo: x.motivo, n: 0, ops: new Set()}); g[k].n += x.n; g[k].ops.add(x.o.op); });
+  return `<details class="card"><summary><b>⚠ Piezas que no entraron a los múltiples</b> ${badge('er', S.fuera.reduce((s, x) => s + x.n, 0) + ' piezas')}</summary><div class="tw" style="margin-top:8px"><table><tr><th>Ruta</th><th>Pieza</th><th class="n">Piezas</th><th>OPs</th><th>Motivo</th></tr>
+  ${Object.values(g).map(x => `<tr><td>${esc(x.f.p.ruta)}</td><td>${esc(x.f.p.pieza)}</td><td class="n">${x.n}</td><td class="sm">${esc([...x.ops].join(', '))}</td><td class="sm">${esc(x.motivo)}</td></tr>`).join('')}</table></div></details>`;
+}
+function bindMult(){
+  const el = $('t-mult');
+  $('mMode').onchange = e => { CFG.modo = e.target.value; saveCfg(); renderMult(); };
+  if($('mWin')) $('mWin').onchange = e => { CFG.ventana = Math.max(1, +e.target.value || 2); saveCfg(); };
+  $('mRec').onchange = e => { CFG.usarRecortes = e.target.checked; saveCfg(); };
+  $('mGen').onclick = generar;
+  if(!S.res) return;
+  $('mSave').onclick = guardarPrograma; $('mXls').onclick = exportarConsumos;
+  $('mPrint').onclick = () => hojaCorte('Programa de corte de tubular ' + S.res.id, S.res.grupos.flatMap(g => g.bars));
+  el.querySelectorAll('[data-igs]').forEach(b => b.onclick = () => { const [gi, bi] = b.dataset.igs.split('|').map(Number), g = S.res.grupos[gi]; descargarTramo(g.bars[bi], g.label, false); });
+  el.querySelectorAll('[data-hoja]').forEach(b => b.onclick = () => { const [gi, bi] = b.dataset.hoja.split('|').map(Number), g = S.res.grupos[gi]; hojaCorte('Tramo ' + g.bars[bi].id, [g.bars[bi]]); });
+}
+function renderCons(){
+  const el = $('t-cons'), C = consumos(), T = CFG.tramo;
+  if(!C.hay) return el.innerHTML = `<div class="card empty">Genera los múltiples para ver el consumo real por pieza y por tubular.</div>`;
+  el.innerHTML = `<div class="card"><div class="row"><span class="mut sm" style="flex:1">El consumo real de cada pieza incluye su parte proporcional del refrentado, la separación entre piezas, el chuck y el sobrante que se desecha. Los recortes que se guardan no cuentan como consumo.</span><button class="pri" id="cXls">📊 Exportar a Excel</button></div></div>
+  <details class="card" open><summary><b>Por tipo de tubular</b></summary><div class="tw" style="margin-top:8px"><table><tr><th>Tubular</th><th class="n">Tramos nuevos</th><th class="n">Recortes usados</th><th class="n">Recortes generados</th><th class="n">Consumo neto</th><th class="n">Tramos eq.</th><th class="n">kg</th><th class="n">Piezas</th><th class="n">Aprovechamiento</th><th class="n">Desecho</th></tr>
+  ${C.porTipo.map(t => `<tr><td><b>${esc(t.tipo)}</b>${t.kgm ? `<div class="mut sm">${f2(t.kgm)} kg/m</div>` : ''}</td><td class="n">${t.tramos}</td><td class="n">${t.recUsados}${t.recUsados ? `<div class="mut sm">${f0(t.mmRecUsados)} mm</div>` : ''}</td><td class="n">${t.recGen}${t.recGen ? `<div class="mut sm">${f0(t.mmRecGen)} mm</div>` : ''}</td>
+  <td class="n">${f0(t.consumo)} mm</td><td class="n">${f2(t.consumo/T)}</td><td class="n">${t.kgm ? f2(t.consumo/1000*t.kgm) : '—'}</td><td class="n">${t.piezas}</td><td class="n">${pct(t.mmPiezas/t.consumo)}</td><td class="n">${f0(t.desecho)} mm</td></tr>`).join('')}</table></div></details>
+  <details class="card" open><summary><b>Por pieza</b> <span class="mut sm">consumo real promedio por pieza</span></summary><div class="tw" style="margin-top:8px"><table><tr><th>Ruta</th><th>Pieza</th><th>Tubular</th><th class="n">Largo</th><th class="n">Piezas</th><th class="n">Consumo real / pz</th><th class="n">TRA / pz</th><th class="n">kg / pz</th><th class="n">Aprovech.</th></tr>
+  ${C.porPieza.map(e => `<tr><td><b>${esc(e.ruta)}</b></td><td>${esc(e.pieza)}</td><td class="sm">${esc(e.tipo)}</td><td class="n">${f1(e.L)} mm</td><td class="n">${e.n}</td><td class="n">${f1(e.consumo/e.n)} mm</td><td class="n">${f4(e.consumo/e.n/T)}</td><td class="n">${e.kgm ? (e.consumo/e.n/1000*e.kgm).toFixed(3) : '—'}</td><td class="n">${pct(e.L*e.n/e.consumo)}</td></tr>`).join('')}</table></div></details>
+  <details class="card"><summary><b>Por OP</b></summary><div class="tw" style="margin-top:8px"><table><tr><th>OP</th><th>Ruta</th><th>Tubular</th><th class="n">Piezas</th><th class="n">Largo de piezas</th><th class="n">Consumo real</th><th class="n">Tramos eq.</th><th class="n">kg</th></tr>
+  ${C.porOP.map(o => `<tr><td>${esc(o.op)}</td><td>${esc(o.ruta)}</td><td class="sm">${esc(o.tipo)}</td><td class="n">${o.n}</td><td class="n">${f0(o.mm)} mm</td><td class="n">${f0(o.consumo)} mm</td><td class="n">${f4(o.consumo/T)}</td><td class="n">${o.kgm ? f2(o.consumo/1000*o.kgm) : '—'}</td></tr>`).join('')}</table></div></details>`;
+  $('cXls').onclick = exportarConsumos;
+}
+function renderPiso(){
+  const el = $('t-piso'), P = (S.db.programas || []).slice().sort((a, b) => (b.fecha || 0) - (a.fecha || 0)), col = colorMap();
+  if(!P.length) return el.innerHTML = `<div class="card empty">Aún no hay programas guardados. Genera los múltiples y presiona "Aprobar y guardar".</div>`;
+  const ver = S.pisoVer || 'activos';
+  const lista = P.filter(p => ver === 'todos' || p.estado !== 'Cortado');
+  el.innerHTML = `<div class="card"><div class="row">${[['activos', 'Pendientes y en proceso'], ['todos', 'Todos']].map(([k, t]) => `<button data-pv="${k}" class="${k === ver ? 'pri' : ''}">${t}</button>`).join('')}
+    <span class="mut sm" style="flex:1">Al descargar el IGS de un tramo queda "En proceso" con su hora de inicio; al descargar el siguiente, el anterior se cierra como cortado. Usa "Terminar corte" para el último del turno.</span><button id="pRef">🔄</button></div></div>
+  ${lista.map(p => { const ts = (S.db.tramos || []).filter(t => t.programa === p.id).sort((a, b) => String(a.tipo).localeCompare(String(b.tipo)) || a.orden - b.orden), hechos = ts.filter(t => t.estado === 'Cortado').length;
+    return `<details class="card" ${p.estado !== 'Cortado' ? 'open' : ''}><summary><b>${esc(p.id)}</b> ${badge(p.estado === 'Cortado' ? 'ok' : p.estado === 'En proceso' ? 'wa' : 'in', p.estado || 'Pendiente')} <span class="mut sm">${fecha(+p.fecha)} · ${esc(p.archivo || '')}</span>
+    <div class="prog" title="${hechos}/${ts.length} tramos"><i style="width:${ts.length ? hechos/ts.length*100 : 0}%"></i></div><span class="sm">${hechos}/${ts.length}</span></summary>
+    <div class="tw" style="margin-top:8px;max-height:none"><table><tr><th>Tramo</th><th>Tubular</th><th>Material</th><th>Piezas</th><th>Recorte a guardar</th><th>Estado</th><th></th></tr>
+    ${ts.map(t => `<tr><td style="white-space:nowrap"><b>${esc(t.id.split('-').slice(-3).join('-'))}</b></td><td class="sm">${esc(t.tipoLabel)}</td><td class="sm">${t.origen === 'recorte' ? '♻ ' + esc(t.recorteUsado) + ' · ' + f0(t.largo) + ' mm' : 'Nuevo ' + f0(t.largo) + ' mm'}</td>
+      <td class="sm">${resumenPiezas(t.piezas)}<div class="mut">${esc([...new Set((t.piezas || []).map(x => x.op))].join(', '))}</div></td>
+      <td class="sm">${t.recorteNuevo ? '♻ ' + esc(t.recorteNuevo) + ' · ' + f0(t.largoRecorte) + ' mm' : '—'}</td>
+      <td>${badge(t.estado === 'Cortado' ? 'ok' : t.estado === 'En proceso' ? 'wa' : 'in', t.estado)}<div class="mut sm">${t.inicio ? '▶ ' + fecha(+t.inicio) : ''}${t.fin ? '<br>■ ' + fecha(+t.fin) : ''}</div></td>
+      <td style="white-space:nowrap"><button data-pd="${esc(t.id)}" title="Descargar IGS del múltiple">⬇ IGS</button> <button data-ph="${esc(t.id)}" title="Hoja de corte">🖨</button>${t.estado === 'En proceso' ? ` <button class="pri" data-pt="${esc(t.id)}">■ Terminar corte</button>` : ''}</td></tr>`).join('')}</table></div></details>`; }).join('') || '<div class="card empty">No hay programas pendientes.</div>'}`;
+  el.querySelectorAll('[data-pv]').forEach(b => b.onclick = () => { S.pisoVer = b.dataset.pv; renderPiso(); });
+  $('pRef').onclick = async () => { await API.cargar().catch(e => toast(e.message, 'er')); renderAll(); };
+  const barDe = t => ({id: t.id, P: +t.largo, origen: t.origen, recorteId: t.recorteUsado, recorteNuevo: t.recorteNuevo, recorte: +t.largoRecorte || 0, tipoLabel: t.tipoLabel, piezas: t.piezas,
+    usado: (t.piezas || []).reduce((m, p) => Math.max(m, p.x + p.L), 0), aprov: +t.aprov || 0});
+  el.querySelectorAll('[data-pd]').forEach(b => b.onclick = () => { const t = S.db.tramos.find(x => x.id === b.dataset.pd); descargarTramo(barDe(t), t.tipoLabel, true); });
+  el.querySelectorAll('[data-ph]').forEach(b => b.onclick = () => { const t = S.db.tramos.find(x => x.id === b.dataset.ph); hojaCorte('Tramo ' + t.id, [barDe(t)]); });
+  el.querySelectorAll('[data-pt]').forEach(b => b.onclick = () => terminarCorte(b.dataset.pt));
+}
+function renderRec(){
+  const el = $('t-rec'), R = (S.db.recortes || []), fl = S.recF || (S.recF = {estado: 'vigentes', tipo: ''});
+  const T = TIPOS(), tipos = [...new Set(R.map(r => r.tipo))];
+  const lista = R.filter(r => (fl.estado === 'todos' || (fl.estado === 'vigentes' ? ['Disponible', 'Por generar', 'Reservado'].includes(r.estado) : r.estado === fl.estado)) && (!fl.tipo || r.tipo === fl.tipo)).sort((a, b) => String(a.tipo).localeCompare(String(b.tipo)) || b.largo - a.largo);
+  const disp = R.filter(r => r.estado === 'Disponible'), util = r => r.largo - CFG.chuck - CFG.refr;
+  const resumen = {}; disp.forEach(r => { const e = resumen[r.tipo] = resumen[r.tipo] || {label: r.tipoLabel || r.tipo, n: 0, mm: 0, util: 0}; e.n++; e.mm += r.largo; e.util += util(r); });
+  el.innerHTML = `<div class="kpis"><div class="kpi"><span>Disponibles</span><b style="color:var(--ok)">${disp.length}</b><span>${f2(disp.reduce((s, r) => s + r.largo, 0)/1000)} m</span></div>
+  <div class="kpi"><span>Por generar</span><b>${R.filter(r => r.estado === 'Por generar').length}</b></div><div class="kpi"><span>Reservados</span><b style="color:var(--wa)">${R.filter(r => r.estado === 'Reservado').length}</b></div>
+  <div class="kpi"><span>Usados</span><b>${R.filter(r => r.estado === 'Usado').length}</b></div></div>
+  ${Object.keys(resumen).length ? `<div class="card"><h3>Disponibles por tubular</h3><table><tr><th>Tubular</th><th class="n">Recortes</th><th class="n">Largo total</th><th class="n">Largo aprovechable</th></tr>${Object.values(resumen).map(e => `<tr><td>${esc(e.label)}</td><td class="n">${e.n}</td><td class="n">${f0(e.mm)} mm</td><td class="n">${f0(e.util)} mm</td></tr>`).join('')}</table>
+  <p class="mut sm">Aprovechable = largo − chuck (${CFG.chuck}) − refrentado (${CFG.refr}): al montarlo de nuevo, el chuck vuelve a sujetar su parte trasera.</p></div>` : ''}
+  <details class="card"><summary><b>➕ Registrar recorte a mano</b> <span class="mut sm">recortes que ya existen en el rack</span></summary><div class="row" style="margin-top:10px">
+    <select id="rTipo"><option value="">Tubular…</option>${Object.values(T).map(t => `<option value="${esc(t.key)}">${esc(t.label)}</option>`).join('')}</select>
+    <input id="rMed" placeholder="o escribe: 2X1 CAL20" size="16"><input type="number" id="rLargo" placeholder="Largo mm" min="1"><input id="rUbi" placeholder="Ubicación (opcional)" size="14"><button class="pri" id="rAdd">Agregar</button></div></details>
+  <div class="card"><div class="row" style="margin-bottom:8px"><select id="rfE">${[['vigentes', 'Vigentes'], ['Disponible', 'Disponibles'], ['Por generar', 'Por generar'], ['Reservado', 'Reservados'], ['Usado', 'Usados'], ['Desechado', 'Desechados'], ['todos', 'Todos']].map(([v, t]) => `<option value="${v}" ${v === fl.estado ? 'selected' : ''}>${t}</option>`).join('')}</select>
+    <select id="rfT"><option value="">Todos los tubulares</option>${tipos.map(t => `<option value="${esc(t)}" ${t === fl.tipo ? 'selected' : ''}>${esc((R.find(r => r.tipo === t) || {}).tipoLabel || t)}</option>`).join('')}</select><span class="mut sm">${lista.length} recortes</span></div>
+  ${lista.length ? `<div class="tw"><table><tr><th>ID</th><th>Tubular</th><th class="n">Largo</th><th class="n">Aprovechable</th><th>Estado</th><th>Origen</th><th>Ubicación</th><th></th></tr>
+  ${lista.map(r => `<tr><td><b>${esc(r.id)}</b></td><td class="sm">${esc(r.tipoLabel || r.tipo)}</td><td class="n">${f0(r.largo)} mm</td><td class="n">${f0(util(r))} mm</td>
+  <td>${badge(r.estado === 'Disponible' ? 'ok' : r.estado === 'Reservado' ? 'wa' : r.estado === 'Por generar' ? 'in' : 'in', r.estado)}${r.estado === 'Reservado' ? `<div class="mut sm">${esc(r.tramo || '')}</div>` : r.estado === 'Usado' ? `<div class="mut sm">${esc(r.usadoEn || '')}</div>` : ''}</td>
+  <td class="sm">${esc(r.origen || 'Manual')}</td><td><input data-ubi="${esc(r.id)}" value="${esc(r.ubicacion || '')}" size="10" style="padding:2px 6px"></td>
+  <td style="white-space:nowrap">${r.estado === 'Disponible' ? `<button data-des="${esc(r.id)}" title="Ya no sirve o se usó en otro proceso">🗑 Desechar</button>` : ''}${r.estado === 'Desechado' ? `<button data-rea="${esc(r.id)}">↺ Reactivar</button>` : ''}</td></tr>`).join('')}</table></div>` : '<div class="empty">Sin recortes con ese filtro.</div>'}</div>`;
+  $('rfE').onchange = e => { fl.estado = e.target.value; renderRec(); }; $('rfT').onchange = e => { fl.tipo = e.target.value; renderRec(); };
+  $('rAdd').onclick = async () => {
+    let key = $('rTipo').value, label, corto; const L = +$('rLargo').value;
+    if(!key){ const med = parseMedida($('rMed').value), cal = ($('rMed').value.match(/CAL\.?\s*(\d+)/i) || [])[1]; if(!med || !cal) return toast('Elige el tubular o escribe la medida y el calibre (ej. 1X2 CAL18)', 'er'); const t = tipoDe(med, cal); key = t.key; label = t.label; corto = t.corto; }
+    else { label = T[key].label; corto = T[key].corto; }
+    if(!(L > 0)) return toast('Captura el largo', 'er');
+    if(L - CFG.chuck - CFG.refr < CFG.minRem && !confirm(`Aprovechable: ${f0(L - CFG.chuck - CFG.refr)} mm, menor al mínimo (${CFG.minRem}). ¿Registrarlo de todas formas?`)) return;
+    const id = 'R' + corto + '-M' + Date.now().toString(36).slice(-5).toUpperCase();
+    await API.upsert('recortes', [{id, tipo: key, tipoLabel: label, tipoCorto: corto, largo: Math.round(L), estado: 'Disponible', origen: 'Manual', ubicacion: $('rUbi').value.trim(), alta: '__NOW__'}]);
+    toast('Recorte ' + id + ' registrado'); renderAll(); };
+  el.querySelectorAll('[data-des]').forEach(b => b.onclick = async () => { if(confirm('¿Desechar el recorte ' + b.dataset.des + '?')){ await API.upsert('recortes', [{id: b.dataset.des, estado: 'Desechado', baja: '__NOW__'}]); renderAll(); } });
+  el.querySelectorAll('[data-rea]').forEach(b => b.onclick = async () => { await API.upsert('recortes', [{id: b.dataset.rea, estado: 'Disponible'}]); renderAll(); });
+  el.querySelectorAll('[data-ubi]').forEach(i => i.onchange = () => API.upsert('recortes', [{id: i.dataset.ubi, ubicacion: i.value.trim()}]));
+}
+function renderCfg(){
+  const el = $('t-cfg');
+  const num = (k, t, step) => `<label class="cfl"><span>${t}</span><input type="number" step="${step || 1}" data-k="${k}" value="${CFG[k]}"></label>`;
+  el.innerHTML = `<details class="card" open><summary><b>📏 Tramo y corte</b></summary><div class="grid2" style="margin-top:10px">
+    ${num('tramo', 'Largo del tramo nuevo (mm)')}${num('chuck', 'Desperdicio del chuck (mm)')}${num('refr', 'Refrentado del extremo (mm)', 0.1)}${num('kerf', 'Separación entre piezas (mm)', 0.1)}
+    ${num('minRem', 'Recorte útil mínimo para guardar (mm)')}${num('tolSeccion', 'Tolerancia sección nombre vs IGS (mm)', 0.1)}${num('densidad', 'Densidad del acero (g/cm³)', 0.01)}</div>
+    <p class="mut sm">Un sobrante se guarda como recorte si, al restarle el chuck y el refrentado, quedan al menos ${f0(CFG.minRem)} mm aprovechables.</p></details>
+  <details class="card"><summary><b>📐 Espesor por calibre (mm)</b></summary><div class="grid2" style="margin-top:10px">${Object.entries(CFG.calibres).map(([c, v]) => `<label class="cfl"><span>Calibre ${c}</span><input type="number" step="0.01" data-cal="${c}" value="${v}"></label>`).join('')}</div></details>
+  <details class="card" open><summary><b>☁ Conexión con Drive (Apps Script)</b></summary><div style="margin-top:10px">
+    <label class="cfl"><span>URL de la aplicación web de Apps Script (termina en /exec)</span><input id="cUrl" value="${esc(CFG.apiUrl)}" placeholder="https://script.google.com/macros/s/…/exec"></label>
+    <div class="row" style="margin-top:8px"><button class="pri" id="cSave">Guardar</button><button id="cTest" ${CFG.apiUrl ? '' : 'disabled'}>Probar conexión</button><span id="cMsg" class="mut sm"></span></div>
+    <p class="mut sm">La URL de Línea Italia ya viene integrada; si la borras y guardas, se vuelve a usar la integrada. Sin conexión, la plataforma funciona solo en este navegador (los IGS se cargan desde tu equipo y los programas y recortes se guardan aquí). Con la URL, lee la biblioteca de Drive de Ingeniería y comparte programas, seguimiento y recortes entre equipos.</p></div></details>
+  <div class="card"><div class="row"><button id="cExp">⬇ Respaldo (JSON)</button><button id="cImp">⬆ Importar respaldo</button><span style="flex:1"></span><button id="cDef">Valores de fábrica</button></div></div>`;
+  el.querySelectorAll('[data-k]').forEach(i => i.onchange = () => { CFG[i.dataset.k] = +i.value; saveCfg(); explotar(); renderSide(); toast('Guardado'); });
+  el.querySelectorAll('[data-cal]').forEach(i => i.onchange = () => { CFG.calibres[i.dataset.cal] = +i.value; saveCfg(); });
+  $('cSave').onclick = async () => { CFG.apiUrl = $('cUrl').value.trim() || API_URL; saveCfg(); setConn(); renderCfg(); if(CFG.apiUrl){ try{ await API.cargar(); renderAll(); toast('Conectado'); }catch(e){ toast(e.message, 'er'); } } };
+  $('cTest').onclick = async () => { $('cMsg').textContent = 'Probando…'; try{ const d = await API.jsonp({action: 'ping'}, 20000); $('cMsg').textContent = '✓ ' + (d.mensaje || 'Conectado'); }catch(e){ $('cMsg').textContent = '✗ ' + e.message; } };
+  $('cExp').onclick = () => dl('multiples-tubular_' + hoyId() + '.json', JSON.stringify({cfg: CFG, db: S.db, elecciones: ELEC}, null, 2), 'application/json');
+  $('cImp').onclick = () => { const i = document.createElement('input'); i.type = 'file'; i.accept = '.json'; i.onchange = async () => { try{ const d = JSON.parse(await i.files[0].text()); if(d.cfg) CFG = Object.assign({}, DEF, d.cfg); if(d.elecciones) ELEC = d.elecciones; saveCfg(); saveElec();
+    if(d.db && !API.on()){ S.db = d.db; localStorage.setItem('mt-db', JSON.stringify(S.db)); } toast('Respaldo importado'); renderAll(); }catch(e){ toast('Archivo no válido', 'er'); } }; i.click(); };
+  $('cDef').onclick = () => { if(confirm('¿Regresar tramo, chuck, separación y calibres a los valores de fábrica? La URL se conserva.')){ const u = CFG.apiUrl; CFG = JSON.parse(JSON.stringify(DEF)); CFG.apiUrl = u || API_URL; saveCfg(); renderAll(); } };
+}
+
+
+/* ======================= Visor y medición de IGS ======================= */
+async function abrirVisor(f){
+  if(!f) return;
+  let txt; try{ toast('Leyendo ' + f.name + '…', 'in'); txt = await textoDe(f); }catch(e){ return toast('No se pudo leer: ' + e.message, 'er'); }
+  const nom = f.p.med ? [f.p.med.a, f.p.med.b] : null, r = IGES.inspect(txt, nom, f.p.med && f.p.med.forma);
+  if(!r.ok) return toast(r.error, 'er');
+  S.visor = {f, r, vista: 'XY'}; dibujarVisor(); $('toast') && ($('toast').style.display = 'none');
+}
+function dibujarVisor(){
+  const {f, r} = S.visor; let mo = $('visor');
+  if(!mo){ mo = document.createElement('div'); mo.id = 'visor'; mo.className = 'modal'; document.body.appendChild(mo);
+    mo.addEventListener('click', e => { if(e.target === mo) cerrarVisor(); }); }
+  const t = f.p.cal && CFG.calibres[f.p.cal], okW = r.wall != null && t ? Math.abs(r.wall - t) <= 0.15 : null;
+  const med = f.p.med, okS = med ? Math.abs(r.secA - med.b) <= CFG.tolSeccion && Math.abs(r.secB - med.a) <= CFG.tolSeccion : null;
+  const V = S.visor.vista;
+  mo.innerHTML = `<div class="card" role="dialog" aria-label="Visor de IGS"><div class="row" style="margin-bottom:10px"><b style="flex:1;min-width:200px">📐 ${esc(f.p.pieza || f.name)} <span class="mut">· ${esc(f.p.ruta || '')}</span><div class="mut sm" style="font-weight:400">${esc(f.name)}</div></b>
+    <span class="tabs row" style="gap:4px">${[['XY', 'Planta'], ['XZ', 'Frente'], ['YZ', 'Sección']].map(([k, tx]) => `<button data-vv="${k}" class="${k === V ? 'on' : ''}">${tx}</button>`).join('')}</span>
+    <button id="vFit" title="Ajustar (doble clic en el dibujo)">⤢</button><button id="vClose" aria-label="Cerrar">✕</button></div>
+  <div class="vgrid"><div><svg id="vSvg"></svg><p class="mut sm" style="margin:6px 0 0">Rueda = zoom · arrastrar = mover · doble clic = ajustar. En naranja, barrenos y cortes con su cota desde el extremo izquierdo; en azul, el corte de los extremos.</p></div>
+  <div><div class="card" style="margin-bottom:10px"><h3>Lectura del archivo</h3><div class="kv">
+    <span>Largo</span><b>${f1(r.len)} mm</b>
+    <span>Sección</span><span>${f1(r.secA)} × ${f1(r.secB)} mm ${okS == null ? '' : okS ? badge('ok', '✓ nombre') : badge('er', 'nombre: ' + f1(med.b) + ' × ' + f1(med.a))}</span>
+    <span>Pared</span><span>${r.wall != null ? f2(r.wall) + ' mm' : '—'} ${okW == null ? '' : okW ? badge('ok', '✓ cal ' + f.p.cal) : badge('er', 'cal ' + f.p.cal + ' = ' + f2(t) + ' mm')}</span>
+    <span>Extremo izq.</span><span>${endTxt(r.ends[0])}</span><span>Extremo der.</span><span>${endTxt(r.ends[1])}</span>
+    <span>Barrenos y cortes</span><span>${r.feats.length}</span>
+    <span>Unidades</span><span>${esc(r.units)}</span>
+    <span>Entidades</span><span class="sm">${esc(Object.entries(r.types).map(([k, v]) => k + '×' + v).join(', '))}</span>
+    <span>IGS combinado</span><span>${r.combinable ? badge('ok', 'Compatible') : badge('er', 'No soportado: ' + Object.keys(r.unsup).join(', '))}</span></div></div>
+  </div></div>
+  <div class="tw" style="margin-top:10px;max-height:none"><table><tr><th>#</th><th>Tipo</th><th class="n">Medida</th><th>Cara</th><th class="n">Desde izq.</th><th class="n">Desde der.</th><th class="n">Desde el anterior</th></tr>
+  ${r.feats.map((x, i) => `<tr><td>${i + 1}</td><td>${x.tipo}</td><td class="n">${x.diam ? 'Ø' + f2(x.diam) : f1(x.ancho) + ' × ' + f1(x.alto)}</td><td class="sm">${esc(x.caraTxt)}</td>
+    <td class="n">${x.diam ? f1(x.x) : f1(x.x0) + ' – ' + f1(x.x1)}</td><td class="n">${f1(r.len - x.x)}</td><td class="n">${f1(x.x - (i ? r.feats[i - 1].x : 0))}</td></tr>`).join('') || '<tr><td colspan="7" class="mut">Sin barrenos ni cortes intermedios.</td></tr>'}</table>
+  <p class="mut sm">Barrenos medidos al centro; ranuras de inicio a fin. "Desde el anterior" mide de centro a centro (el primero, desde el extremo izquierdo).</p></div></div>`;
+  mo.querySelectorAll('[data-vv]').forEach(b => b.onclick = () => { S.visor.vista = b.dataset.vv; dibujarVisor(); });
+  $('vClose').onclick = cerrarVisor; $('vFit').onclick = () => { const s = $('vSvg'); setVB(s, Object.assign({}, s._home)); };
+  dibujarVista($('vSvg'), r, V);
+}
+function cerrarVisor(){ const m = $('visor'); if(m) m.remove(); S.visor = null; }
+document.addEventListener('keydown', e => { if(e.key === 'Escape' && S.visor) cerrarVisor(); });
+function setVB(svg, v){ svg._vb = v; svg.setAttribute('viewBox', `${v.x} ${v.y} ${v.w} ${v.h}`); }
+function dibujarVista(svg, r, V){
+  const ia = V === 'YZ' ? 1 : 0, ib = V === 'XY' ? 1 : 2, P = q => [q[ia], -q[ib]];
+  const L = r.len, W = r.secA, H = r.secB;
+  const ext = V === 'YZ' ? {x0: -W/2, x1: W/2, y0: -H/2, y1: H/2} : {x0: 0, x1: L, y0: -(V === 'XY' ? W : H)/2, y1: (V === 'XY' ? W : H)/2};
+  const big = Math.max(ext.x1 - ext.x0, ext.y1 - ext.y0), fs = V === 'YZ' ? Math.max(W, H)/14 : Math.min(Math.max(L/55, 6), Math.max(W, H)*1.2);
+  let g = '', ann = '';
+  const lines = r.polys.map(pl => ({d: pl.p.map((q, i) => (i ? 'L' : 'M') + P(q).map(v => +v.toFixed(3)).join(',')).join(''), c: pl.feat ? '#d85a30' : pl.end ? 'var(--ac)' : 'var(--tx)'}));
+  lines.forEach(l => g += `<path d="${l.d}" fill="none" stroke="${l.c}" stroke-width="1.2" vector-effect="non-scaling-stroke"/>`);
+  const dimH = (x0, x1, y, txt, col) => `<line x1="${x0}" y1="${y}" x2="${x1}" y2="${y}" stroke="${col}" stroke-width="1" vector-effect="non-scaling-stroke"/><line x1="${x0}" y1="${y - fs*.4}" x2="${x0}" y2="${y + fs*.4}" stroke="${col}" vector-effect="non-scaling-stroke"/><line x1="${x1}" y1="${y - fs*.4}" x2="${x1}" y2="${y + fs*.4}" stroke="${col}" vector-effect="non-scaling-stroke"/><text x="${(x0 + x1)/2}" y="${y - fs*.35}" font-size="${fs}" text-anchor="middle" fill="${col}">${txt}</text>`;
+  const dimV = (y0, y1, x, txt, col) => `<line x1="${x}" y1="${y0}" x2="${x}" y2="${y1}" stroke="${col}" vector-effect="non-scaling-stroke"/><text x="${x + fs*.4}" y="${(y0 + y1)/2 + fs*.35}" font-size="${fs}" fill="${col}">${txt}</text>`;
+  let top = ext.y0, extraTop = 0;
+  if(V === 'YZ'){
+    ann += dimH(-W/2, W/2, H/2 + fs*1.8, f1(W) + ' mm', 'var(--ac)') + dimV(-H/2, H/2, W/2 + fs*.8, f1(H) + ' mm', 'var(--ac)');
+    if(r.wall != null) ann += `<text x="${-W/2}" y="${-H/2 - fs*.6}" font-size="${fs*.9}" fill="var(--mut)">Pared ${f2(r.wall)} mm</text>`;
+  } else {
+    const hh = (ext.y1 - ext.y0);
+    ann += dimH(0, L, ext.y1 + fs*1.8, f1(L) + ' mm', 'var(--ac)') + dimV(ext.y0, ext.y1, L + fs*.8, f1(hh) + ' mm', 'var(--ac)');
+    const fe = r.feats.filter(x => V === 'XY' ? x.caras.some(c => c[0] === 'Z' || c[0] === 'R') || !x.caras.length : x.caras.some(c => c[0] === 'Y' || c[0] === 'R') || !x.caras.length);
+    const ofs = fs*.85;
+    fe.forEach((x, i) => { const row = i % 3, yt = ext.y0 - fs*(1.4 + row*1.6);
+      ann += `<line x1="${x.x}" y1="${ext.y0}" x2="${x.x}" y2="${yt + ofs*.3}" stroke="#d85a30" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/><text x="${x.x}" y="${yt}" font-size="${ofs}" text-anchor="middle" fill="#d85a30">${f1(x.x)}${x.diam ? ' · Ø' + f1(x.diam) : ''}</text>`; });
+    if(fe.length){ extraTop = fs*(1.4 + Math.min(fe.length, 3)*1.6 + 1.5); ann += `<text x="0" y="${ext.y0 - extraTop + fs*.6}" font-size="${ofs}" fill="#d85a30">Cotas desde el extremo izquierdo (mm)</text>`; }
+    ann += `<text x="0" y="${ext.y1 + fs*3.8}" font-size="${fs*.85}" fill="var(--mut)">Izq.: ${esc(endTxt(r.ends[0]))}</text><text x="${L}" y="${ext.y1 + fs*3.8}" font-size="${fs*.85}" text-anchor="end" fill="var(--mut)">Der.: ${esc(endTxt(r.ends[1]))}</text>`;
+  }
+  svg.innerHTML = `<g>${g}</g><g>${ann}</g>`;
+  const pad = big*0.06 + fs*2;
+  const vb = {x: ext.x0 - pad, y: ext.y0 - pad - extraTop, w: (ext.x1 - ext.x0) + 2*pad + fs*6, h: (ext.y1 - ext.y0) + 2*pad + extraTop + fs*4.5};
+  setVB(svg, vb); svg._home = Object.assign({}, vb);
+  if(!svg._pz){ svg._pz = 1;
+    svg.addEventListener('wheel', e => { e.preventDefault(); const v = svg._vb, b = svg.getBoundingClientRect(), z = e.deltaY > 0 ? 1.15 : 1/1.15;
+      const s = Math.max(v.w/b.width, v.h/b.height), ox = (b.width*s - v.w)/2, oy = (b.height*s - v.h)/2;
+      const mx = v.x - ox + (e.clientX - b.left)*s, my = v.y - oy + (e.clientY - b.top)*s;
+      setVB(svg, {x: mx - (mx - v.x)*z, y: my - (my - v.y)*z, w: v.w*z, h: v.h*z}); }, {passive: false});
+    let drag = null;
+    svg.addEventListener('pointerdown', e => { drag = {x: e.clientX, y: e.clientY, v: Object.assign({}, svg._vb)}; svg.setPointerCapture(e.pointerId); });
+    svg.addEventListener('pointermove', e => { if(!drag) return; const b = svg.getBoundingClientRect(), s = Math.max(drag.v.w/b.width, drag.v.h/b.height);
+      setVB(svg, {x: drag.v.x - (e.clientX - drag.x)*s, y: drag.v.y - (e.clientY - drag.y)*s, w: drag.v.w, h: drag.v.h}); });
+    svg.addEventListener('pointerup', () => drag = null);
+    svg.addEventListener('dblclick', () => setVB(svg, Object.assign({}, svg._home)));
+  }
+}
+
+/* ======================= Navegación ======================= */
+const MENU = [
+  {g: 'Programar', items: [{k: 'prog', i: '📋', t: 'Programa de producción', d: 'Excel de órdenes planificadas de Business Central: OPs, rutas, cantidades y hora de inicio.'},
+    {k: 'lib', i: '📚', t: 'Biblioteca de IGS', d: 'Dibujos de tubular de Ingeniería en Drive: versión vigente, tubular, largo y sección medidos en el IGS.'},
+    {k: 'mult', i: '🧩', t: 'Múltiples de corte', d: 'Piezas del mismo tubular acomodadas a lo largo de cada tramo para el máximo aprovechamiento.'}]},
+  {g: 'Producción', items: [{k: 'piso', i: '🏭', t: 'Corte en piso', d: 'Descarga de IGS por tramo y seguimiento: pendiente, en proceso, cortado.'},
+    {k: 'rec', i: '♻', t: 'Inventario de recortes', d: 'Sobrantes que vale la pena guardar, listos para usarse en los siguientes programas.'}]},
+  {g: 'Análisis', items: [{k: 'cons', i: '📊', t: 'Consumos reales', d: 'Consumo por pieza, por tipo de tubular y por OP, incluyendo chuck, separación y desecho.'}]},
+  {g: 'Ajustes', closed: true, items: [{k: 'cfg', i: '⚙', t: 'Configuración', d: 'Tramo, chuck, separación, recorte mínimo, calibres y conexión con Apps Script.'}]}
+];
+let CUR = 'prog', GRP = {};
+try{ GRP = JSON.parse(localStorage.getItem('mt-grp') || '{}'); }catch(e){}
+function badgeOf(k){
+  switch(k){
+    case 'prog': return S.ops.length ? ['in', S.ops.length] : null;
+    case 'lib': { if(!S.lib.length) return null; const {vig, conflictos} = vigentes(); const er = vig.filter(f => evalPieza(f).lv === 'er').length + conflictos.length; return er ? ['er', er] : ['ok', vig.length]; }
+    case 'mult': return S.res ? ['ok', S.res.grupos.reduce((s, g) => s + g.bars.length, 0)] : S.items.length ? ['wa', '!'] : null;
+    case 'piso': { const n = (S.db.tramos || []).filter(t => t.estado !== 'Cortado').length; return n ? ['wa', n] : null; }
+    case 'rec': { const n = (S.db.recortes || []).filter(r => r.estado === 'Disponible').length; return n ? ['ok', n] : null; }
+  }
+  return null;
+}
+function renderSide(){
+  $('side').innerHTML = MENU.map((g, gi) => { const closed = GRP[gi] != null ? GRP[gi] : !!g.closed;
+    return `<div class="grp ${closed && !g.items.some(i => i.k === CUR) ? 'closed' : ''}"><button class="gh" data-g="${gi}">${esc(g.g)}<span class="car">▾</span></button><div class="its">${g.items.map(i => { const b = badgeOf(i.k);
+      return `<button data-k="${i.k}" class="${i.k === CUR ? 'on' : ''}"><span>${i.i}</span>${esc(i.t)}${b ? `<span class="cnt b ${b[0]}">${b[1]}</span>` : ''}</button>`; }).join('')}</div></div>`; }).join('');
+  $('side').querySelectorAll('[data-g]').forEach(b => b.onclick = () => { const el = b.parentElement, c = !el.classList.contains('closed'); el.classList.toggle('closed', c); GRP[b.dataset.g] = c; try{ localStorage.setItem('mt-grp', JSON.stringify(GRP)); }catch(e){} });
+  $('side').querySelectorAll('[data-k]').forEach(b => b.onclick = () => { showTab(b.dataset.k); $('side').classList.remove('open'); });
+  $('progName').textContent = S.progFile ? '📋 ' + S.progFile : '';
+}
+const RENDER = {prog: renderProg, lib: renderLib, mult: renderMult, cons: renderCons, piso: renderPiso, rec: renderRec, cfg: renderCfg};
+function showTab(k){
+  const it = MENU.flatMap(g => g.items).find(i => i.k === k) || MENU[0].items[0]; CUR = it.k;
+  $('pageTitle').textContent = it.i + ' ' + it.t; $('pageSub').textContent = it.d;
+  document.querySelectorAll('main section').forEach(s => s.classList.toggle('on', s.id === 't-' + CUR));
+  try{ localStorage.setItem('mt-tab', CUR); }catch(e){}
+  RENDER[CUR](); renderSide();
+}
+function renderAll(){ RENDER[CUR](); renderSide(); }
+$('menuBtn').onclick = () => $('side').classList.toggle('open');
+(async () => {
+  setConn(); let t = 'prog'; try{ t = localStorage.getItem('mt-tab') || 'prog'; }catch(e){}
+  showTab(t);
+  try{ await API.cargar(); renderAll(); }catch(e){ toast('No se pudo leer el servidor: ' + e.message, 'er'); }
+})();
+window.MT = {S, CFG: () => CFG, explotar, generar, cargarLocal, abrirPrograma, igsTramo};
+</script>
+</body>
+</html>
