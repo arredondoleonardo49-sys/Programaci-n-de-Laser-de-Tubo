@@ -776,7 +776,7 @@ const API = {
     const send = filas.map(f => tabla === 'tramos' && f.piezas ? Object.assign({}, f, {piezas: JSON.stringify(f.piezas)}) : f);
     for(let i = 0; i < send.length; i += 40) await this.post({op: 'upsert', tabla, filas: send.slice(i, i + 40)});
   },
-  async biblioteca(refrescar){ return this.jsonp({action: 'biblioteca', refrescar: refrescar ? 1 : 0}, 330000); },
+  async biblioteca(refrescar){ return this.jsonp({action: 'biblioteca', refrescar: refrescar ? 1 : 0}, 90000); },
   async archivo(id){ const d = await this.jsonp({action: 'archivo', id}, 120000); const bin = atob(d.b64), u = new Uint8Array(bin.length); for(let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return gunzipAll(u.buffer); }
 };
 function setConn(){ const c = $('conn'); if(API.on()){ c.className = 'conn ok'; c.textContent = '☁ Apps Script'; } else { c.className = 'conn wa'; c.textContent = '💻 Solo este navegador'; } }
@@ -851,12 +851,26 @@ async function medir(lista){
 }
 async function cargarBibliotecaDrive(refrescar){
   if(!API.on()) return toast('Configura primero la URL de Apps Script', 'er');
-  S.libMsg = refrescar ? 'Recorriendo la biblioteca de Drive (puede tardar unos minutos)…' : 'Cargando biblioteca…'; renderLib();
-  try{ const d = await API.biblioteca(refrescar);
-    S.lib = (d.archivos || []).map(a => ({id: a.id, name: a.nombre, path: a.ruta, size: a.tam, modified: a.modificado, p: parseNombre(a.nombre, a.ruta)}));
+  clearTimeout(S.bibPoll); S.libMsg = refrescar ? 'Pidiendo a Apps Script que recorra la biblioteca de Drive…' : 'Cargando biblioteca…'; renderLib();
+  let d;
+  try{ d = await API.biblioteca(refrescar); }
+  catch(e){ S.libMsg = ''; renderLib(); return toast(/respuesta/.test(e.message) ? 'Apps Script no respondió. Abre la URL de Apps Script con ?action=ping para revisar el acceso.' : e.message, 'er'); }
+  const p = d.progreso || {};
+  if(d.estado === 'error'){ S.libMsg = ''; renderLib(); toast('Error al recorrer Drive: ' + (p.error || 'desconocido'), 'er'); }
+  const nuevos = (d.archivos || []).length;
+  if(nuevos && (d.actualizado !== S.bibFecha || !S.lib.length || !String(S.libSrc).startsWith('Drive'))){
+    S.bibFecha = d.actualizado;
+    S.lib = d.archivos.map(a => ({id: a.id, name: a.nombre, path: a.ruta, size: a.tam, modified: a.modificado, p: parseNombre(a.nombre, a.ruta)}));
     S.libSrc = 'Drive · actualizado ' + (d.actualizado ? new Date(d.actualizado).toLocaleString('es-MX') : '');
-    S.libMsg = ''; renderLib(); await medirNecesarios(); }
-  catch(e){ S.libMsg = ''; toast(e.message, 'er'); renderLib(); }
+  }
+  if(d.estado === 'corriendo'){
+    S.libMsg = `Recorriendo Drive en segundo plano: ${f0(p.carpetas)} carpetas revisadas · ${f0(p.pendientes)} por revisar · ${f0(p.archivos)} IGS encontrados. ${nuevos ? 'Mientras, se muestra la lectura anterior.' : 'La primera vez tarda unos minutos.'}`;
+    renderLib(); if(nuevos) await medirNecesarios();
+    S.bibPoll = setTimeout(() => cargarBibliotecaDrive(false), 20000); return;
+  }
+  S.libMsg = ''; renderLib();
+  if(!nuevos) toast('Drive se recorrió, pero no se encontraron IGS de tubular. Revisa los nombres de las subcarpetas.', 'er');
+  else await medirNecesarios();
 }
 async function medirNecesarios(){
   const {vig} = vigentes(); const rutas = new Set(S.ops.map(o => norm(o.ruta)));
