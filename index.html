@@ -3,98 +3,188 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Múltiples de Tubular</title>
+<title>IGS Láser Tubo — Múltiples de Tubular</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#f6f5f2;--card:#fff;--tx:#1f1f1d;--mut:#6b6a65;--bd:#dcdad3;--ac:#185fa5;
---ok:#3b6d11;--okb:#eaf3de;--wa:#854f0b;--wab:#faeeda;--er:#a32d2d;--erb:#fcebeb;--in:#5f5e5a;--inb:#f1efe8;--tube:#d3d1c7;--chuck:#888780}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1b1b1a;--card:#262624;--tx:#ecebe6;--mut:#a3a29c;--bd:#3d3d3a;--ac:#85b7eb;
---ok:#c0dd97;--okb:#27500a;--wa:#fac775;--wab:#633806;--er:#f7c1c1;--erb:#791f1f;--in:#d3d1c7;--inb:#444441;--tube:#55534d;--chuck:#6b6a65}}
+/* Formato visual de la app OEE Planta (tema oscuro, IBM Plex) */
+:root{--bg:#0f1117;--bg2:#181b24;--bg3:#1e2130;--border:#2a2e3f;--text:#e8eaf0;--text2:#8b8fa8;--text3:#555870;--blue:#4a9eff;--green:#3ecf8e;--amber:#f5a623;--red:#f06060;--radius:8px;--radius-lg:12px;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;color-scheme:dark;
+  /* nombres que usa el código de la app → paleta OEE */
+  --card:var(--bg2);--tx:var(--text);--mut:var(--text2);--bd:var(--border);--ac:var(--blue);
+  --ok:var(--green);--wa:var(--amber);--er:var(--red);--in:var(--text2);--inb:rgba(139,143,168,.15);
+  /* dibujo del tubo sobre fondo oscuro */
+  --tube:#343a50;--chuck:#555870;--hd1:#232736;--hd2:#3a3f55;--hdt:#8b8fa8}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 system-ui,"Segoe UI",sans-serif}
-header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--bd);position:sticky;top:0;z-index:20}
-header h1{font-size:17px;margin:0 8px 0 0;font-weight:600}
-.conn{font-size:12px;padding:2px 10px;border-radius:10px}
-input,select,textarea,button{font:inherit;color:var(--tx);background:var(--card);border:1px solid var(--bd);border-radius:6px;padding:5px 8px}
-input[type=number]{width:90px}
-button{cursor:pointer}button:hover:not(:disabled){border-color:var(--ac)}button:disabled{opacity:.5;cursor:not-allowed}
-button.pri{background:var(--ac);color:#fff;border-color:var(--ac)}
-@media (prefers-color-scheme:dark){button.pri{color:#042c53}}
-.layout{display:grid;grid-template-columns:230px minmax(0,1fr);align-items:start}
-aside{background:var(--card);border-right:1px solid var(--bd);padding:10px 8px;position:sticky;top:53px;height:calc(100vh - 53px);overflow:auto}
-.grp{margin-bottom:4px}
-.grp>button.gh{width:100%;display:flex;align-items:center;gap:6px;border:none;background:none;padding:8px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);font-weight:600}
-.grp>button.gh .car{margin-left:auto;transition:transform .15s}.grp.closed>button.gh .car{transform:rotate(-90deg)}.grp.closed .its{display:none}
-.its button{width:100%;display:flex;align-items:center;gap:8px;border:none;background:none;padding:7px 10px;border-radius:6px;text-align:left}
-.its button:hover{background:var(--inb)}.its button.on{background:var(--ac);color:#fff}
-@media (prefers-color-scheme:dark){.its button.on{color:#042c53}}
-.its .cnt{margin-left:auto;font-size:11px;padding:0 7px}
-main{padding:16px 20px;min-width:0;max-width:1500px}
-.ph{margin:0;font-size:20px;font-weight:600}.psub{margin:2px 0 14px;color:var(--mut)}
-section{display:none}section.on{display:block}
-.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px;margin-bottom:14px}
-.card h3{margin:0 0 10px;font-size:15px}
+body{margin:0;font:14px/1.5 'IBM Plex Sans',system-ui,sans-serif;background:var(--bg);color:var(--text);display:flex;height:100vh;overflow:hidden}
+::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+/* menú lateral */
+.sidebar{width:220px;min-width:220px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;position:relative;z-index:5;transition:width .25s cubic-bezier(.4,0,.2,1),min-width .25s cubic-bezier(.4,0,.2,1)}
+.sidebar-logo{display:flex;align-items:center;gap:10px;padding:1.1rem 1.1rem 1rem;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden}
+.logo-box{width:34px;height:34px;flex-shrink:0;background:#fff;border-radius:9px;padding:5px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(0,0,0,.25)}
+.logo-box img{width:100%;height:100%;object-fit:contain;display:block}
+.logo-text{font-size:15px;font-weight:600;color:var(--text);letter-spacing:.3px;line-height:1.25}
+.logo-sub{font-size:11px;color:var(--text2);margin-top:2px;font-family:var(--mono)}
+#nav{flex:1;min-height:0}
+.sidebar:not(.collapsed) #nav{overflow-y:auto;overflow-x:hidden}
+.nav-section{padding:.75rem 0 .1rem}
+.nav-label{font-size:10px;font-weight:600;color:var(--text3);padding:0 1.25rem .5rem;letter-spacing:1px;text-transform:uppercase}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 1.25rem;cursor:pointer;font-size:13px;color:var(--text2);border-left:2px solid transparent;transition:all .18s cubic-bezier(.4,0,.2,1);white-space:nowrap;position:relative}
+.nav-item:hover{background:var(--bg3);color:var(--text)}
+.nav-item.active{background:var(--bg3);color:var(--text);border-left-color:var(--blue);font-weight:500}
+.nav-item:focus-visible{outline:1px solid var(--blue);outline-offset:-1px}
+.nav-item svg{width:18px;height:18px;flex-shrink:0;color:var(--ic,currentColor);filter:drop-shadow(0 0 4px color-mix(in srgb,var(--ic) 50%,transparent));transition:filter .2s,transform .15s}
+.nav-item:hover svg{transform:scale(1.1)}
+.nav-item.active svg{filter:drop-shadow(0 0 8px color-mix(in srgb,var(--ic) 90%,transparent));animation:badgePop .3s ease}
+.nav-item>span:not(.nav-cnt){min-width:0;overflow:hidden;text-overflow:ellipsis}
+.nav-cnt{margin-left:auto;flex-shrink:0;font-family:var(--mono)}
+.sidebar-bottom{margin-top:auto;padding:.85rem 1.25rem;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px}
+.conn{font-size:10px;font-family:var(--mono)}.conn.ok{color:var(--green)}.conn.wa{color:var(--amber)}.conn.in{color:var(--text3)}
+.sb-info{font-size:10px;font-family:var(--mono);color:var(--text3);line-height:1.4}
+.sb-toggle{align-self:flex-start;display:flex;align-items:center;justify-content:center;background:transparent;border:1px solid var(--border);color:var(--text3);border-radius:var(--radius);padding:4px 8px}
+.sb-toggle svg{width:14px;height:14px;transition:transform .25s}
+@media (min-width:821px){
+  .sidebar.collapsed{width:56px;min-width:56px}
+  .sidebar.collapsed .sidebar-logo{padding:1rem 0;justify-content:center}
+  .sidebar.collapsed .logo-text,.sidebar.collapsed .logo-sub,.sidebar.collapsed .nav-label,.sidebar.collapsed .nav-item>span:not(.nav-cnt),.sidebar.collapsed .conn,.sidebar.collapsed .sb-info{display:none}
+  .sidebar.collapsed .nav-section{padding:.4rem 0}
+  .sidebar.collapsed .nav-item{padding:10px 0;justify-content:center;border-left:none;border-right:2px solid transparent}
+  .sidebar.collapsed .nav-item.active{border-right-color:var(--blue)}
+  .sidebar.collapsed .nav-cnt{position:absolute;top:6px;right:11px;width:7px;height:7px;padding:0!important;font-size:0;border-radius:50%;background:currentColor!important}
+  .sidebar.collapsed .nav-item::after{content:attr(data-label);position:absolute;left:58px;background:var(--bg3);color:var(--text);font-size:12px;padding:5px 10px;border-radius:var(--radius);border:1px solid var(--border);white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .15s;z-index:100}
+  .sidebar.collapsed .nav-item:hover::after{opacity:1}
+  .sidebar.collapsed .sidebar-bottom{padding:.75rem 0;align-items:center}
+  .sidebar.collapsed .sb-toggle{align-self:center}
+  .sidebar.collapsed .sb-toggle svg{transform:rotate(180deg)}
+}
+
+/* página */
+.main{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
+.topbar{display:flex;align-items:center;gap:12px;padding:1.25rem 1.5rem .5rem;border-bottom:1px solid var(--border)}
+.page-title{font-size:17px;font-weight:600;color:var(--text)}
+.page-sub{font-size:12px;color:var(--text2);margin-top:2px}
+#progName{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--text3);max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#menuBtn{display:none}
+.content{flex:1;overflow-y:auto;padding:1.25rem 1.5rem}
+section{display:none;max-width:1500px}section.on{display:block}
+
+/* controles */
+input,select,textarea,button{font:inherit;font-size:13px;color:var(--text);background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px;transition:border-color .15s,background .15s,box-shadow .15s,transform .15s}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue)}
+select option{background:var(--bg2)}
+input[type=number]{width:90px;font-family:var(--mono)}
+input[type=checkbox]{accent-color:var(--blue)}
+button{cursor:pointer;font-weight:500}
+button:hover:not(:disabled){border-color:var(--blue)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.pri{background:var(--blue);color:#fff;border-color:var(--blue)}
+button.pri:hover:not(:disabled){background:#3a8ef0;transform:translateY(-1px);box-shadow:0 4px 14px rgba(74,158,255,.4)}
+button.pri:active{transform:translateY(0)}
+code{font-family:var(--mono);font-size:11.5px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:0 5px}
+
+/* tarjetas, KPIs y tablas */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.1rem 1.25rem;margin-bottom:1.1rem}
+.card h3{margin:0 0 .85rem;font-size:13px;font-weight:600}
 details.card>summary{cursor:pointer;list-style:none;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 details.card>summary::-webkit-details-marker{display:none}
-details.card>summary::before{content:'▸';color:var(--mut);transition:transform .15s}details.card[open]>summary::before{transform:rotate(90deg)}
-table{border-collapse:collapse;width:100%;font-size:13px}
-th,td{border-bottom:1px solid var(--bd);padding:5px 8px;text-align:left;vertical-align:top}
-th{color:var(--mut);font-weight:500;position:sticky;top:0;background:var(--card);z-index:1}
+details.card>summary::before{content:'▸';color:var(--text3);transition:transform .15s}details.card[open]>summary::before{transform:rotate(90deg)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:1.25rem}
+.kpi{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1rem 1.1rem;transition:transform .15s,box-shadow .15s}
+.kpi:hover{transform:translateY(-2px);box-shadow:0 4px 20px rgba(0,0,0,.3)}
+.kpi span{display:block;font-size:11px;color:var(--text2);font-weight:500}
+.kpi b{display:block;font-size:24px;font-weight:600;font-family:var(--mono);line-height:1.3;margin-top:4px;font-variant-numeric:tabular-nums}
+:is(.main,.modal) table{border-collapse:collapse;width:100%;font-size:13px}
+:is(.main,.modal) th,:is(.main,.modal) td{border-bottom:1px solid var(--border);padding:8px 12px;text-align:left;vertical-align:top}
+:is(.main,.modal) th{color:var(--text3);font-weight:500;font-size:11px;letter-spacing:.4px;text-transform:uppercase;background:var(--bg3);position:sticky;top:0;z-index:1;padding:9px 12px}
+:is(.main,.modal) tr:last-child td{border-bottom:none}
+:is(.main,.modal) tr:hover td{background:var(--bg3)}
 td.n,th.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+:is(.main,.modal) td.n{font-family:var(--mono);font-size:12.5px}
 .tw{overflow:auto;max-height:70vh}
-.b{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;white-space:nowrap}
-.ok{background:var(--okb);color:var(--ok)}.wa{background:var(--wab);color:var(--wa)}.er{background:var(--erb);color:var(--er)}.in{background:var(--inb);color:var(--in)}
-.kpis{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
-.kpi{flex:1 1 140px;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px 14px}
-.kpi b{font-size:22px;display:block;font-variant-numeric:tabular-nums}.kpi span{color:var(--mut);font-size:12px}
-.mut{color:var(--mut)}.sm{font-size:12px}
-.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-.drop{border:2px dashed var(--bd);border-radius:10px;padding:18px;text-align:center;color:var(--mut);background:var(--card)}
-.drop.over{border-color:var(--ac);color:var(--ac)}
-.empty{color:var(--mut);padding:20px;text-align:center}
-.grid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px 16px}
-.cfl{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mut)}.cfl input{color:var(--tx)}
+.b{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500;white-space:nowrap;line-height:1.5}
+.b.ok{background:rgba(62,207,142,.15);color:var(--green)}.b.wa{background:rgba(245,166,35,.15);color:var(--amber)}
+.b.er{background:rgba(240,96,96,.15);color:var(--red)}.b.in{background:rgba(139,143,168,.15);color:var(--text2)}
+
+/* varios */
+.mut{color:var(--text2)}.sm{font-size:12px}
+.row{display:flex;gap:8px 10px;flex-wrap:wrap;align-items:center}
+.drop{border:1px dashed var(--border);border-radius:var(--radius-lg);padding:22px;text-align:center;color:var(--text2);background:var(--bg2);transition:border-color .15s,color .15s}
+.drop.over{border-color:var(--blue);color:var(--blue)}
+.empty{color:var(--text3);padding:2.5rem;text-align:center;font-size:13px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px 16px}
+.cfl{display:flex;flex-direction:column;gap:5px;font-size:13px;color:var(--text2)}
+.cfl>span:first-child{font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.6px;text-transform:uppercase}
+.cfl input{color:var(--text)}
 .bar{margin:6px 0 14px}.bar svg{width:100%;height:auto;display:block}
-.barhd{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px}
-.barhd b{font-size:14px}
-.prog{height:8px;background:var(--inb);border-radius:4px;overflow:hidden;min-width:80px;flex:1}.prog i{display:block;height:100%;background:#639922}
-.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:50;padding:10px 16px;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.25);display:none}
-.toast.ok{background:#27500a;color:#eaf3de}.toast.er{background:#791f1f;color:#fcebeb}.toast.in{background:#444441;color:#f1efe8}
-#menuBtn{display:none}
-@media (max-width:820px){.layout{grid-template-columns:1fr}aside{position:static;height:auto;display:none}aside.open{display:block}#menuBtn{display:inline-block}header{position:static}main{padding:10px 12px}}
+.barhd{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px}.barhd b{font-family:var(--mono);font-weight:500}
+.prog{height:6px;background:var(--border);border-radius:3px;overflow:hidden;min-width:80px;flex:1}.prog i{display:block;height:100%;background:var(--green);border-radius:3px}
 .legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;margin-bottom:8px}.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px}
-@media print{body *{visibility:hidden}#printArea,#printArea *{visibility:visible}#printArea{position:absolute;left:0;top:0;width:100%}}
-#printArea{display:none}
-.modal{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;display:flex;align-items:flex-start;justify-content:center;padding:20px 12px;overflow:auto}
-.modal>.card{width:min(1300px,100%);margin:0}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:60;padding:10px 16px;border-radius:var(--radius-lg);box-shadow:0 8px 28px rgba(0,0,0,.45);display:none;font-size:13px;border:1px solid var(--border);background:var(--bg3);color:var(--text);max-width:min(640px,calc(100vw - 32px))}
+.toast.ok{border-color:rgba(62,207,142,.5);color:var(--green)}.toast.er{border-color:rgba(240,96,96,.55);color:var(--red)}.toast.wa{border-color:rgba(245,166,35,.55);color:var(--amber)}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:40;display:flex;align-items:flex-start;justify-content:center;padding:20px 12px;overflow:auto}
+.modal>.card{width:min(1300px,100%);margin:0;animation:scaleIn .2s ease both}
 .vgrid{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px}
 @media (max-width:900px){.vgrid{grid-template-columns:1fr}}
-#vSvg{width:100%;height:440px;background:var(--bg);border:1px solid var(--bd);border-radius:8px;cursor:grab;touch-action:none;display:block}
-.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:13px}.kv>span:nth-child(odd){color:var(--mut)}
-.tabs button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
-@media (prefers-color-scheme:dark){.tabs button.on{color:#042c53}}
+#vSvg{width:100%;height:440px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);cursor:grab;touch-action:none;display:block}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:13px}.kv>span:nth-child(odd){color:var(--text2)}
+.tabs button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
 
+/* microanimaciones (solo al cambiar de pestaña) */
+@keyframes scaleIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
+@keyframes rowIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
+@keyframes badgePop{0%{transform:scale(1)}50%{transform:scale(1.18)}100%{transform:scale(1)}}
+.content.anim .card,.content.anim .drop{animation:scaleIn .2s ease both}
+.content.anim .kpi{animation:scaleIn .3s ease both}
+.content.anim tr{animation:rowIn .25s ease both}
+.content.anim tr:nth-child(2){animation-delay:.02s}.content.anim tr:nth-child(3){animation-delay:.04s}.content.anim tr:nth-child(4){animation-delay:.06s}
+.content.anim tr:nth-child(5){animation-delay:.08s}.content.anim tr:nth-child(6){animation-delay:.10s}.content.anim tr:nth-child(7){animation-delay:.12s}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* celular */
+@media (max-width:820px){
+  .sidebar{position:fixed;left:0;top:0;bottom:0;z-index:45;transform:translateX(-100%);transition:transform .2s;box-shadow:0 0 40px rgba(0,0,0,.5)}
+  .sidebar.open{transform:none}
+  .sb-toggle{display:none}
+  #menuBtn{display:inline-flex}
+  .topbar{padding:.85rem 1rem .5rem}
+  .content{padding:1rem}
+  #progName{display:none}
+}
+
+/* hoja de corte impresa: papel blanco */
+#printArea{display:none;position:absolute;left:-99999px;top:0;width:1000px;background:#fff;color:#000;
+  --tube:#d3d1c7;--chuck:#888780;--mut:#6b6a65;--tx:#1f1f1d;--hd1:#e8e6df;--hd2:#b4b2a9;--hdt:#5f5e5a}
+@media print{body{display:block;height:auto;overflow:visible;background:#fff;color:#000}.sidebar,.main,.modal,.toast{display:none!important}#printArea{display:block!important;position:static;width:auto}}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
-<header>
-<button id="menuBtn">☰</button>
-<h1>🔩 Múltiples de Tubular</h1>
-<span id="conn" class="conn in">Local</span>
-<span style="flex:1"></span>
-<span id="progName" class="mut sm"></span>
-</header>
-<div class="layout"><aside id="side"></aside>
-<main>
-<h2 class="ph" id="pageTitle"></h2><p class="psub" id="pageSub"></p>
+<nav class="sidebar" id="side">
+  <div class="sidebar-logo"><div class="logo-box"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGsAAABrCAYAAABwv3wMAAACeElEQVR4nO3dP2saYQCA8dcYQREz6KTZm8Wx+Q4hgWZovkTzAUICCQHJEjqUUEL6DVKaKV1KpnRMv4Om4CSIgy6Cy3Uo9E84qzXmzqd9ftt5d/LiAy/3R+4yURQFMSylPQBNz1ggxgIxFshy3Idf7u6ij9fXSY9FDxwdH2fy+fyP5dhYzWYzvL+8TGxQird/cBB+jeU0CGIsEGOBGAvEWCCxR4OTVGu1sJzNznss/53BYBD6/f7U288U68PVVaitrmZm2Vc/vbu4iF6fnk69vdMgiLFAjAViLBBjgRgLxFggxgIxFoixQIwFYiwQY4HMdNV9XkajUeh0OmP/v12pVDLFYjHJIYUQQuh2u9FwOIxdl8vlQrVaTeWOQ6qxvt7fR5sbG2PXvzk7i15sbyf+w+zv7YXPt7ex656trYVPNzcJj+g7p0EQY4EYC8RYIMYCMRaIsUCMBWIsEGOBGAvEWCDGAjEWiLFAjAViLBBjgRgLxFggxgIxFoixQIwFYiwQY4EYC8RYIMYCMRaIsUCMBWIsEGOBGAvEWCDGAjEWiLFAjAViLBBjgRgLJNVnN03S6/VCu92e+4uU03xY1mMsdKyTRiOcNBpz/940H5b1GE6DIMYCMRaIsUCMBWIskFQP3Wu1Wubt+fncz6MmKZVKf1z/anc3vNzZmWnfp5RqrNLKStjc2lq4k9Pn6+sLN6YQnAZRjAViLBBjgRgLxFggxgIxFoixQIwFYiwQY4EYC2Smq+5Hh4ehUCgkfmvjX9Nqtf5q+5lijXsfop6W0yCIsUCMBWIsEGOBxB4NlsvlUK/Xkx6LHljKZn9bzkSRp0sUToMgxgIxFsg3evhYzPxPYKsAAAAASUVORK5CYII=" alt="Línea Italia"></div>
+    <div><div class="logo-text">IGS Láser Tubo</div><div class="logo-sub">Múltiples · GW1 · GW2</div></div></div>
+  <div id="nav"></div>
+  <div class="sidebar-bottom">
+    <div id="conn" class="conn in">● Local</div>
+    <div class="sb-info">Línea Italia · Ingeniería de Procesos</div>
+    <button id="sbToggle" class="sb-toggle" title="Plegar / desplegar el menú" aria-label="Plegar o desplegar el menú"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+  </div>
+</nav>
+<div class="main">
+  <div class="topbar"><button id="menuBtn" aria-label="Menú">☰</button>
+    <div style="min-width:0"><div class="page-title" id="pageTitle"></div><div class="page-sub" id="pageSub"></div></div>
+    <span id="progName"></span></div>
+  <main class="content" id="content">
 <section id="t-prog"></section>
 <section id="t-lib"></section>
 <section id="t-mult"></section>
+<section id="t-modelo"></section>
 <section id="t-cons"></section>
 <section id="t-piso"></section>
 <section id="t-rec"></section>
 <section id="t-cfg"></section>
-</main></div>
+  </main>
+</div>
 <div id="printArea"></div>
 <script>
 /* ===== Motor IGES: lectura, medición y combinado de piezas a lo largo de un tubo ===== */
@@ -603,10 +693,14 @@ const OPT = (() => {
     bar.piezas.forEach(p => { p.consumo = (p.L + c.kerf)/sumW*bar.consumo; });
     bar.aprov = bar.piezas.reduce((s, p) => s + p.L, 0)/bar.consumo;
   }
-  function run(items, recortes, c){
-    const tipos = {}; items.forEach(it => (tipos[it.tipo] = tipos[it.tipo] || []).push(it));
-    const res = [];
-    for(const [tipo, list] of Object.entries(tipos)){
+  function run(items, recortes, c0){
+    // se acomoda por grupo (it.grupo: máquina + tubular, y el dibujo si es completo); sin grupo, por tubular
+    const tipos = {}; items.forEach(it => { const g = it.grupo || it.tipo; (tipos[g] = tipos[g] || []).push(it); });
+    const res = [], recUsados = new Set();
+    for(const [grupo, list] of Object.entries(tipos)){
+      const tipo = list[0].tipo;
+      // cada tubular usa el largo de tramo de su SKU (c0.tramoDe); sin catálogo, el general
+      const c = c0.tramoDe ? Object.assign({}, c0, {tramo: c0.tramoDe(tipo) || c0.tramo}) : c0;
       const pend = list.slice().sort((a, b) => a.prio - b.prio || b.L - a.L);
       const largas = pend.filter(p => p.L + c.refr + c.chuck > c.tramo + 1e-6);
       let pending = pend.filter(p => !largas.includes(p));
@@ -614,14 +708,14 @@ const OPT = (() => {
       const bars = [];
       const take = sel => { const ids = new Set(sel.map(p => p.uid)); pending = pending.filter(p => !ids.has(p.uid)); };
       // 1) recortes del inventario, del más chico al más grande
-      const rec = recortes.filter(r => r.tipo === tipo).sort((a, b) => a.largo - b.largo);
+      const rec = recortes.filter(r => r.tipo === tipo && !recUsados.has(r.id)).sort((a, b) => a.largo - b.largo);
       for(const r of rec){
         if(!pending.length) break;
         const cap = capOf(r.largo, c); if(cap <= 0) continue;
         // en un recorte se busca el mejor llenado entre todas las piezas pendientes: cada recorte usado ahorra material
         const sel = fillBar(pending, cap, Object.assign({}, c, {modo: 'max'}), false);
         if(!sel.length) continue;
-        take(sel); bars.push({tipo, P: r.largo, origen: 'recorte', recorteId: r.id, piezas: sel.map(p => Object.assign({}, p))});
+        recUsados.add(r.id); take(sel); bars.push({tipo, P: r.largo, origen: 'recorte', recorteId: r.id, piezas: sel.map(p => Object.assign({}, p))});
       }
       // 2) tramos nuevos
       const capN = capOf(c.tramo, c);
@@ -661,7 +755,7 @@ const OPT = (() => {
         mmNuevos: nuevos.length*c.tramo, mmRecUsados: bars.filter(b => b.origen === 'recorte').reduce((s, b) => s + b.P, 0)
       };
       tot.aprov = tot.consumo ? tot.largoPiezas/tot.consumo : 0;
-      res.push({tipo, bars, largas, tot});
+      res.push({tipo, grupo, maquina: list[0].maquina || '', completo: !!list[0].completo, dibujo: list[0].completo ? list[0].pieza : '', bars, largas, tot, tramo: c.tramo});
     }
     return res;
   }
@@ -672,12 +766,33 @@ const OPT = (() => {
 /* ======================= Configuración ======================= */
 const API_URL = 'https://script.google.com/macros/s/AKfycbxZw8KfhHeSUdTfBQ3b4VNAXkQKrTtUkx1X4wWRyR8L1sRFT-R5umGcgcgq2evEiBhO/exec';
 const DEF = {version: 1, tramo: 6100, chuck: 400, refr: 5, kerf: 3, minRem: 500, modo: 'prio', ventana: 2, densidad: 7.85,
-  tolSeccion: 1.5, apiUrl: API_URL, carpetaClave: 'TUBULAR|IGES|IGS',
-  calibres: {'10': 3.42, '11': 3.04, '12': 2.66, '13': 2.28, '14': 1.90, '16': 1.52, '18': 1.21, '20': 0.91, '22': 0.76, '24': 0.61}};
-let CFG = (() => { let c; try{ c = Object.assign({}, DEF, JSON.parse(localStorage.getItem('mt-cfg') || '{}')); }catch(e){ c = Object.assign({}, DEF); } if(!c.apiUrl) c.apiUrl = API_URL; return c; })();
-const saveCfg = () => { try{ localStorage.setItem('mt-cfg', JSON.stringify(CFG)); }catch(e){} };
+  tolSeccion: 1.5, apiUrl: API_URL, carpetaClave: 'TUBULAR|IGES|IGS', maquinas: ['GW1', 'GW2'],
+  calibres: {'10': 3.42, '11': 3.04, '12': 2.66, '13': 2.28, '14': 1.90, '16': 1.52, '18': 1.21, '20': 0.91, '22': 0.76, '24': 0.61},
+  /* catálogo de tubulares de Business Central (el mismo de la app OEE Planta): kg por tramo; el largo sale de la descripción o del tramo general */
+  catalogo: [
+    {sku: '10508021', desc: 'Tubular 2 3/4 x 3/4 in Cal 18', peso: 9.581}, {sku: '10509015', desc: 'Tubular 2 x 1 in Cal 20 6mts', peso: 6.220},
+    {sku: '10509016', desc: 'Tubular 1/2 x 1 in Cal 18', peso: 3.791}, {sku: '10509017', desc: 'Tubular 2 x 2 in x 5.65M Cal 20', peso: 8.397},
+    {sku: '10509018', desc: 'Tubular 1 1/4 x 3/4 in Cal 18', peso: 5.239}, {sku: '10509019', desc: 'Tubular 1/2 x 1/2 in Cal 18', peso: 2.343},
+    {sku: '10509020', desc: 'Tubular 1 3/4 x 3/4 in Cal 20', peso: 5.131}, {sku: '10509021', desc: 'Tubular 1 1/2 x1 1/2 in Cal 20', peso: 6.220},
+    {sku: '10509022', desc: 'Tubular 1 x 1 in Cal 18', peso: 5.239}, {sku: '10509023', desc: 'Tubular 2 x 1 in Cal 16', peso: 10.040},
+    {sku: '10509037', desc: 'Tubular 3/4 x 3/4 in Cal 18', peso: 3.791}, {sku: '10509038', desc: 'Tubular 4 x 1 1/2 in Cal 18', peso: 15.372},
+    {sku: '10509039', desc: 'Tubular 3/4 x 3/4 in Cal 20', peso: 2.954}, {sku: '10509067', desc: 'Tubular 1 3/4 x 3/4 in Cal 18', peso: 6.686},
+    {sku: '10509124', desc: 'Tubular 3/4 x 3/4 Cal 18', peso: 3.791}, {sku: '10509125', desc: 'Tubular 1 x 1/2 in Cal 20', peso: 2.954},
+    {sku: '10509126', desc: 'Tubular 1 1/2 x1 1/2 in Cal 18', peso: 8.134}, {sku: '10509141', desc: 'Tubular 1 x 1 in Cal 14 6mt', peso: 7.732},
+    {sku: '10509142', desc: 'Tubular 1 x 1 1/2 in Cal 18', peso: 6.686}, {sku: '10509143', desc: 'Tubular 1 x 1 in Cal 10 6.09mt', peso: 11.981},
+    {sku: '10509144', desc: 'Tubular 1 x 1 1/2 in Cal 16', peso: 8.222}, {sku: '10509158', desc: 'Tubular 1 1/4 x 3/4 in Cal 18 B', peso: 5.239},
+    {sku: '10509171', desc: 'Tubular 3/4 x 3/4 Cal 20', peso: 2.954}, {sku: '10509201', desc: 'Tubular 2 x 1 Cal 18', peso: 8.134},
+    {sku: '10509204', desc: 'Tubular 2 x 2 Cal 18', peso: 11.029}, {sku: '10509210', desc: 'Tubular 1 1/4 x 1 1/4 Cal 18', peso: 6.686},
+    {sku: '10509219', desc: 'Tubular 3 x 1 Cal 18', peso: 11.029}],
+  skuPref: {}};
+let CFG = (() => { let c; try{ c = Object.assign({}, DEF, JSON.parse(localStorage.getItem('mt-cfg') || '{}')); }catch(e){ c = Object.assign({}, DEF); } if(!c.apiUrl) c.apiUrl = API_URL;
+  c.catalogo = JSON.parse(JSON.stringify(c.catalogo || [])); c.skuPref = Object.assign({}, c.skuPref); return c; })();
+const saveCfg = () => { CAT = null; try{ localStorage.setItem('mt-cfg', JSON.stringify(CFG)); }catch(e){} };
 let ELEC = (() => { try{ return JSON.parse(localStorage.getItem('mt-elec') || '{}'); }catch(e){ return {}; } })();
 const saveElec = () => { try{ localStorage.setItem('mt-elec', JSON.stringify(ELEC)); }catch(e){} };
+/* máquina de este equipo (GW1 / GW2): cada pantalla de piso corta en una sola */
+let MAQ = (() => { try{ return localStorage.getItem('mt-maq') || ''; }catch(e){ return ''; } })();
+const saveMaq = () => { try{ localStorage.setItem('mt-maq', MAQ); }catch(e){} };
 
 /* ======================= Utilidades ======================= */
 const $ = id => document.getElementById(id);
@@ -704,11 +819,17 @@ async function gunzipAll(buf){
 }
 
 /* ======================= Nombres de Ingeniería ======================= */
-const NUMRE = '(\\d+(?:[.,]\\d+)?(?:[- ]\\d+\\/\\d+)?|\\d+\\/\\d+)';
+const NUMRE = '(\\d+\\/\\d+|\\d+(?:[.,]\\d+)?(?:[- ]\\d+\\/\\d+)?)';   // la fracción sola va primero: si no, "3/4" se leía como "3"
 function frac(s){ s = String(s).replace(',', '.'); return s.split(/[- ]/).reduce((t, p) => { const m = p.match(/^(\d+)\/(\d+)$/); return t + (m ? m[1]/m[2] : (parseFloat(p) || 0)); }, 0); }
+const POT2 = new Set(['2', '4', '8', '16', '32', '64']);
 function parseMedida(s){
-  const u = norm(s).replace(/"/g, ' IN ').replace(/_/g, ' ');
-  let m = u.match(new RegExp('(?:REDONDO|RED|DIA|DIAM|Ø)\\s*-?\\s*' + NUMRE + '\\s*(MM|IN)?'));
+  // en un nombre de archivo no cabe "/": 1-1/2 se escribe "1 1-2" o "1-1-2" y 3/4 se escribe "3-4"
+  const fr = (n, d) => POT2.has(d) && +n < +d;
+  const u = norm(s).replace(/"/g, ' IN ').replace(/_/g, ' ')
+    .replace(/(\d+)[ -](\d+)-(\d+)(?![\d\/.])/g, (m, w, n, d) => fr(n, d) ? `${w}-${n}/${d}` : m)
+    .replace(/(^|[^\d\/.-])(\d+)-(\d+)(?![\d\/.])/g, (m, pre, n, d) => fr(n, d) ? `${pre}${n}/${d}` : m);
+  // redondo: REDONDO / DIA / Ø o "TUBO 1 1/4 IN" (como lo escribe el programa), siempre que no traiga "A X B"
+  let m = !new RegExp(NUMRE + '\\s*X\\s*' + NUMRE).test(u) && u.match(new RegExp('(?:REDONDO|\\bRED\\b|DIA|DIAM|Ø|\\bTUBO\\b)\\s*-?\\s*' + NUMRE + '\\s*(MM|IN)?'));
   if(m){ const v = frac(m[1]), mm = m[2] === 'MM' || (!m[2] && v > 8); return {forma: 'RED', a: mm ? v : v*25.4, b: mm ? v : v*25.4, pulg: !mm, txt: m[0].trim()}; }
   m = u.match(new RegExp(NUMRE + '\\s*X\\s*' + NUMRE + '\\s*(MM|IN)?'));
   if(m){ const v1 = frac(m[1]), v2 = frac(m[2]), mm = m[3] === 'MM' || (!m[3] && Math.max(v1, v2) > 8);
@@ -716,22 +837,43 @@ function parseMedida(s){
   return null;
 }
 const inTxt = mm => { const v = mm/25.4, w = Math.floor(v + 1e-6), r = Math.round((v - w)*16); if(r === 0) return String(w); if(r === 16) return String(w + 1); let n = r, d = 16; while(n % 2 === 0){ n /= 2; d /= 2; } return (w ? w + '-' : '') + n + '/' + d; };
+const inDec = mm => String(+(Math.round(mm/25.4*16)/16).toFixed(4));
 function tipoDe(med, cal){
   const k = `${med.forma}-${(+med.a.toFixed(1))}x${(+med.b.toFixed(1))}-C${cal || '?'}`;
   const dim = med.pulg ? (med.forma === 'RED' ? `Ø${inTxt(med.a)} in` : `${inTxt(med.b)} × ${inTxt(med.a)} in`) : (med.forma === 'RED' ? `Ø${f1(med.a)} mm` : `${f1(med.b)} × ${f1(med.a)} mm`);
-  return {key: k, label: `${dim} · cal ${cal || '?'}`, corto: (med.pulg ? (med.forma === 'RED' ? 'D' + inTxt(med.a) : inTxt(med.b) + 'X' + inTxt(med.a)) : Math.round(med.b) + 'X' + Math.round(med.a)) + '-C' + (cal || 'X')};
+  // el corto va en IDs de tramo/recorte y en nombres de archivo: pulgadas en decimal (1.75X0.75), sin "/" ni "-"
+  return {key: k, label: `${dim} · cal ${cal || '?'}`, corto: (med.pulg ? (med.forma === 'RED' ? 'D' + inDec(med.a) : inDec(med.b) + 'X' + inDec(med.a)) : Math.round(med.b) + 'X' + Math.round(med.a)) + '-C' + (cal || 'X')};
 }
 function kgPorM(med, cal){
   const t = CFG.calibres[String(cal)]; if(!t || !med) return null;
   const area = med.forma === 'RED' ? Math.PI/4*(med.a**2 - (med.a - 2*t)**2) : med.a*med.b - (med.a - 2*t)*(med.b - 2*t);
   return area*CFG.densidad/1000;
 }
+
+/* ======================= Catálogo de tubulares (SKU de Business Central) ======================= */
+let CAT = null;   // catálogo leído; saveCfg lo invalida
+function largoDeDesc(d){ const m = norm(d).replace(',', '.').match(/(\d+(?:\.\d+)?)\s*M(?:TS?|ETROS?)?\b/); return m ? Math.round(+m[1] < 20 ? +m[1]*1000 : +m[1]) : null; }
+function catalogo(){
+  return CAT || (CAT = (CFG.catalogo || []).map((c, i) => { const med = parseMedida(c.desc), cal = (norm(c.desc).match(/CAL\.?\s*(\d+)/) || [])[1];
+    const largo = +c.largo || largoDeDesc(c.desc) || CFG.tramo;
+    return Object.assign({}, c, {i, sku: String(c.sku || '').trim(), med, cal, largo, kgm: +c.peso ? +c.peso/(largo/1000) : null, key: med && cal ? tipoDe(med, cal).key : null}); }));
+}
+/* SKU del catálogo que corresponden a un tubular (misma forma y calibre, sección a ±0.6 mm) */
+function skusDe(key){
+  const m = /^(RED|CUAD|RECT)-([\d.]+)x([\d.]+)-C(\w+)$/.exec(key || ''); if(!m) return [];
+  const red = m[1] === 'RED', a = +m[2], b = +m[3];
+  return catalogo().filter(c => c.med && c.cal === m[4] && (c.med.forma === 'RED') === red && Math.abs(c.med.a - a) <= 0.6 && Math.abs(c.med.b - b) <= 0.6);
+}
+function skuDe(key){ const l = skusDe(key); return l.find(c => c.sku === CFG.skuPref[key]) || l[0] || null; }
+const tramoDe = key => { const s = skuDe(key); return s ? s.largo : CFG.tramo; };
+const kgmDe = key => { const s = skuDe(key); return s && s.kgm ? s.kgm : kgDeTipo(key); };   // sin peso en catálogo: cálculo por geometría
+const skuPorCodigo = sku => catalogo().find(c => c.sku === String(sku).trim()) || null;
 function parseNombre(name, path){
   const r = {name, path: path || '', ok: false, errores: []};
   if(/subiendo/i.test(name)){ r.excluir = 'Carga incompleta (subiendo)'; return r; }
   if(/prototipo/i.test(path || '')){ r.excluir = 'Carpeta de prototipos'; return r; }
   const m = name.match(/^(.+?)_(\d+)\s*PZA?S?_(.+?)\s+v(\d+)\s*\(([^)]*)\)\.(igs|iges)((?:\.gz)*)$/i);
-  if(!m){ r.errores.push('El nombre no sigue la convención RUTA_NPZAS_MATERIAL_CALxx_PIEZA vN (fecha).igs'); return r; }
+  if(!m) return parsePlanta(name, path, r);
   r.ruta = m[1].trim(); r.n = +m[2]; r.v = +m[4]; r.fecha = m[5]; r.gz = !!m[7];
   const toks = m[3].split('_'); let ci = toks.findIndex(t => /^CAL\.?\s*\d+$/i.test(t));
   if(ci < 0){ r.errores.push('No indica calibre (CALxx)'); r.pieza = m[3]; r.matTxt = m[3]; }
@@ -741,49 +883,109 @@ function parseNombre(name, path){
   r.ok = !r.errores.length;
   return r;
 }
+/* nombre de dibujo normalizado: liga el "Nombre del dibujo" del programa con el archivo */
+const claveDibujo = s => norm(s).replace(/\.(IGS|IGES)(\.GZ)*$/, '').replace(/[-_()]/g, ' ').replace(/\b(\d+)\s*PZ[AS]*\b/g, '$1PZ').replace(/\s+/g, ' ').trim();
+/* convención de la carpeta DIBUJOS DE CORTE(OK): LÍNEA/MODELO/[IGES]/nombre libre ("1015 ALMA 1PZ.IGS"); el tubular sale del programa */
+function parsePlanta(name, path, r){
+  const base = name.replace(/\.(igs|iges)(\.gz)*$/i, '').trim(), carpetas = String(path || '').split('/').slice(0, -1);
+  const pz = norm(base).match(/\b(\d+)\s*PZ[AS]*\b/), vieja = carpetas.filter(c => /ANTERIOR|VIEJ|OBSOLET/.test(norm(c))).pop();
+  Object.assign(r, {ok: true, planta: true, pieza: base, clave: claveDibujo(base), n: pz ? +pz[1] : null, multiple: /\bMULTIPLE\b|\bMUL\b/.test(norm(base)),
+    ruta: carpetas.filter(c => !/^IGE?S$/i.test(c.trim())).pop() || ''});
+  if(vieja) r.excluir = 'Versión anterior (' + vieja + ')';
+  else if(/MUESTRA/.test(norm(path))) r.excluir = 'Muestra';
+  return r;
+}
 
 /* ======================= Estado ======================= */
-const S = {ops: [], progFile: '', lib: [], meas: {}, raw: {}, res: null, items: [], fuera: [], db: {programas: [], tramos: [], recortes: []}, libSrc: '', libMsg: ''};
+const S = {ops: [], progFile: '', lib: [], extra: {}, meas: {}, raw: {}, res: null, items: [], fuera: [], db: {programas: [], tramos: [], recortes: []}, libSrc: '', libMsg: ''};
 let MEAS = (() => { try{ return JSON.parse(localStorage.getItem('mt-meas') || '{}'); }catch(e){ return {}; } })();
 const saveMeas = () => { try{ localStorage.setItem('mt-meas', JSON.stringify(MEAS)); }catch(e){} };
 
 /* ======================= Backend (Apps Script o local) ======================= */
+/* clave de acceso del Apps Script: solo en este equipo (no va en el código, en la configuración ni en el respaldo) */
+let CLAVE = (() => { try{ return localStorage.getItem('mt-clave') || ''; }catch(e){ return ''; } })();
+const saveClave = () => { try{ if(CLAVE) localStorage.setItem('mt-clave', CLAVE); else localStorage.removeItem('mt-clave'); }catch(e){} };
+const MSG_CLAVE = 'Falta la clave de acceso o es incorrecta: escríbela en Configuración → Conexión.';
+const errSrv = d => { const e = new Error(d.auth === 'clave' ? MSG_CLAVE : d.error); if(d.auth) e.auth = d.auth; S.authErr = d.auth === 'clave'; return e; };
 const API = {
   on: () => !!CFG.apiUrl,
   jsonp(params, timeout){
     return new Promise((ok, ko) => {
       const cb = 'mt_cb_' + Date.now() + '_' + Math.floor(Math.random()*1e6), sc = document.createElement('script');
       const t = setTimeout(() => { delete window[cb]; sc.remove(); ko(new Error('Sin respuesta del servidor')); }, timeout || 60000);
-      window[cb] = d => { clearTimeout(t); delete window[cb]; sc.remove(); d && d.error ? ko(new Error(d.error)) : ok(d); };
-      const q = new URLSearchParams(Object.assign({}, params, {callback: cb}));
+      window[cb] = d => { clearTimeout(t); delete window[cb]; sc.remove(); if(d && d.error) ko(errSrv(d)); else { if(params.action !== 'ping') S.authErr = false; ok(d); } };
+      const q = new URLSearchParams(Object.assign({}, params, CLAVE ? {clave: CLAVE} : {}, {callback: cb}));
       sc.src = CFG.apiUrl + (CFG.apiUrl.includes('?') ? '&' : '?') + q; sc.onerror = () => { clearTimeout(t); delete window[cb]; ko(new Error('No se pudo conectar con Apps Script')); };
       document.body.appendChild(sc);
     });
   },
-  async post(body){ await fetch(CFG.apiUrl, {method: 'POST', mode: 'no-cors', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify(body)}); },
+  /* el Apps Script contesta {ok} o {error}: si no confirma, el guardado se reporta como fallido */
+  async post(body){
+    let r, d;
+    try{ r = await fetch(CFG.apiUrl, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify(Object.assign({clave: CLAVE}, body))}); }
+    catch(e){ throw new Error('No se pudo conectar con Apps Script; no se guardó.'); }
+    try{ d = await r.json(); }catch(e){ throw new Error('Apps Script no confirmó el guardado (respuesta ' + r.status + ').'); }
+    if(!d || d.error || !d.ok) throw errSrv(d || {error: 'Respuesta vacía'});
+    S.authErr = false; return d;
+  },
   async cargar(){
     if(!this.on()){ try{ S.db = JSON.parse(localStorage.getItem('mt-db') || 'null') || {programas: [], tramos: [], recortes: []}; }catch(e){} return; }
     const d = await this.jsonp({action: 'estado'});
     S.db = {programas: d.programas || [], tramos: (d.tramos || []).map(t => Object.assign(t, {piezas: typeof t.piezas === 'string' ? JSON.parse(t.piezas || '[]') : t.piezas})), recortes: d.recortes || []};
     S.db.recortes.forEach(r => r.largo = +r.largo);
   },
-  /* upsert de filas por id; ts '__NOW__' lo pone el servidor */
+  /* upsert de filas por id; ts '__NOW__' lo pone el servidor. Con Apps Script, cada bloque se aplica aquí solo si el servidor lo confirmó */
   async upsert(tabla, filas){
-    const now = Date.now();
-    const loc = filas.map(f => { const o = Object.assign({}, f); for(const k in o) if(o[k] === '__NOW__') o[k] = now; return o; });
-    const arr = S.db[tabla]; loc.forEach(f => { const i = arr.findIndex(x => x.id === f.id); if(i >= 0) arr[i] = Object.assign(arr[i], f); else arr.push(f); });
-    if(!this.on()){ try{ localStorage.setItem('mt-db', JSON.stringify(S.db)); }catch(e){ toast('No se pudo guardar en el navegador', 'er'); } return; }
-    const send = filas.map(f => tabla === 'tramos' && f.piezas ? Object.assign({}, f, {piezas: JSON.stringify(f.piezas)}) : f);
-    for(let i = 0; i < send.length; i += 40) await this.post({op: 'upsert', tabla, filas: send.slice(i, i + 40)});
+    const now = Date.now(), arr = S.db[tabla];
+    const aplicar = fs => fs.forEach(f => { const o = Object.assign({}, f); for(const k in o) if(o[k] === '__NOW__') o[k] = now;
+      const i = arr.findIndex(x => x.id === o.id); if(i >= 0) arr[i] = Object.assign(arr[i], o); else arr.push(o); });
+    if(!this.on()){ aplicar(filas); try{ localStorage.setItem('mt-db', JSON.stringify(S.db)); }catch(e){ toast('No se pudo guardar en el navegador', 'er'); } return; }
+    for(let i = 0; i < filas.length; i += 40){
+      const bloque = filas.slice(i, i + 40);
+      await this.post({op: 'upsert', tabla, filas: bloque.map(f => tabla === 'tramos' && f.piezas ? Object.assign({}, f, {piezas: JSON.stringify(f.piezas)}) : f)});
+      aplicar(bloque);
+    }
   },
   async biblioteca(refrescar){ return this.jsonp({action: 'biblioteca', refrescar: refrescar ? 1 : 0}, 90000); },
-  async archivo(id){ const d = await this.jsonp({action: 'archivo', id}, 120000); const bin = atob(d.b64), u = new Uint8Array(bin.length); for(let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return gunzipAll(u.buffer); }
+  async archivoInfo(id){ const d = await this.jsonp({action: 'archivo', id}, 120000); const bin = atob(d.b64), u = new Uint8Array(bin.length); for(let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return {nombre: d.nombre || '', txt: await gunzipAll(u.buffer)}; },
+  async archivo(id){ return (await this.archivoInfo(id)).txt; }
 };
-function setConn(){ const c = $('conn'); if(API.on()){ c.className = 'conn ok'; c.textContent = '☁ Apps Script'; } else { c.className = 'conn wa'; c.textContent = '💻 Solo este navegador'; } }
+function setConn(){ const c = $('conn'); if(API.on()){ c.className = 'conn ok'; c.textContent = '● Apps Script'; } else { c.className = 'conn wa'; c.textContent = '● Solo este navegador'; } }
 
 /* ======================= Programa de producción ======================= */
 function leerPrograma(buf, name){
-  const wb = XLSX.read(buf, {type: 'array', cellDates: true});
+  const wb = XLSX.read(buf, {type: 'array', cellDates: true, cellStyles: true});
+  const hojas = [['PROGRAMA LASER #2', 'GW1'], ['PROGRAMA LASER #3', 'GW2']].map(([n, maq]) => [wb.SheetNames.find(s => norm(s).replace(/\s+/g, ' ').trim() === n), maq]).filter(([s]) => s);
+  if(hojas.length) return {formato: 'laser', ops: leerProgramaLaser(wb, hojas)};
+  return {formato: 'bc', ops: leerProgramaBC(wb)};
+}
+/* programa por máquina: "PROGRAMA LASER #2" = GW1 y "#3" = GW2; cada hoja oculta los renglones de la otra máquina */
+function leerProgramaLaser(wb, hojas){
+  const ops = [], num = v => parseFloat(String(v == null ? '' : v).replace(/,/g, '')) || 0; let idx = 0;
+  hojas.forEach(([sn, maq]) => {
+    const ws = wb.Sheets[sn], ocultas = ws['!rows'] || [], rows = XLSX.utils.sheet_to_json(ws, {header: 1, defval: '', raw: false, blankrows: true});
+    const hi = rows.findIndex(r => r.some(c => /OBSERVACIONES/i.test(c)));
+    if(hi < 0) throw new Error(`En "${sn}" no encontré el encabezado (la fila con "Observaciones")`);
+    const H = rows[hi].map(c => norm(c).replace(/\s+/g, ' ').trim()), col = re => H.findIndex(h => re.test(h));
+    const cM = col(/^MODELO/), cO = col(/^OP$/), cQ = col(/^CANT\.?$/), cF = col(/FAMILIA/), cP = col(/^PARTE/), cT = col(/TUBULAR/), cX = col(/X MUEBLE/), cG = col(/PROGRA/), cD = col(/DIBUJO/), cB = col(/OBSERVACIONES/), cC = col(/^CORTADO/);
+    if(cD < 0 || cT < 0) throw new Error(`En "${sn}" faltan las columnas "Nombre del dibujo" o "Tubular"`);
+    rows.slice(hi + 1).forEach((r, i) => {
+      const fila = hi + 1 + i; if(ocultas[fila] && ocultas[fila].hidden) return;
+      const dib = String(r[cD] == null ? '' : r[cD]).trim(), txt = r.join(' ');
+      if(!dib || /TOTAL/i.test(txt) || /#N\/A|#REF!/i.test(txt)) return;
+      const v = c => c >= 0 ? String(r[c] == null ? '' : r[c]).trim() : '';
+      const o = {maquina: maq, hoja: sn, fila: fila + 1, op: v(cO) || sn + ' fila ' + (fila + 1), ruta: v(cM), familia: v(cF), parte: v(cP), desc: v(cP), tubular: v(cT),
+        cant: num(r[cQ]), xMueble: num(r[cX]), progra: num(r[cG]), dibujo: dib, obs: v(cB), inicio: null, idx: idx++};
+      if(/NO CORTAR/i.test(dib)) o.omitir = dib;
+      else if(/^(SI|SÍ|X|✓|TRUE|VERDADERO|1)$/i.test(v(cC))) o.omitir = 'Ya marcado como cortado';
+      ops.push(o);
+    });
+  });
+  if(!ops.length) throw new Error('Las hojas PROGRAMA LASER #2 y #3 no traen renglones visibles');
+  return ops;
+}
+/* Excel de órdenes planificadas de Business Central (Nº ruta + Cantidad) */
+function leerProgramaBC(wb){
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header: 1, defval: '', raw: true});
   const hi = rows.findIndex(r => r.some(c => /RUTA/i.test(c)) && r.some(c => /^CANTIDAD$/i.test(String(c).trim())));
   if(hi < 0) throw new Error('No encontré las columnas "Nº ruta" y "Cantidad"');
@@ -801,7 +1003,7 @@ function leerPrograma(buf, name){
 /* ======================= Biblioteca ======================= */
 function vigentes(){
   // por ruta+pieza: la versión más alta; empates sin elección → excluidos y marcados
-  const g = {}; S.lib.forEach(f => { if(!f.p.ok && !f.p.ruta) return; if(f.p.excluir) return; const k = norm(f.p.ruta) + '|' + norm(f.p.pieza); (g[k] = g[k] || []).push(f); });
+  const g = {}; S.lib.forEach(f => { if(f.p.planta || (!f.p.ok && !f.p.ruta)) return; if(f.p.excluir) return; const k = norm(f.p.ruta) + '|' + norm(f.p.pieza); (g[k] = g[k] || []).push(f); });
   const vig = [], conflictos = [];
   for(const [k, l] of Object.entries(g)){
     const vmax = Math.max(...l.map(f => f.p.v)), top = l.filter(f => f.p.v === vmax);
@@ -821,12 +1023,14 @@ function evalPieza(f){
   if(!p.ok){ r.lv = 'er'; r.notas.push(...p.errores); }
   if(!m){ r.lv = r.lv === 'er' ? 'er' : 'in'; r.notas.push('Sin leer'); return r; }
   if(m.error){ r.lv = 'er'; r.notas.push(m.error); return r; }
-  if(!p.med){ r.lv = r.lv === 'er' ? 'er' : 'wa'; r.notas.push('El nombre no trae la medida; se usó la sección del IGS'); }
+  if(p.planta){}   // carpeta de dibujos: la medida la da el programa
+  else if(!p.med){ r.lv = r.lv === 'er' ? 'er' : 'wa'; r.notas.push('El nombre no trae la medida; se usó la sección del IGS'); }
   else if(Math.abs(m.secA - p.med.b) > CFG.tolSeccion || Math.abs(m.secB - p.med.a) > CFG.tolSeccion){ r.lv = 'er'; r.notas.push(`La sección del IGS (${f1(m.secA)} × ${f1(m.secB)} mm) no coincide con el nombre (${f1(p.med.b)} × ${f1(p.med.a)} mm)`); }
   if(m.units && !/MM|MILLIM/.test(m.units)) r.notas.push('Unidades ' + m.units + ' (convertidas a mm)');
   if(!m.combinable){ r.lv = r.lv === 'er' ? 'er' : 'wa'; r.notas.push('Entidades no soportadas para el IGS combinado: ' + Object.keys(m.unsup).join(', ')); }
   if(m.wall != null && f.p.cal && CFG.calibres[f.p.cal] && Math.abs(m.wall - CFG.calibres[f.p.cal]) > 0.15){ r.lv = r.lv === 'er' ? 'er' : 'wa'; r.notas.push(`Pared medida ${f2(m.wall)} mm; el calibre ${f.p.cal} es ${f2(CFG.calibres[f.p.cal])} mm`); }
-  if(m.len + CFG.refr + CFG.chuck > CFG.tramo){ r.lv = 'er'; r.notas.push(`Mide ${f0(m.len)} mm: no cabe en el tramo útil de ${f0(CFG.tramo - CFG.chuck - CFG.refr)} mm`); }
+  const med = medidaEfectiva(f), Tt = med && f.p.cal ? tramoDe(tipoDe(med, f.p.cal).key) : CFG.tramo;
+  if(m.len + CFG.refr + CFG.chuck > Tt){ r.lv = 'er'; r.notas.push(`Mide ${f0(m.len)} mm: no cabe en el tramo útil de ${f0(Tt - CFG.chuck - CFG.refr)} mm`); }
   return r;
 }
 function medidaEfectiva(f){ const m = MEAS[medKey(f)]; if(f.p.med) return f.p.med; if(m && m.ok) return {forma: Math.abs(m.secA - m.secB) < 0.3 ? 'CUAD' : 'RECT', a: m.secB, b: m.secA, pulg: false, geo: true}; return null; }
@@ -834,6 +1038,7 @@ async function textoDe(f){
   if(S.raw[f.id]) return S.raw[f.id];
   let txt;
   if(f.file) txt = await gunzipAll(await f.file.arrayBuffer());
+  else if(f.handle){ f.file = await f.handle.getFile(); txt = await gunzipAll(await f.file.arrayBuffer()); }
   else txt = await API.archivo(f.id);
   S.raw[f.id] = txt; return txt;
 }
@@ -843,7 +1048,7 @@ async function medir(lista){
     try{ const txt = await textoDe(f); const nom = f.p.med ? [f.p.med.a, f.p.med.b] : null; const a = IGES.inspect(txt, nom, f.p.med && f.p.med.forma);
       const um = IGES.parse(txt).unitFlag, k = um === 1 ? 25.4 : um === 4 ? 1000 : um === 10 ? 10 : 1;
       MEAS[medKey(f)] = a.ok ? {ok: true, len: a.len*k, secA: a.secA*k, secB: a.secB*k, combinable: a.combinable, unsup: a.unsup, units: a.units, k,
-        wall: a.wall != null ? +(a.wall*k).toFixed(2) : null, ends: a.ends.map(e => ({recto: e.recto, inglete: !!e.inglete, angulo: e.angulo, prof: +(e.profundidad*k).toFixed(1)})), nFeat: a.feats.length} : {error: a.error};
+        wall: a.wall != null ? +(a.wall*k).toFixed(2) : null, ends: a.ends.map(e => ({recto: e.recto, inglete: !!e.inglete, angulo: e.angulo, prof: +(e.profundidad*k).toFixed(1)})), nFeat: a.feats.length, round: !!a.round} : {error: a.error};
     }catch(e){ MEAS[medKey(f)] = {error: 'No se pudo leer: ' + e.message}; }
     n++; S.libMsg = `Leyendo IGS ${n}/${tot}…`; if(n % 3 === 0 || n === tot) renderLib(); } };
   await Promise.all([worker(), worker(), worker(), worker()]);
@@ -873,10 +1078,36 @@ async function cargarBibliotecaDrive(refrescar){
   else await medirNecesarios();
 }
 async function medirNecesarios(){
-  const {vig} = vigentes(); const rutas = new Set(S.ops.map(o => norm(o.ruta)));
-  const need = vig.filter(f => (!S.ops.length || rutas.has(norm(f.p.ruta))) && !MEAS[medKey(f)]);
+  let need;
+  if(S.formato === 'laser'){ ligarDibujos(); const ids = new Set(Object.values(S.match).filter(x => x.f).map(x => x.f.id)); need = S.lib.filter(f => ids.has(f.id)); }
+  else { const {vig} = vigentes(); const rutas = new Set(S.ops.map(o => norm(o.ruta))); need = vig.filter(f => !S.ops.length || rutas.has(norm(f.p.ruta))); }
+  // carpeta recordada: la fecha del archivo se lee al usarlo, así no se vuelve a medir lo que no cambió
+  for(const f of need) if(f.handle && !f.modified){ try{ const fl = await f.handle.getFile(); f.file = fl; f.modified = fl.lastModified; f.size = fl.size; }catch(e){} }
+  need = need.filter(f => !MEAS[medKey(f)]);
   if(need.length) await medir(need);
   explotar(); renderAll();
+}
+/* liga cada renglón del programa por máquina con su IGS de la carpeta de dibujos; un nombre repetido se decide por el modelo */
+function ligarDibujos(){
+  const vig = {}, viejos = {};
+  S.lib.forEach(f => { if(f.p.planta) ((f.p.excluir ? viejos : vig)[f.p.clave] = (f.p.excluir ? viejos : vig)[f.p.clave] || []).push(f); });
+  const alnum = s => norm(s).replace(/^F[AC]?\s*-?\s*(\d{3,})/, 'F$1').replace(/[^A-Z0-9]/g, '');
+  S.match = {};
+  S.ops.forEach(o => {
+    if(o.omitir) return;
+    const k = claveDibujo(o.dibujo), cand = vig[k] || [], ant = viejos[k] || [], elec = ELEC['D|' + k + '|' + norm(o.ruta)];
+    let f = elec && cand.concat(ant).find(x => x.id === elec), estado = 'ok';
+    if(!f && cand.length === 1) f = cand[0];
+    else if(!f && cand.length > 1){
+      // desempate: carpeta del modelo; o carpeta que empieza con el número del dibujo ("133 LATERAL…" → "133 NV"); un nombre genérico ("ALMA GRANDE") no desempata
+      const mod = alnum(o.ruta).replace(/(\d)[A-Z]$/, '$1'), tok0 = alnum(k.split(' ')[0]), tok = /\d/.test(tok0) ? tok0 : '';
+      const score = x => { const cs = x.path.split('/').slice(0, -1).map(alnum).filter(Boolean);
+        return (mod && cs.some(c => c === mod || (c.length >= 3 && mod.length >= 3 && (c.includes(mod) || mod.includes(c)))) ? 2 : 0) + (tok && cs.some(c => c.startsWith(tok)) ? 1 : 0); };
+      const sc = cand.map(x => [x, score(x)]).sort((a, b) => b[1] - a[1]);
+      if(sc[0][1] > 0 && sc[0][1] > sc[1][1]) f = sc[0][0]; else estado = 'ambiguo';
+    } else if(!f) estado = ant.length ? 'anterior' : 'sin';
+    S.match[o.idx] = {f: f || null, estado: f ? 'ok' : estado, clave: k, cand: f ? [] : estado === 'ambiguo' ? cand : estado === 'anterior' ? ant : []};
+  });
 }
 function cargarLocal(files){
   const arr = [...files].filter(f => /\.(igs|iges)(\.gz)*$/i.test(f.name));
@@ -886,10 +1117,352 @@ function cargarLocal(files){
     if(prev >= 0) S.lib[prev] = it; else S.lib.push(it); delete S.raw[id]; });
   S.libSrc = 'Archivos de este equipo'; toast(arr.length + ' IGS cargados'); medirNecesarios();
 }
+/* carpeta DIBUJOS DE CORTE(OK) recordada en este equipo: se elige una vez y después se abre con un clic */
+const SALTAR_DIR = /L[AÁ]MINA|DXF|MELAMINA|PANEL|AC[UÚ]STICO|PROTOTIPO/i;
+const DIRDB = {
+  abrir: () => new Promise((ok, ko) => { const r = indexedDB.open('mt-carpeta', 1); r.onupgradeneeded = () => r.result.createObjectStore('h'); r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error); }),
+  async leer(k = 'dibujos'){ try{ const db = await this.abrir(); return await new Promise(ok => { const q = db.transaction('h').objectStore('h').get(k); q.onsuccess = () => ok(q.result || null); q.onerror = () => ok(null); }); }catch(e){ return null; } },
+  async guardar(h, k = 'dibujos'){ try{ const db = await this.abrir(); db.transaction('h', 'readwrite').objectStore('h').put(h, k); }catch(e){} }
+};
+async function abrirCarpeta(otra){
+  if(!window.showDirectoryPicker) return $('inDir').click();   // navegador sin acceso a carpetas: selector clásico
+  let h = otra ? null : await DIRDB.leer();
+  try{
+    if(h && (await h.queryPermission({mode: 'read'})) !== 'granted' && (await h.requestPermission({mode: 'read'})) !== 'granted') h = null;
+    if(!h){ h = await window.showDirectoryPicker({id: 'dibujos', mode: 'read'}); await DIRDB.guardar(h); }
+  }catch(e){ if(e.name !== 'AbortError') toast('No se pudo abrir la carpeta: ' + e.message, 'er'); return; }
+  const lista = [];
+  S.libMsg = 'Leyendo la carpeta ' + h.name + '…'; renderLib();
+  const recorrer = async (dir, ruta) => {
+    for await (const [nombre, e] of dir.entries()){
+      const p = ruta ? ruta + '/' + nombre : nombre;
+      if(e.kind === 'directory'){ if(!SALTAR_DIR.test(nombre)) await recorrer(e, p); }
+      else if(/\.(igs|iges)(\.gz)*$/i.test(nombre)){ lista.push({id: 'L:' + h.name + '/' + p, name: nombre, path: h.name + '/' + p, handle: e}); if(lista.length % 250 === 0){ S.libMsg = `Leyendo la carpeta ${h.name}: ${f0(lista.length)} IGS…`; renderLib(); } }
+    }
+  };
+  try{ await recorrer(h, ''); }catch(e){ S.libMsg = ''; renderLib(); return toast('No se pudo leer la carpeta: ' + e.message, 'er'); }
+  S.lib = lista.map(it => Object.assign(it, {p: parseNombre(it.name, it.path)})); S.raw = {}; S.match = null;
+  S.libSrc = 'Carpeta ' + h.name + ' · ' + f0(lista.length) + ' IGS'; S.libMsg = '';
+  toast(f0(lista.length) + ' IGS en ' + h.name); await medirNecesarios();
+}
+const fechaArchivo = () => { const d = new Date(), p = v => String(v).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
+
+/* ======================= Carpeta central por modelo (OneDrive que ven GW1 y GW2) ======================= */
+/* <carpeta central>/<LÍNEA>/<MODELO>/IGS/[subcarpeta/]<dibujo>.IGS   copia vigente de DIBUJOS DE CORTE(OK) (espejo: la plataforma la actualiza si Ingeniería la cambia)
+                                    /ZZX/<dibujo>.zzx                 lo guarda el operador al dar de alta en TubesT, con el mismo nombre del IGS
+                                    /modelo.json                      origen de los IGS que copió la plataforma y receta de sus múltiples
+   Misma regla que herramientas/cargar-carpeta-central.ps1: LÍNEA = primera carpeta de DIBUJOS DE CORTE(OK); MODELO = la siguiente
+   (en FOLIOS se saltan FOLIOS NUEVOS, NUEVOS y FOLIOS SEMANALES); las carpetas más adentro quedan como subcarpetas de IGS;
+   se quita "NV" (solo indica versión actualizada); PLACAS e INGENIERIA no van. La plataforma nunca borra nada ni toca los .zzx. */
+const MAN = 'modelo.json', CEN_FUERA = ['PLACAS', 'INGENIERIA'], CEN_CONT = ['FOLIOS NUEVOS', 'NUEVOS', 'FOLIOS SEMANALES'];
+const sinNV = s => String(s || '').replace(/(^|\s)NV(?=\s|$)/gi, ' ').replace(/\s+/g, ' ').trim().replace(/\.+$/, '');
+const relDib = f => String(f.path || '').split('/').slice(1).join('/') || f.name;   // ruta dentro de DIBUJOS DE CORTE(OK)
+const winRuta = s => String(s).replace(/\//g, '\\');
+/* lugar de un dibujo en la carpeta central; null si su línea no va (PLACAS, INGENIERIA) */
+function lugarCentral(f){
+  const dirs = String(f.path || '').split('/').slice(1, -1).map(c => c.trim()).filter(Boolean);
+  if(dirs.length && CEN_FUERA.includes(dirs[0].toUpperCase())) return null;
+  const md = dirs.filter(c => !/^IGE?S$/i.test(c));
+  let linea, modelo, sub = '';
+  if(md.length <= 1){ linea = 'OTROS'; modelo = md[0] || 'SIN MODELO'; }
+  else {
+    linea = md[0]; let resto = md.slice(1);
+    if(linea.toUpperCase() === 'FOLIOS') while(resto.length && CEN_CONT.includes(resto[0].toUpperCase())) resto = resto.slice(1);
+    modelo = resto[0] || 'VARIOS'; sub = resto.slice(1).join('/');
+  }
+  linea = sinNV(linea); modelo = sinNV(modelo);
+  return {linea, modelo, sub, key: linea + '/' + modelo};
+}
+async function abrirCentral(otra){
+  if(!window.showDirectoryPicker) return toast('Este navegador no puede abrir carpetas: usa Chrome o Edge', 'er');
+  let h = otra ? null : await DIRDB.leer('zzx');
+  try{
+    if(h && (await h.queryPermission({mode: 'readwrite'})) !== 'granted' && (await h.requestPermission({mode: 'readwrite'})) !== 'granted') h = null;
+    if(!h){ h = await window.showDirectoryPicker({id: 'central', mode: 'readwrite'}); await DIRDB.guardar(h, 'zzx'); }
+  }catch(e){ if(e.name !== 'AbortError') toast('No se pudo abrir la carpeta: ' + e.message, 'er'); return; }
+  S.cenDir = h; toast('Leyendo ' + h.name + '…', 'in'); await leerCentral();
+  if(S.cen){ const t = cuentaCentral(); toast(`${h.name}: ${f0(t.mods)} modelos · ${f0(t.igs)} IGS · ${f0(t.zzx)} .zzx`); }
+  renderAll();
+}
+async function leerCentral(){
+  const h = S.cenDir; if(!h) return;
+  const mods = {}, porClave = new Map(), nota = (k, m) => { if(!porClave.has(k)) porClave.set(k, new Set()); porClave.get(k).add(m); };
+  const entradas = async d => { const out = []; for await (const [n, e] of d.entries()) out.push([n, e]); return out; };
+  // recorre la carpeta de un modelo: IGS y .zzx en cualquier subcarpeta, más su modelo.json
+  const leerModelo = async (d, key) => {
+    const M = mods[key] = {igs: new Map(), zzx: new Map(), man: {dibujos: [], multiples: []}};
+    const rec = async (dir, rel) => { for(const [n, e] of await entradas(dir)){
+      const r = rel ? rel + '/' + n : n;
+      if(e.kind === 'directory'){ await rec(e, r); continue; }
+      const esZ = /\.zzx$/i.test(n);
+      if(esZ || /\.(igs|iges)$/i.test(n)){ const fl = await e.getFile(), k = claveDibujo(n.replace(/\.zzx$/i, ''));
+        const x = {name: n, mod: fl.lastModified, size: fl.size, rel: r, sub: r.split('/').slice(1, -1).join('/')};
+        if(esZ) M.zzx.set(k, x); else { if(!M.igs.has(k)) M.igs.set(k, []); M.igs.get(k).push(x); }
+        nota(k, key); }
+      else if(!rel && n === MAN){ try{ const j = JSON.parse(await (await e.getFile()).text()); M.man = {dibujos: j.dibujos || [], multiples: j.multiples || []}; }catch(err){} }
+    } };
+    await rec(d, '');
+  };
+  try{
+    for(const [ln, dl] of await entradas(h)){
+      if(dl.kind !== 'directory' || CEN_FUERA.includes(ln.toUpperCase())) continue;
+      const hijos = (await entradas(dl)).filter(([, e]) => e.kind === 'directory');
+      if(hijos.some(([n]) => /^(IGS|ZZX)$/i.test(n))) continue;   // carpeta de modelo suelta en la raíz (estructura anterior): no es una línea
+      for(const [mn, dm] of hijos) await leerModelo(dm, ln + '/' + mn);
+    }
+  }catch(e){ return toast('No se pudo leer la carpeta central: ' + e.message, 'er'); }
+  S.cen = {nombre: h.name, mods, porClave};
+}
+const cuentaCentral = () => { const ms = Object.values(S.cen.mods); return {mods: ms.length, igs: ms.reduce((s, m) => s + [...m.igs.values()].reduce((a, l) => a + l.length, 0), 0), zzx: ms.reduce((s, m) => s + m.zzx.size, 0)}; };
+/* estado de un dibujo en la carpeta central. f = su IGS en DIBUJOS DE CORTE(OK), si está ligado.
+   st: listo · alta (falta dar de alta) · realta (el dibujo cambió después del alta) · cambio (Ingeniería lo cambió: copiar de nuevo) · copiar · sin · fuera */
+const EST_CEN = {listo: ['ok', '✓ listo'], alta: ['wa', 'Falta alta'], realta: ['er', 'Dar de alta otra vez'], cambio: ['er', 'Cambió el dibujo · copiar de nuevo'], copiar: ['in', 'Falta copiar el IGS'], sin: ['in', 'Sin IGS'], fuera: ['in', 'No va en la carpeta central']};
+function estadoCentral(dibujo, f){
+  if(!S.cen) return null;
+  const L = f ? lugarCentral(f) : null, k = f ? f.p.clave : claveDibujo(dibujo);
+  const res = (st, o) => Object.assign({st, lv: EST_CEN[st][0], txt: EST_CEN[st][1]}, o);
+  if(f && !L) return res('fuera', {mod: '', nombre: f.name, zzxNombre: ''});
+  let key = L ? L.key : '';
+  if(!L){ const ms = [...(S.cen.porClave.get(k) || [])]; if(ms.length === 1) key = ms[0]; }   // renglón sin IGS ligado: solo si el nombre está en un único modelo
+  const M = S.cen.mods[key], lista = (M && M.igs.get(k)) || [];
+  const ig = (L && lista.find(x => x.sub === L.sub)) || lista[0], zz = M && M.zzx.get(k);
+  const d = M && M.man.dibujos.find(x => claveDibujo(x.archivo) === k && (!L || (x.sub || '') === L.sub));
+  const copiaDe = d ? d.modificado : ig ? ig.mod : 0;   // fecha del original al copiar (el script de carga conserva la fecha)
+  const srcMod = (f && f.modified) || copiaDe || 0;      // cuándo guardó Ingeniería el dibujo
+  const nombre = ig ? ig.name : f ? f.name.replace(/\.gz$/i, '') : dibujo + '.IGS';
+  const st = f && ig && f.modified && copiaDe && f.modified - copiaDe > 3000 ? 'cambio'
+    : zz && srcMod && zz.mod < srcMod ? 'realta' : zz ? 'listo' : ig ? 'alta' : f ? 'copiar' : 'sin';
+  const mod = key || (L ? L.key : '');
+  return res(st, {mod, L, ig, zz, nombre, igRel: ig ? ig.rel : 'IGS/' + (L && L.sub ? L.sub + '/' : '') + nombre, zzxNombre: nombre.replace(/\.(igs|iges)$/i, '') + '.zzx'});
+}
+const badgeCentral = e => e ? badge(e.lv, e.txt) + (e.zz ? `<div class="mut sm">${esc(winRuta(e.mod + '/' + e.zz.rel))}</div>` : e.ig ? `<div class="mut sm">${esc(winRuta(e.mod + '/' + e.ig.rel))}</div>` : '') : '—';
+/* ruta del .zzx de un dibujo en la carpeta central; undefined = carpeta sin abrir */
+const zzxDe = dibujo => { if(!S.cen) return undefined; const k = claveDibujo(dibujo), m = [...(S.cen.porClave.get(k) || [])].find(m => S.cen.mods[m].zzx.has(k)); return m ? winRuta(m + '/' + S.cen.mods[m].zzx.get(k).rel) : null; };
+const escribirArchivo = async (dir, n, data) => { const w = await (await dir.getFileHandle(n, {create: true})).createWritable(); await w.write(data); await w.close(); };
+async function leerManif(dir){ try{ const j = JSON.parse(await (await (await dir.getFileHandle(MAN)).getFile()).text()); return {dibujos: j.dibujos || [], multiples: j.multiples || []}; }catch(e){ return {dibujos: [], multiples: []}; } }
+/* carpeta del modelo (crea LÍNEA/MODELO/IGS y ZZX si faltan) */
+async function dirModelo(L){
+  const dm = await (await S.cenDir.getDirectoryHandle(L.linea, {create: true})).getDirectoryHandle(L.modelo, {create: true});
+  await dm.getDirectoryHandle('ZZX', {create: true});
+  let di = await dm.getDirectoryHandle('IGS', {create: true});
+  return {dm, igs: async sub => { let d = di; for(const p of String(sub || '').split('/').filter(Boolean)) d = await d.getDirectoryHandle(p, {create: true}); return d; }};
+}
+/* copia a LÍNEA/MODELO/IGS los IGS vigentes que faltan o que Ingeniería cambió. No toca los .zzx ni borra nada. */
+async function copiarAlCentral(fs){
+  if(!S.cenDir) throw new Error('Abre primero la carpeta central');
+  const r = {copiados: 0, iguales: 0, fuera: 0, conflictos: [], errores: []}, porMod = {};
+  fs.forEach(f => { const L = lugarCentral(f); if(!L){ r.fuera++; return; } (porMod[L.key] = porMod[L.key] || {L, fs: []}).fs.push(f); });
+  for(const {L, fs: lista} of Object.values(porMod)){
+    let D; try{ D = await dirModelo(L); }catch(e){ r.errores.push(L.key + ': ' + e.message); continue; }
+    const man = await leerManif(D.dm); let tocado = false;
+    for(const f of lista){
+      try{
+        if(f.handle && !f.modified){ const fl = await f.handle.getFile(); f.file = fl; f.modified = fl.lastModified; f.size = fl.size; }
+        const e = estadoCentral(f.p.pieza, f), Lf = lugarCentral(f);
+        if(e.ig && e.st !== 'cambio'){ r.iguales++; continue; }
+        // la copia que está es más nueva que este dibujo (p. ej. un folio repetido en FOLIOS NUEVOS): no se reemplaza por uno más viejo
+        if(e.ig && f.modified && f.modified < e.ig.mod - 3000 && !man.dibujos.some(x => claveDibujo(x.archivo) === f.p.clave)){ r.conflictos.push(e.mod + '/' + e.ig.rel + ' (ya está una versión más nueva)'); continue; }
+        const nombre = f.name.replace(/\.gz$/i, ''), dir = await D.igs(Lf.sub);
+        const data = !/\.gz$/i.test(f.name) && (f.file || f.handle) ? (f.file || await f.handle.getFile()) : await textoDe(f);   // copia byte a byte cuando se puede
+        await escribirArchivo(dir, nombre, data);
+        man.dibujos = man.dibujos.filter(x => !(claveDibujo(x.archivo) === f.p.clave && (x.sub || '') === Lf.sub)).concat([{archivo: nombre, sub: Lf.sub, origen: relDib(f), modificado: f.modified || null, tam: f.size || null, copiado: Date.now()}]);
+        tocado = true; r.copiados++;
+      }catch(e){ r.errores.push(f.name + ': ' + e.message); }
+    }
+    if(tocado) await escribirArchivo(D.dm, MAN, JSON.stringify(Object.assign({modelo: L.key, actualizado: Date.now()}, man), null, 2));
+  }
+  await leerCentral(); return r;
+}
+async function copiarYAvisar(fs, que){
+  if(!fs.length) return toast('No hay IGS por copiar: ' + que + ' ya está al día en la carpeta central', 'in');
+  try{ toast(`Copiando ${fs.length} IGS a ${S.cenDir.name}…`, 'in'); const r = await copiarAlCentral(fs);
+    const extra = [r.iguales ? r.iguales + ' ya estaban' : '', r.conflictos.length ? r.conflictos.length + ' sin copiar porque en la carpeta hay una versión más nueva' : '', r.fuera ? r.fuera + ' de PLACAS o INGENIERIA (no van)' : '', r.errores.length ? r.errores.length + ' con error' : ''].filter(Boolean).join(' · ');
+    toast(`${r.copiados} IGS copiados a ${S.cenDir.name}${extra ? ' · ' + extra : ''}`, r.errores.length || r.conflictos.length ? 'wa' : 'ok');
+    if(r.conflictos.length || r.errores.length) console.warn('Carpeta central', r);
+    S.cenRes = r; renderAll(); }
+  catch(e){ toast('No se pudo copiar: ' + e.message, 'er'); }
+}
+/* falta copiar el IGS a la carpeta central: no está (aunque ya haya .zzx) o Ingeniería lo cambió */
+const faltaCopia = e => !!e && e.st !== 'fuera' && e.st !== 'sin' && (!e.ig || e.st === 'cambio');
+/* IGS del programa del día que faltan o cambiaron en la carpeta central */
+const porCopiarPrograma = () => { const vistos = new Set(); return S.ops.filter(o => !o.omitir).map(o => (S.match || {})[o.idx]).filter(m => m && m.f && !vistos.has(m.f.id) && vistos.add(m.f.id)).map(m => m.f).filter(f => faltaCopia(estadoCentral(f.p.pieza, f))); };
+/* lista para los operadores: dibujos del programa que no están listos en la carpeta central y dónde va cada .zzx */
+function exportarFaltantes(){
+  if(!window.XLSX) return toast('No cargó la librería de Excel (requiere internet)', 'er');
+  const vistos = new Set(), filas = [], QUE = {alta: 'Dar de alta y guardar el .zzx', realta: 'El dibujo cambió: dar de alta otra vez y reemplazar el .zzx', cambio: 'Copiar el IGS nuevo desde la plataforma y dar de alta otra vez', copiar: 'Copiar el IGS desde la plataforma y dar de alta', fuera: 'No va en la carpeta central (PLACAS o INGENIERIA)', sin: 'Ingeniería: el dibujo no está en DIBUJOS DE CORTE(OK)'};
+  S.ops.filter(o => !o.omitir).forEach(o => { const m = (S.match || {})[o.idx], f = m && m.f, e = estadoCentral(o.dibujo, f), k = f ? f.id : claveDibujo(o.dibujo);
+    if(!e || e.st === 'listo' || vistos.has(k)) return; vistos.add(k);
+    const conLugar = e.mod && e.st !== 'fuera' && (f || e.zz || e.ig);
+    filas.push({'Máquina': o.maquina, OP: o.op, Modelo: o.ruta, Tubular: o.tubular, 'Nombre del dibujo': o.dibujo, Estado: e.txt, 'Qué hacer': f || e.st !== 'sin' ? QUE[e.st] : m && m.estado !== 'sin' ? 'Elegir el IGS en la plataforma' : QUE.sin,
+      'Carpeta del modelo': conLugar ? winRuta(S.cen.nombre + '/' + e.mod) : '', 'IGS': conLugar ? (e.ig ? '' : '(se copia) ') + winRuta(e.igRel) : '', 'Guardar el .zzx en': conLugar ? winRuta(e.mod + '/ZZX/' + e.zzxNombre) : ''}); });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filas.length ? filas : [{Nota: 'Todos los dibujos del programa ya tienen su .zzx en la carpeta central'}]), 'Falta dar de alta');
+  XLSX.writeFile(wb, `${fechaArchivo()}-dibujos-por-dar-de-alta.xlsx`);
+}
+/* múltiple armado por la plataforma: su IGS va a LÍNEA/MODELO/IGS y su receta a modelo.json */
+async function guardarMultiple(L, nombre, txt, entrada){
+  if(!S.cenDir) throw new Error('Abre primero la carpeta central');
+  if(!L) throw new Error('Este modelo no va en la carpeta central (PLACAS o INGENIERIA)');
+  const D = await dirModelo(L);
+  await escribirArchivo(await D.igs(''), nombre + '.igs', txt);
+  const man = await leerManif(D.dm); man.multiples = man.multiples.filter(x => x.nombre !== nombre).concat([entrada]);
+  await escribirArchivo(D.dm, MAN, JSON.stringify(Object.assign({modelo: L.key, actualizado: Date.now()}, man), null, 2));
+  await leerCentral();
+}
+
+/* ======================= Múltiples por modelo ======================= */
+/* modelo de un archivo de la carpeta de dibujos: sus carpetas sin la raíz ni "IGES" (TOP50/1130, FOLIOS/FC-4102) */
+const modeloDe = f => f.path.split('/').slice(1, -1).filter(c => !/^IGE?S$/i.test(c.trim())).join('/');
+const nombreModelo = k => k.split('/').pop();
+const archivosModelo = k => S.lib.filter(f => f.p.planta && !f.p.excluir && modeloDe(f) === k);
+/* tubular de una pieza sin programa: sección medida → fracción de pulgada; pared → calibre */
+function tipoGeo(m){
+  const a = Math.min(m.secA, m.secB), b = Math.max(m.secA, m.secB);
+  const cal = m.wall == null ? null : (Object.entries(CFG.calibres).map(([c, t]) => [c, Math.abs(t - m.wall)]).filter(x => x[1] <= 0.15).sort((x, y) => x[1] - y[1])[0] || [null])[0];
+  const q = v => { const r = Math.round(v/25.4*16)/16; return Math.abs(v - r*25.4) <= 0.4 ? r*25.4 : null; }, qa = q(a), qb = q(b), pulg = qa != null && qb != null;
+  const med = {forma: m.round ? 'RED' : Math.abs(a - b) < 0.3 ? 'CUAD' : 'RECT', a: pulg ? qa : a, b: pulg ? qb : b, pulg};
+  return Object.assign({med, cal}, tipoDe(med, cal));
+}
+/* tubular de una pieza del modelo: si el programa cargado trae ese dibujo manda su tubular (con aviso si la pared del IGS no cuadra); si no, la geometría */
+function tipoPieza(f, m){
+  const g = tipoGeo(m), o = S.ops.find(o => o.tubular && o.dibujo && claveDibujo(o.dibujo) === f.p.clave), med = o && parseMedida(o.tubular);
+  if(!med) return Object.assign(g, {fuente: 'IGS', aviso: ''});
+  const cal = (norm(o.tubular).match(/CAL\.?\s*(\d+)/) || [])[1], t = CFG.calibres[cal];
+  return Object.assign({med, cal}, tipoDe(med, cal), {fuente: 'programa', aviso: m.wall != null && t && Math.abs(m.wall - t) > 0.15 ? `Pared del IGS ${f2(m.wall)} mm; el programa dice cal ${cal} (${f2(t)} mm)` : ''});
+}
+/* piezas por mueble: lo que diga el programa cargado para ese dibujo; si no, 1 */
+const xmDefault = f => { const o = S.ops.find(o => o.dibujo && claveDibujo(o.dibujo) === f.p.clave && o.xMueble > 0); return o ? o.xMueble : 1; };
+async function elegirModelo(k){
+  S.mod = {key: k, xm: {}, off: {}, lote: (S.mod && S.mod.lote) || 1, res: null, comp: null}; renderModelo();
+  const fs = archivosModelo(k);
+  for(const f of fs) if(f.handle && !f.modified){ try{ const fl = await f.handle.getFile(); f.file = fl; f.modified = fl.lastModified; f.size = fl.size; }catch(e){} }
+  const need = fs.filter(f => !MEAS[medKey(f)]);
+  if(need.length){ toast(`Midiendo ${need.length} IGS de ${nombreModelo(k)}…`, 'in'); await medir(need); }
+  if(S.mod && S.mod.key === k) renderModelo();
+}
+/* acomoda las piezas sueltas de un lote de muebles; cada composición de tramo que se repite es un múltiple */
+function armarModelo(lote){
+  const M = S.mod, mod = nombreModelo(M.key), items = [], sinMedida = []; let uid = 0;
+  archivosModelo(M.key).filter(f => !f.p.multiple && !M.off[f.id]).forEach(f => {
+    const m = MEAS[medKey(f)]; if(!m || !m.ok) return sinMedida.push(f);
+    const tg = tipoPieza(f, m), n = Math.max(0, Math.round((M.xm[f.id] != null ? M.xm[f.id] : xmDefault(f)) * lote));
+    for(let i = 0; i < n; i++) items.push({uid: uid++, tipo: tg.key, tipoLabel: tg.label, tipoCorto: tg.corto, L: m.len, prio: 0, op: mod, ruta: mod, pieza: f.p.pieza, fileId: f.id, med: tg.med, cal: tg.cal});
+  });
+  if(!items.length) return null;
+  const res = OPT.run(items, [], {tramo: CFG.tramo, tramoDe, chuck: CFG.chuck, refr: CFG.refr, kerf: CFG.kerf, minRem: CFG.minRem, modo: 'max', ventana: CFG.ventana});
+  res.forEach(g => { const it = items.find(i => i.tipo === g.tipo), s = skuDe(g.tipo); g.label = it.tipoLabel; g.corto = it.tipoCorto; g.sku = s ? s.sku : ''; g.kgm = kgmDe(g.tipo);
+    const pats = [];
+    g.bars.forEach(b => { const sig = b.piezas.map(p => p.fileId + '@' + Math.round(p.L)).sort().join('|'); let pt = pats.find(x => x.sig === sig); if(!pt) pats.push(pt = {sig, bar: b, n: 0}); pt.n++; });
+    pats.sort((a, b) => b.n - a.n || b.bar.aprov - a.bar.aprov);
+    pats.forEach((pt, i) => { pt.nombre = `${mod} MULT ${g.corto} ${String.fromCharCode(65 + i)} (${pt.bar.piezas.length}PZ)`; pt.bar.id = pt.nombre; pt.bar.tipoLabel = g.label; });
+    g.pats = pats; });
+  return {lote, grupos: res, sinMedida, tramos: res.reduce((s, g) => s + g.bars.length, 0), aprov: res.reduce((s, g) => s + g.tot.largoPiezas, 0)/res.reduce((s, g) => s + g.tot.consumo, 0)};
+}
+/* lugar en la carpeta central de un modelo de DIBUJOS DE CORTE(OK) (el de su primer dibujo vigente) */
+const lugarModelo = k => { const f = archivosModelo(k)[0]; return f ? lugarCentral(f) : null; };
+/* múltiples guardados en la carpeta central para este modelo, su .zzx y si alguno de sus dibujos cambió desde entonces */
+function manifModelo(k){
+  const L = lugarModelo(k), C = S.cen && L && S.cen.mods[L.key]; if(!C) return [];
+  return C.man.multiples.map(x => { const cambios = (x.fuentes || []).filter(fu => { const f = S.lib.find(l => l.path === fu.archivo); return !f || (f.modified && fu.modificado && f.modified !== fu.modificado); }).map(fu => fu.archivo.split('/').pop());
+    const kx = claveDibujo(x.nombre), zz = C.zzx.get(kx);
+    const st = cambios.length ? 'cambio' : zz && x.fecha && zz.mod < x.fecha ? 'realta' : zz ? 'listo' : C.igs.has(kx) ? 'alta' : 'copiar';
+    return Object.assign({}, x, {cambios, st}); });
+}
+function renderModelo(){
+  const el = $('t-modelo'), planta = S.lib.filter(f => f.p.planta && !f.p.excluir);
+  const zzxBtn = `${S.cen ? badge('ok', 'Carpeta central: ' + S.cen.nombre) : ''}<button id="mdZzx" title="Carpeta de OneDrive que también ven GW1 y GW2: una carpeta por modelo con sus IGS, sus .zzx y sus múltiples">📂 Carpeta central</button>`;
+  if(!planta.length){ el.innerHTML = `<div class="card row"><span style="flex:1">Abre la carpeta <b>DIBUJOS DE CORTE(OK)</b> para elegir un modelo.</span><button class="pri" id="mdDir">📂 Abrir carpeta de dibujos</button>${zzxBtn}</div>`;
+    $('mdDir').onclick = () => abrirCarpeta(false); $('mdZzx').onclick = () => abrirCentral(false); return; }
+  const mods = {}; planta.forEach(f => { const k = modeloDe(f); (mods[k] = mods[k] || []).push(f); });
+  const q = norm(S.modQ || ''), keys = Object.keys(mods).filter(k => !q || norm(k).includes(q)).sort((a, b) => a.localeCompare(b, 'es', {numeric: true}));
+  const M = S.mod && mods[S.mod.key] ? S.mod : null;
+  el.innerHTML = `<div class="card"><div class="row"><input id="mdQ" placeholder="Buscar modelo: 1130, FC-4102, CREDENZA…" value="${esc(S.modQ || '')}" style="flex:1;min-width:220px">${zzxBtn}</div>
+    <div class="row" style="margin-top:10px;max-height:160px;overflow:auto">${keys.slice(0, 90).map(k => `<button data-mod="${esc(k)}" class="${M && M.key === k ? 'pri' : ''}" title="${esc(k)}">${esc(nombreModelo(k))} <span class="mut sm">${mods[k].length}</span></button>`).join('')}${keys.length > 90 ? `<span class="mut sm">y ${keys.length - 90} más: escribe para filtrar</span>` : ''}${!keys.length ? '<span class="mut sm">Ningún modelo con ese texto.</span>' : ''}</div></div>
+    ${M ? modeloHtml(M) : '<div class="card empty">Elige un modelo para ver sus piezas y armar sus múltiples.</div>'}`;
+  $('mdQ').oninput = e => { S.modQ = e.target.value; clearTimeout(renderModelo._t); renderModelo._t = setTimeout(() => { renderModelo(); const i = $('mdQ'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250); };
+  $('mdZzx').onclick = () => abrirCentral(false);
+  el.querySelectorAll('[data-mod]').forEach(b => b.onclick = () => elegirModelo(b.dataset.mod));
+  if(M) bindModelo();
+}
+function modeloHtml(M){
+  const fs = archivosModelo(M.key), sueltas = fs.filter(f => !f.p.multiple), mults = fs.filter(f => f.p.multiple), mod = nombreModelo(M.key), man = manifModelo(M.key);
+  const fila = f => { const m = MEAS[medKey(f)], tg = m && m.ok ? tipoPieza(f, m) : null, s = tg ? skuDe(tg.key) : null, Tt = tg ? tramoDe(tg.key) : CFG.tramo;
+    const est = !m ? badge('in', 'Midiendo…') : m.error ? badge('er', m.error) : m.len + CFG.refr + CFG.chuck > Tt ? badge('er', 'No cabe en el tramo útil') : !tg.cal ? badge('wa', 'Calibre no reconocido por la pared') : tg.aviso ? badge('wa', tg.aviso) : badge('ok', '✓');
+    return {m, tg, s, est}; };
+  const tot = man.length ? `<div class="card"><h3>Múltiples guardados en la carpeta central</h3><div class="tw"><table><tr><th>Múltiple</th><th>Tubular</th><th class="n">Piezas</th><th class="n">Aprovech.</th><th>Guardado</th><th>Estado</th></tr>
+    ${man.map(x => `<tr><td><b>${esc(x.nombre)}</b></td><td class="sm">${esc(x.tubular)}</td><td class="n">${x.pzs}</td><td class="n">${pct(x.aprov)}</td><td class="sm">${fecha(x.fecha)}</td><td>${x.st === 'cambio' ? badge('er', 'Cambió: ' + x.cambios.join(', ') + ' · armar y dar de alta otra vez') : x.st === 'copiar' ? badge('er', 'Falta el IGS en la carpeta') : badge(EST_CEN[x.st][0], EST_CEN[x.st][1])}</td></tr>`).join('')}</table></div></div>` : '';
+  const ec = S.cen ? new Map(fs.map(f => [f.id, estadoCentral(f.p.pieza, f)])) : null;
+  const cen = !S.cen ? `<div class="card row"><span style="flex:1">Abre la <b>carpeta central</b> para juntar en una carpeta por modelo los IGS de este modelo, sus .zzx y sus múltiples.</span><button id="mdZzx2">📂 Carpeta central</button></div>` : (() => {
+    const L = lugarModelo(M.key);
+    if(!L) return `<div class="card"><span class="mut">Este modelo es de PLACAS o INGENIERIA: no va en la carpeta central.</span></div>`;
+    const C = S.cen.mods[L.key], ests = [...ec.values()], n = st => ests.filter(e => e.st === st).length, pend = ests.filter(faltaCopia).length, re = n('realta') + n('cambio');
+    // IGS de la carpeta central que ya no corresponden a ningún dibujo vigente de ese modelo (sin contar los múltiples de la plataforma)
+    const vivos = new Set(S.lib.filter(f => f.p.planta && !f.p.excluir).filter(f => { const l = lugarCentral(f); return l && l.key === L.key; }).map(f => f.p.clave));
+    const mults = new Set(C ? C.man.multiples.map(x => claveDibujo(x.nombre)) : []);
+    const viejos = C ? [...C.igs.entries()].filter(([k]) => !vivos.has(k) && !mults.has(k)).map(([, l]) => winRuta(l[0].rel)) : [];
+    return `<div class="card"><div class="row"><span style="flex:1"><b>Carpeta central · ${esc(winRuta(S.cen.nombre + '/' + L.key))}</b><br><span class="sm">${ests.filter(e => e.ig).length} de ${fs.length} IGS copiados</span> ${badge('ok', n('listo') + ' con .zzx')} ${n('alta') ? badge('wa', n('alta') + ' falta alta') : ''} ${re ? badge('er', re + ' por dar de alta otra vez') : ''}</span>
+      <button class="pri" id="mdCopiar" ${pend ? '' : 'disabled'} title="Copia a la carpeta del modelo los IGS vigentes que faltan o que Ingeniería cambió. No borra nada ni toca los .zzx">⬆ Copiar IGS del modelo${pend ? ' (' + pend + ')' : ''}</button></div>
+      ${viejos.length ? `<p class="sm" style="color:var(--wa);margin:8px 0 0">Ya no están vigentes en DIBUJOS DE CORTE(OK): ${viejos.map(esc).join(', ')}. La plataforma no borra nada: revisa si se quitan de la carpeta central.</p>` : ''}
+      <p class="mut sm" style="margin:8px 0 0">Los IGS están en la carpeta IGS del modelo. Al dar de alta en TubesT, el operador guarda el .zzx en la carpeta ZZX del mismo modelo, con el mismo nombre del IGS.</p></div>`; })();
+  const R = M.res, C = M.comp;
+  return `<div class="card"><h3>${esc(M.key)} <span class="mut sm">${sueltas.length} piezas sueltas · ${mults.length} MULTIPLE de Ingeniería</span></h3>
+    <p class="mut sm" style="margin:0 0 10px">El tubular de cada pieza sale del programa cargado si trae ese dibujo; si no, de la sección y la pared medidas en el IGS. Tramo útil: ${f0(CFG.tramo - CFG.chuck - CFG.refr)} mm (tramo ${f0(CFG.tramo)} − chuck ${f0(CFG.chuck)} − refrentado ${CFG.refr}; si el SKU trae otro largo, se usa ese). <b>Confirma el largo del tramo y el chuck con los operadores</b> en Configuración.</p>
+    <div class="tw"><table><tr><th></th><th>Pieza</th><th>Tubular (medido)</th><th class="n">Largo</th><th class="n">Pared</th><th class="n">Por mueble</th><th>Estado</th>${ec ? '<th>Carpeta central</th>' : ''}</tr>
+    ${sueltas.map(f => { const r = fila(f); return `<tr><td><input type="checkbox" data-minc="${esc(f.id)}" ${M.off[f.id] ? '' : 'checked'} aria-label="Incluir"></td><td>${esc(f.p.pieza)}<div class="mut sm">${esc(f.name)}</div></td>
+      <td class="sm">${r.tg ? esc(r.tg.label) + `<div class="mut">${r.s ? 'SKU ' + esc(r.s.sku) + ' · ' : ''}según ${r.tg.fuente}</div>` : '—'}</td><td class="n">${r.m && r.m.ok ? f0(r.m.len) : '—'}</td><td class="n">${r.m && r.m.ok && r.m.wall != null ? f2(r.m.wall) : '—'}</td>
+      <td class="n"><input type="number" min="0" step="1" data-mxm="${esc(f.id)}" value="${M.xm[f.id] != null ? M.xm[f.id] : xmDefault(f)}" style="width:70px"></td><td>${r.est}</td>${ec ? `<td>${badge(ec.get(f.id).lv, ec.get(f.id).txt)}</td>` : ''}</tr>`; }).join('') || `<tr><td colspan="${ec ? 8 : 7}" class="mut">Este modelo no tiene piezas sueltas.</td></tr>`}</table></div>
+    ${mults.length ? `<p class="sm" style="margin:10px 0 4px"><b>MULTIPLE de Ingeniería actuales</b> (referencia; también se copian a la carpeta central):</p><div class="row">${mults.map(f => { const m = MEAS[medKey(f)], e = ec && ec.get(f.id); return badge('in', f.p.pieza + (m && m.ok ? ' · ' + f0(m.len) + ' mm' : '')) + (e ? ' ' + badge(e.lv, e.txt) : ''); }).join(' ')}</div>` : ''}
+    <div class="row" style="margin-top:12px"><label class="cfl" style="flex-direction:row;align-items:center;gap:6px">Muebles por lote <input type="number" id="mdLote" min="1" max="50" step="1" value="${M.lote}" style="width:70px"></label>
+      <button class="pri" id="mdArmar">⚙ Armar múltiples</button><button id="mdComp" title="Arma con 1 a 6 muebles y compara tramos y aprovechamiento">Comparar 1 a 6 muebles</button>
+      ${R ? '<button id="mdXls">📊 Manifiesto (Excel)</button>' : ''}</div></div>
+    ${cen}
+    ${C ?`<div class="card"><h3>Comparación por tamaño de lote</h3><div class="tw"><table><tr><th class="n">Muebles</th><th class="n">Tramos</th><th class="n">Tramos por mueble</th><th class="n">Aprovechamiento</th><th class="n">Múltiples distintos</th><th></th></tr>
+      ${C.map(r => `<tr><td class="n">${r.lote}</td><td class="n">${r.tramos}</td><td class="n">${f2(r.tramos/r.lote)}</td><td class="n">${pct(r.aprov)}</td><td class="n">${r.pats}</td><td><button data-mlote="${r.lote}">Usar</button></td></tr>`).join('')}</table></div>
+      <p class="mut sm" style="margin:6px 0 0">Menos múltiples distintos = menos altas en TubesT. Elige el lote que dé buen aprovechamiento con pocos múltiples.</p></div>` : ''}
+    ${R ? R.grupos.map((g, gi) => `<details class="card" open><summary><b>${esc(g.label)}</b> ${g.sku ? badge('in', 'SKU ' + g.sku) : badge('wa', 'Sin SKU en el catálogo')} ${badge('in', g.bars.length + ' tramos por ' + R.lote + (R.lote === 1 ? ' mueble' : ' muebles'))} ${badge(g.tot.aprov > .9 ? 'ok' : g.tot.aprov > .8 ? 'wa' : 'er', 'Aprovechamiento ' + pct(g.tot.aprov))}</summary>
+      ${g.pats.map((pt, pi) => `<div class="bar"><div class="barhd"><b>${esc(pt.nombre)}</b> ${badge('in', '×' + pt.n + ' por lote')} ${zzxDe(pt.nombre) ? badge('ok', '✓ .zzx') : ''}<span class="mut sm">${esc(resumenTxt(pt.bar.piezas))}</span><span style="flex:1"></span>
+        <button data-migs="${gi}|${pi}" title="IGS del múltiple para validarlo y darlo de alta">⬇ IGS</button>${S.cenDir ? `<button data-mlib="${gi}|${pi}" title="Guarda el IGS del múltiple en la carpeta IGS del modelo (carpeta central) y su receta en modelo.json">💾 A la carpeta central</button>` : ''}</div>${svgBar(pt.bar, colorMapModelo())}</div>`).join('')}
+      ${g.largas.length ? `<p class="sm" style="color:var(--er)">No caben en el tramo útil: ${[...new Set(g.largas.map(p => p.pieza))].map(esc).join(', ')}</p>` : ''}</details>`).join('') : ''}
+    ${R && R.sinMedida.length ? `<p class="sm" style="color:var(--wa)">Sin medida (no entran): ${R.sinMedida.map(f => esc(f.p.pieza)).join(', ')}</p>` : ''}
+    ${tot}`;
+}
+const resumenTxt = pz => { const m = new Map(); pz.forEach(p => m.set(p.pieza, (m.get(p.pieza) || 0) + 1)); return [...m].map(([p, n]) => n + '× ' + p).join(' · '); };
+const colorMapModelo = () => { const keys = [...new Set(archivosModelo(S.mod.key).map(f => f.p.pieza))]; return p => PAL[keys.indexOf(p.pieza) % PAL.length] || PAL[0]; };
+function bindModelo(){
+  const el = $('t-modelo'), M = S.mod;
+  el.querySelectorAll('[data-minc]').forEach(c => c.onchange = () => { if(c.checked) delete M.off[c.dataset.minc]; else M.off[c.dataset.minc] = 1; M.res = M.comp = null; renderModelo(); });
+  el.querySelectorAll('[data-mxm]').forEach(i => i.onchange = () => { M.xm[i.dataset.mxm] = Math.max(0, +i.value || 0); M.res = M.comp = null; renderModelo(); });
+  $('mdLote').onchange = e => { M.lote = Math.max(1, Math.round(+e.target.value || 1)); };
+  $('mdArmar').onclick = () => { M.res = armarModelo(M.lote); if(!M.res) toast('No hay piezas medidas para armar', 'er'); renderModelo(); };
+  $('mdComp').onclick = () => { M.comp = [1, 2, 3, 4, 5, 6].map(l => { const r = armarModelo(l); return r && {lote: l, tramos: r.tramos, aprov: r.aprov, pats: r.grupos.reduce((s, g) => s + g.pats.length, 0)}; }).filter(Boolean); renderModelo(); };
+  el.querySelectorAll('[data-mlote]').forEach(b => b.onclick = () => { M.lote = +b.dataset.mlote; M.res = armarModelo(M.lote); renderModelo(); });
+  if($('mdXls')) $('mdXls').onclick = () => exportarManifiesto(M);
+  if($('mdZzx2')) $('mdZzx2').onclick = () => abrirCentral(false);
+  if($('mdCopiar')) $('mdCopiar').onclick = () => copiarYAvisar(archivosModelo(M.key).filter(f => faltaCopia(estadoCentral(f.p.pieza, f))), 'el modelo');
+  const patDe = s => { const [gi, pi] = s.split('|').map(Number), g = M.res.grupos[gi]; return {g, pt: g.pats[pi]}; };
+  el.querySelectorAll('[data-migs]').forEach(b => b.onclick = async () => { const {g, pt} = patDe(b.dataset.migs);
+    try{ toast('Armando IGS de ' + pt.nombre + '…', 'in'); dl(pt.nombre + '.igs', await igsTramo(pt.bar, g.label), 'application/iges'); }catch(e){ toast(e.message, 'er'); } });
+  el.querySelectorAll('[data-mlib]').forEach(b => b.onclick = async () => { const {g, pt} = patDe(b.dataset.mlib);
+    try{ toast('Guardando ' + pt.nombre + '…', 'in'); const L = lugarModelo(M.key); await guardarMultiple(L, pt.nombre, await igsTramo(pt.bar, g.label), entradaManifiesto(M, g, pt));
+      toast(`${pt.nombre} guardado en ${winRuta(S.cen.nombre + '/' + L.key)}\\IGS: falta validarlo y darlo de alta`); renderModelo(); }catch(e){ toast('No se pudo guardar: ' + e.message, 'er'); } });
+}
+function entradaManifiesto(M, g, pt){
+  const b = pt.bar, fuentes = [...new Set(b.piezas.map(p => p.fileId))].map(id => { const f = S.lib.find(x => x.id === id); return {archivo: f.path, modificado: f.modified || null}; });
+  return {nombre: pt.nombre, modelo: M.key, tubular: g.label, sku: g.sku, pzs: b.piezas.length, tramo: b.P, usado: Math.round(b.usado), aprov: +b.aprov.toFixed(4), fecha: Date.now(),
+    piezas: b.piezas.map(p => ({pieza: p.pieza, x: +p.x.toFixed(1), L: +p.L.toFixed(1)})), fuentes};
+}
+function exportarManifiesto(M){
+  if(!window.XLSX) return toast('No cargó la librería de Excel (requiere internet)', 'er');
+  const R = M.res, filas = [];
+  R.grupos.forEach(g => g.pats.forEach(pt => filas.push({'Múltiple': pt.nombre, Tubular: g.label, SKU: g.sku, 'Piezas': pt.bar.piezas.length, 'Composición': resumenTxt(pt.bar.piezas), 'Veces por lote': pt.n, 'Tramo mm': pt.bar.P, 'Usado mm': Math.round(pt.bar.usado), 'Aprovechamiento': +pt.bar.aprov.toFixed(3), '.zzx': zzxDe(pt.nombre) ? 'Sí' : 'Falta alta'})));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filas), 'Múltiples');
+  XLSX.writeFile(wb, `${fechaArchivo()}-multiples-${nombreModelo(M.key).replace(/[\\/:*?"<>|]/g, '-')}-lote${R.lote}.xlsx`);
+}
 
 /* ======================= Explosión del programa ======================= */
 function explotar(){
   S.items = []; S.fuera = []; S.sinTub = [];
+  if(S.formato === 'laser') return explotarLaser();
   const {vig} = vigentes(); const porRuta = {};
   vig.forEach(f => (porRuta[norm(f.p.ruta)] = porRuta[norm(f.p.ruta)] || []).push(f));
   let uid = 0;
@@ -905,27 +1478,68 @@ function explotar(){
     });
   });
 }
+/* programa por máquina: cada corrida de un dibujo es una unidad. Los dibujos con varias piezas (MULTIPLE o Cant. > Cant. Progra.)
+   se respetan tal cual y solo comparten tramo con copias de sí mismos (su alta en TubesT se reutiliza);
+   las piezas sueltas del mismo tubular y máquina se acomodan juntas en los tramos. */
+function explotarLaser(){
+  if(!S.match) ligarDibujos();
+  let uid = 0;
+  S.ops.forEach(o => {
+    // en el programa Cant. = Cant. Progra. (muebles) × Cant. x mueble: Cant. son las piezas que hay que cortar
+    const mt = S.match[o.idx] || {}, piezas = Math.round(o.cant || o.progra * o.xMueble) || 0;
+    let corridas = piezas;
+    const fuera = motivo => S.fuera.push({o, f: mt.f || {p: {ruta: o.ruta, pieza: o.dibujo}, id: ''}, n: corridas, motivo});
+    if(o.omitir) return fuera(o.omitir);
+    if(!mt.f) return fuera(mt.estado === 'ambiguo' ? `Hay ${mt.cand.length} IGS con ese nombre: elige cuál en Programa` : mt.estado === 'anterior' ? 'Solo hay versión anterior del dibujo: elige en Programa si se usa' : 'No está en la carpeta de dibujos');
+    const f = mt.f, m = MEAS[medKey(f)];
+    if(!m) return fuera('Sin leer');
+    if(m.error) return fuera(m.error);
+    const med = parseMedida(o.tubular), cal = (norm(o.tubular).match(/CAL\.?\s*(\d+)/) || [])[1];
+    if(!med) return fuera(`No entiendo el tubular del programa: "${o.tubular}"`);
+    if(Math.abs(m.secA - med.b) > CFG.tolSeccion || Math.abs(m.secB - med.a) > CFG.tolSeccion) return fuera(`La sección del IGS (${f1(m.secA)} × ${f1(m.secB)} mm) no coincide con el tubular del programa (${o.tubular})`);
+    if(!m.combinable) return fuera('Entidades no soportadas para el IGS: ' + Object.keys(m.unsup).join(', '));
+    const t = tipoDe(med, cal), Tt = tramoDe(t.key);
+    if(m.len + CFG.refr + CFG.chuck > Tt) return fuera(`Mide ${f0(m.len)} mm: no cabe en el tramo útil de ${f0(Tt - CFG.chuck - CFG.refr)} mm`);
+    if(!piezas) return fuera('Sin cantidad programada');
+    // un MULTIPLE trae varias piezas: se corre Cant. ÷ piezas por dibujo ("(3PZ)" en el nombre); si el nombre no lo dice, no se puede calcular
+    const completo = !!f.p.multiple || (f.p.n || 1) > 1, pzs = completo ? (f.p.n > 1 ? f.p.n : 0) : 1;
+    if(completo && !pzs) return fuera('MULTIPLE sin número de piezas en el nombre (p. ej. "(3PZ)"): no sé cuántas veces correrlo');
+    corridas = Math.ceil(piezas / pzs);
+    for(let i = 0; i < corridas; i++) S.items.push({uid: uid++, tipo: t.key, tipoLabel: t.label, tipoCorto: t.corto, L: m.len, prio: o.idx, op: o.op, ruta: o.ruta, pieza: o.dibujo, fileId: f.id,
+      med, cal, pzs, completo, maquina: o.maquina, grupo: o.maquina + '|' + t.key + (completo ? '|' + f.id : '')});
+  });
+}
 const TIPOS = () => { const t = {}; S.items.forEach(i => t[i.tipo] = t[i.tipo] || {key: i.tipo, label: i.tipoLabel, corto: i.tipoCorto, med: i.med, cal: i.cal}); (S.db.recortes || []).forEach(r => { if(!t[r.tipo]) t[r.tipo] = {key: r.tipo, label: r.tipoLabel || r.tipo, corto: r.tipoCorto || r.tipo}; }); return t; };
 
 /* ======================= Optimización ======================= */
 function generar(){
   if(!S.items.length) return toast('No hay piezas de tubular para el programa', 'er');
   const recDisp = (S.db.recortes || []).filter(r => r.estado === 'Disponible').map(r => ({id: r.id, tipo: r.tipo, largo: +r.largo}));
-  const c = {tramo: CFG.tramo, chuck: CFG.chuck, refr: CFG.refr, kerf: CFG.kerf, minRem: CFG.minRem, modo: CFG.modo, ventana: CFG.ventana};
+  const c = {tramo: CFG.tramo, tramoDe, chuck: CFG.chuck, refr: CFG.refr, kerf: CFG.kerf, minRem: CFG.minRem, modo: CFG.modo, ventana: CFG.ventana};
   const res = OPT.run(S.items, CFG.usarRecortes === false ? [] : recDisp, c);
-  const pid = 'MT-' + hoyId(), T = TIPOS();
-  res.forEach(g => { const t = T[g.tipo]; g.label = t.label; g.corto = t.corto; g.kgm = kgPorM(t.med, t.cal);
-    g.bars.forEach((b, i) => { b.id = `${pid}-${t.corto}-${String(i + 1).padStart(2, '0')}`; b.tipoLabel = t.label;
-      if(b.recorte) b.recorteNuevo = 'R' + t.corto + '-' + Date.now().toString(36).slice(-4).toUpperCase() + String(i + 1).padStart(2, '0'); }); });
-  S.res = {id: pid, fecha: Date.now(), cfg: c, grupos: res, archivo: S.progFile, guardado: false};
+  // el ID es por minuto: si ya hay un programa con ese ID se agrega b, c… para no sobrescribirlo al guardar
+  const base = 'MT-' + hoyId(), T = TIPOS(); let pid = base;
+  for(let k = 1; (S.db.programas || []).some(p => p.id === pid); k++) pid = base + String.fromCharCode(97 + k);
+  // el consecutivo es por tubular aunque haya varios grupos (máquinas o dibujos completos) del mismo tubular
+  const cons = {}, sello = Date.now().toString(36).slice(-4).toUpperCase();
+  res.sort((a, b) => String(a.maquina).localeCompare(String(b.maquina)) || String(a.tipo).localeCompare(String(b.tipo)) || (a.completo ? 0 : 1) - (b.completo ? 0 : 1));
+  res.forEach(g => { const t = T[g.tipo], s = skuDe(g.tipo); g.label = t.label; g.corto = t.corto; g.kgm = kgmDe(g.tipo); g.sku = s ? s.sku : ''; g.nSku = skusDe(g.tipo).length;
+    g.bars.forEach(b => { const n = cons[t.corto] = (cons[t.corto] || 0) + 1, nn = String(n).padStart(2, '0');
+      b.id = `${pid}-${t.corto}-${nn}`; b.tipoLabel = t.label; b.maquina = g.maquina; b.completo = g.completo;
+      if(b.recorte) b.recorteNuevo = 'R' + t.corto + '-' + sello + nn; }); });
+  S.res = {id: pid, fecha: Date.now(), cfg: c, grupos: res, archivo: S.progFile, guardado: false}; S.consSel = null;
   showTab('mult'); toast('Múltiples generados');
 }
 async function guardarPrograma(){
   const R = S.res; if(!R) return; if(R.guardado) return toast('Este programa ya está guardado', 'in');
+  // la misma OP en dos programas vigentes = piezas cortadas dos veces
+  const opsR = [...new Set(R.grupos.flatMap(g => g.bars.flatMap(b => b.piezas.map(p => String(p.op)))))];
+  const previos = (S.db.programas || []).filter(p => p.estado !== 'Cancelado' && p.id !== R.id).map(p => ({id: p.id, ops: String(p.ops ?? '').split(/\s*,\s*/).filter(o => opsR.includes(o))})).filter(p => p.ops.length);
+  if(previos.length && !confirm(`Estas OPs ya están en otro programa guardado:\n${previos.map(p => `• ${p.id}: ${p.ops.join(', ')}`).join('\n')}\n\nSi lo guardas, esas piezas se cortarían dos veces. ¿Guardar de todas formas?`)) return;
   const tramos = [], recNuevos = [], recUsados = [];
   R.grupos.forEach(g => g.bars.forEach((b, i) => {
-    tramos.push({id: b.id, programa: R.id, tipo: g.tipo, tipoLabel: g.label, orden: i + 1, largo: b.P, origen: b.origen, recorteUsado: b.recorteId || '', recorteNuevo: b.recorteNuevo || '', largoRecorte: b.recorte, consumo: b.consumo, aprov: b.aprov, estado: 'Pendiente', inicio: '', fin: '',
-      piezas: b.piezas.map(p => ({x: +p.x.toFixed(1), L: +p.L.toFixed(1), op: p.op, ruta: p.ruta, pieza: p.pieza, fileId: p.fileId, consumo: +p.consumo.toFixed(1)}))});
+    tramos.push({id: b.id, programa: R.id, tipo: g.tipo, tipoLabel: g.label, orden: i + 1, largo: b.P, origen: b.origen, recorteUsado: b.recorteId || '', recorteNuevo: b.recorteNuevo || '', largoRecorte: b.recorte, consumo: b.consumo, aprov: b.aprov, estado: 'Pendiente', inicio: '', fin: '', maquina: b.maquina || '',
+      piezas: b.piezas.map(p => Object.assign({x: +p.x.toFixed(1), L: +p.L.toFixed(1), op: p.op, ruta: p.ruta, pieza: p.pieza, fileId: p.fileId, consumo: +p.consumo.toFixed(1)}, p.pzs > 1 ? {pzs: p.pzs} : {}, p.completo ? {completo: true} : {}))});
     if(b.recorteId) recUsados.push({id: b.recorteId, estado: 'Reservado', programa: R.id, tramo: b.id});
     if(b.recorteNuevo) recNuevos.push({id: b.recorteNuevo, tipo: g.tipo, tipoLabel: g.label, tipoCorto: g.corto, largo: b.recorte, estado: 'Por generar', origen: b.id, programa: R.id, ubicacion: '', alta: '__NOW__'});
   }));
@@ -940,11 +1554,19 @@ async function guardarPrograma(){
 }
 
 /* ======================= IGS combinado y hoja de corte ======================= */
+/* IGS de un tramo guardado cuando la biblioteca no está cargada en esta pantalla: se baja de Drive por su id */
+async function igsSuelto(p){
+  if(S.extra[p.fileId]) return S.extra[p.fileId];
+  if(String(p.fileId).startsWith('L:') || !API.on()) throw new Error(`No está cargado el IGS de ${p.pieza} (${p.ruta}). Este programa se armó con IGS del equipo: cárgalos en "Biblioteca de IGS".`);
+  const d = await API.archivoInfo(p.fileId);
+  const f = {id: p.fileId, name: d.nombre, path: '', p: parseNombre(d.nombre, '')};
+  S.raw[f.id] = d.txt; S.extra[f.id] = f; return f;
+}
 async function igsTramo(bar, label){
   const items = [];
   for(const p of bar.piezas){
-    const f = S.lib.find(x => x.id === p.fileId); if(!f) throw new Error('No está cargado el IGS de ' + p.pieza + ' (' + p.ruta + ')');
-    const txt = await textoDe(f); const nom = f.p.med ? [f.p.med.a, f.p.med.b] : null;
+    const f = S.lib.find(x => x.id === p.fileId) || await igsSuelto(p);
+    const txt = await textoDe(f), md = f.p.med || p.med, nom = md ? [md.a, md.b] : null;
     const a = IGES.analyze(txt, nom); if(!a.ok) throw new Error(p.pieza + ': ' + a.error);
     if(!a.combinable) throw new Error(p.pieza + ': tiene entidades no soportadas (' + Object.keys(a.unsup).join(', ') + ')');
     const k = a.model.unitFlag === 1 ? 25.4 : 1; if(k !== 1) throw new Error(p.pieza + ': el IGS está en pulgadas; pídelo en mm');
@@ -952,8 +1574,15 @@ async function igsTramo(bar, label){
   }
   return IGES.combine(items, {maxCoord: bar.P, file: bar.id + '.igs', product: bar.id, title: `${bar.id} ${label || ''} tramo ${bar.P} mm`.slice(0, 72)});
 }
+/* tramo de un dibujo completo (MULTIPLE de Ingeniería): se entrega el IGS original, así se reutiliza su alta en TubesT */
+const esCompleto = bar => bar.completo || (bar.piezas.length > 0 && bar.piezas.every(p => p.completo) && new Set(bar.piezas.map(p => p.fileId)).size === 1);
 async function descargarTramo(bar, label, registrar){
-  try{ toast('Armando IGS de ' + bar.id + '…', 'in'); const txt = await igsTramo(bar, label); dl(bar.id + '.igs', txt, 'application/iges');
+  try{
+    if(esCompleto(bar)){
+      const p0 = bar.piezas[0], f = S.lib.find(x => x.id === p0.fileId) || await igsSuelto(p0), txt = await textoDe(f), k = bar.piezas.length;
+      dl(f.name.replace(/\.gz$/i, ''), txt, 'application/iges');
+      toast(`${f.name}: dibujo completo · córtalo ${k} ${k === 1 ? 'vez' : 'veces'} en este tramo (usa su .zzx si ya está dado de alta)`, 'in');
+    } else { toast('Armando IGS de ' + bar.id + '…', 'in'); const txt = await igsTramo(bar, label); dl(bar.id + '.igs', txt, 'application/iges'); }
     if(registrar) await iniciarCorte(bar.id); }
   catch(e){ toast(e.message, 'er'); }
 }
@@ -961,13 +1590,13 @@ function svgBar(b, colorOf, opts){
   opts = opts || {}; const W = 1000, H = 46, T = b.P, sc = W/Math.max(T, CFG.tramo), ch = CFG.chuck;
   let s = `<svg viewBox="-2 -2 ${W + 4} ${H + 22}" role="img" aria-label="Tramo ${esc(b.id)}"><rect x="0" y="0" width="${T*sc}" height="${H}" rx="3" fill="var(--tube)" stroke="var(--mut)" stroke-width="1"/>`;
   s += `<defs><pattern id="hR" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="#c0dd97"/><line x1="0" y1="0" x2="0" y2="7" stroke="#639922" stroke-width="2"/></pattern>
-    <pattern id="hD" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="#e8e6df"/><line x1="0" y1="0" x2="0" y2="7" stroke="#b4b2a9" stroke-width="2"/></pattern></defs>`;
+    <pattern id="hD" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="var(--hd1)"/><line x1="0" y1="0" x2="0" y2="7" stroke="var(--hd2)" stroke-width="2"/></pattern></defs>`;
   b.piezas.forEach(p => { const x = p.x*sc, w = p.L*sc, c = colorOf(p);
     s += `<rect x="${x}" y="2" width="${Math.max(w, 1)}" height="${H - 4}" fill="${c}" stroke="#2c2c2a" stroke-width=".8"><title>${esc(p.pieza)} · ${esc(p.ruta)} · ${esc(p.op)} · ${f1(p.L)} mm</title></rect>`;
     if(w > 46) s += `<text x="${x + w/2}" y="${H/2 - 2}" font-size="11" text-anchor="middle" fill="#1f1f1d">${esc(p.pieza.length*6 > w ? p.pieza.slice(0, Math.max(3, Math.floor(w/6.5))) + '…' : p.pieza)}</text><text x="${x + w/2}" y="${H/2 + 12}" font-size="10" text-anchor="middle" fill="#444441">${f0(p.L)}</text>`; });
   const used = b.usado, rec = b.recorte || 0;
   if(rec){ const x0 = used*sc, w = (T - used)*sc; s += `<rect x="${x0}" y="2" width="${w}" height="${H - 4}" fill="url(#hR)"/>`; if(w > 60) s += `<text x="${x0 + w/2}" y="${H/2 + 4}" font-size="11" text-anchor="middle" fill="#27500a">♻ ${esc(b.recorteNuevo || 'recorte')} ${f0(rec)}</text>`; }
-  else { const x0 = used*sc, w = Math.max(0, (T - ch - used)*sc); if(w > 0){ s += `<rect x="${x0}" y="2" width="${w}" height="${H - 4}" fill="url(#hD)"/>`; if(w > 50) s += `<text x="${x0 + w/2}" y="${H/2 + 4}" font-size="10" text-anchor="middle" fill="#5f5e5a">sobra ${f0(T - ch - used)}</text>`; }
+  else { const x0 = used*sc, w = Math.max(0, (T - ch - used)*sc); if(w > 0){ s += `<rect x="${x0}" y="2" width="${w}" height="${H - 4}" fill="url(#hD)"/>`; if(w > 50) s += `<text x="${x0 + w/2}" y="${H/2 + 4}" font-size="10" text-anchor="middle" fill="var(--hdt)">sobra ${f0(T - ch - used)}</text>`; }
     s += `<rect x="${(T - ch)*sc}" y="2" width="${ch*sc}" height="${H - 4}" fill="var(--chuck)"/>`; if(ch*sc > 40) s += `<text x="${(T - ch/2)*sc}" y="${H/2 + 4}" font-size="10" text-anchor="middle" fill="#fff">chuck</text>`; }
   s += `<text x="0" y="${H + 16}" font-size="11" fill="var(--mut)">${b.origen === 'recorte' ? '♻ Recorte ' + esc(b.recorteId) + ' · ' : ''}${f0(T)} mm · ${b.piezas.length} pzas · usado ${f0(used)} mm · aprovechamiento ${pct(b.aprov)}</text></svg>`;
   return s;
@@ -976,8 +1605,8 @@ function colorMap(){ const keys = [...new Set(S.items.map(i => i.ruta + '|' + i.
   return p => PAL[keys.indexOf(p.ruta + '|' + p.pieza) % PAL.length] || PAL[0]; }
 function hojaCorte(titulo, bars){
   const col = colorMap();
-  const html = `<div style="font:12px system-ui;color:#000;padding:10px"><h2 style="margin:0 0 4px">${esc(titulo)}</h2><div style="color:#555;margin-bottom:10px">Tramo nuevo ${f0(CFG.tramo)} mm · chuck ${f0(CFG.chuck)} mm · refrentado ${CFG.refr} mm · separación ${CFG.kerf} mm · impreso ${new Date().toLocaleString('es-MX')}</div>
-  ${bars.map(b => `<div style="page-break-inside:avoid;border:1px solid #999;border-radius:6px;padding:8px;margin-bottom:10px"><b style="font-size:14px">${esc(b.id)}</b> · ${esc(b.tipoLabel || '')} · ${b.origen === 'recorte' ? '<b>USAR RECORTE ' + esc(b.recorteId) + '</b> (' + f0(b.P) + ' mm)' : 'Tramo nuevo ' + f0(b.P) + ' mm'}
+  const html = `<div style="font:12px system-ui;color:#000;padding:10px"><h2 style="margin:0 0 4px">${esc(titulo)}</h2><div style="color:#555;margin-bottom:10px">Tramo nuevo ${[...new Set(bars.filter(b => b.origen !== 'recorte').map(b => f0(b.P)))].join(' / ') || f0(CFG.tramo)} mm · chuck ${f0(CFG.chuck)} mm · refrentado ${CFG.refr} mm · separación ${CFG.kerf} mm · impreso ${new Date().toLocaleString('es-MX')}</div>
+  ${bars.map(b => `<div style="page-break-inside:avoid;border:1px solid #999;border-radius:6px;padding:8px;margin-bottom:10px"><b style="font-size:14px">${esc(b.id)}</b> · ${esc(b.tipoLabel || '')} · ${b.maquina ? '<b>' + esc(b.maquina) + '</b> · ' : ''}${esCompleto(b) ? '<b>DIBUJO COMPLETO: ' + esc(b.piezas[0].pieza) + ' ×' + b.piezas.length + '</b> (usar su alta de TubesT) · ' : ''}${b.origen === 'recorte' ? '<b>USAR RECORTE ' + esc(b.recorteId) + '</b> (' + f0(b.P) + ' mm)' : 'Tramo nuevo ' + f0(b.P) + ' mm'}
   <div style="margin:6px 0">${svgBar(b, col)}</div>
   <table style="width:100%;border-collapse:collapse;font-size:12px"><tr>${['#', 'Desde (mm)', 'Largo (mm)', 'Pieza', 'Ruta', 'OP'].map(h => `<th style="border-bottom:1px solid #999;text-align:left;padding:2px 4px">${h}</th>`).join('')}</tr>
   ${b.piezas.map((p, i) => `<tr><td style="padding:2px 4px">${i + 1}</td><td>${f1(p.x)}</td><td>${f1(p.L)}</td><td>${esc(p.pieza)}</td><td>${esc(p.ruta)}</td><td>${esc(p.op)}</td></tr>`).join('')}</table>
@@ -988,10 +1617,11 @@ function hojaCorte(titulo, bars){
 /* ======================= Seguimiento de corte ======================= */
 async function iniciarCorte(id){
   const t = S.db.tramos.find(x => x.id === id); if(!t) return;
-  if(t.estado === 'En proceso' || t.estado === 'Cortado'){ renderAll(); return; } // una descarga repetida no reinicia el reloj
-  const abiertos = S.db.tramos.filter(x => x.estado === 'En proceso' && x.id !== id);
+  if(['En proceso', 'Cortado', 'Cancelado'].includes(t.estado)){ renderAll(); return; } // una descarga repetida no reinicia el reloj
+  // solo se cierra el tramo que estaba en proceso en esta misma máquina
+  const abiertos = S.db.tramos.filter(x => x.estado === 'En proceso' && x.maquina === MAQ && x.id !== id);
   for(const a of abiertos) await terminarCorte(a.id, true);
-  await API.upsert('tramos', [{id, estado: 'En proceso', inicio: '__NOW__'}]); renderAll();
+  await API.upsert('tramos', [{id, estado: 'En proceso', maquina: MAQ, inicio: '__NOW__'}]); renderAll();
 }
 async function terminarCorte(id, silencioso){
   const t = S.db.tramos.find(x => x.id === id); if(!t) return;
@@ -1001,46 +1631,89 @@ async function terminarCorte(id, silencioso){
   if(t.recorteUsado) r.push({id: t.recorteUsado, estado: 'Usado', usadoEn: t.id});
   if(r.length) await API.upsert('recortes', r);
   const prog = S.db.programas.find(p => p.id === t.programa);
-  if(prog){ const ts = S.db.tramos.filter(x => x.programa === prog.id); const est = ts.every(x => x.estado === 'Cortado') ? 'Cortado' : 'En proceso'; if(prog.estado !== est) await API.upsert('programas', [{id: prog.id, estado: est}]); }
+  if(prog && prog.estado !== 'Cancelado'){ const ts = S.db.tramos.filter(x => x.programa === prog.id); const est = ts.every(x => x.estado === 'Cortado' || x.estado === 'Cancelado') ? 'Cortado' : 'En proceso'; if(prog.estado !== est) await API.upsert('programas', [{id: prog.id, estado: est}]); }
   if(!silencioso){ toast('Tramo ' + id + ' cortado' + (t.recorteNuevo ? ' · recorte ' + t.recorteNuevo + ' disponible' : '')); renderAll(); }
 }
+/* cancela los tramos pendientes de un programa: libera los recortes reservados y anula los que se iban a generar */
+async function cancelarPrograma(pid){
+  const ts = S.db.tramos.filter(t => t.programa === pid), pend = ts.filter(t => t.estado === 'Pendiente');
+  if(ts.some(t => t.estado === 'En proceso')) return toast('Hay un tramo en proceso: termínalo antes de cancelar', 'er');
+  if(!pend.length) return toast('Este programa no tiene tramos pendientes', 'in');
+  const hechos = ts.filter(t => t.estado === 'Cortado').length;
+  if(!confirm(`¿Cancelar ${pend.length} tramo(s) pendiente(s) del programa ${pid}?${hechos ? ` Los ${hechos} ya cortados se conservan.` : ''} Los recortes reservados vuelven a quedar disponibles.`)) return;
+  try{
+    await API.upsert('tramos', pend.map(t => ({id: t.id, estado: 'Cancelado'})));
+    const r = [];
+    pend.forEach(t => { if(t.recorteUsado) r.push({id: t.recorteUsado, estado: 'Disponible', tramo: ''}); if(t.recorteNuevo) r.push({id: t.recorteNuevo, estado: 'Cancelado', baja: '__NOW__'}); });
+    if(r.length) await API.upsert('recortes', r);
+    await API.upsert('programas', [{id: pid, estado: 'Cancelado'}]);
+    toast('Programa ' + pid + ' cancelado'); renderAll();
+  }catch(e){ toast('No se pudo cancelar: ' + e.message, 'er'); }
+}
+/* tramo guardado → barra para hoja de corte, IGS y consumos */
+function barDe(t){
+  return {id: t.id, P: +t.largo, origen: t.origen, recorteId: t.recorteUsado, recorteNuevo: t.recorteNuevo, recorte: +t.largoRecorte || 0, tipoLabel: t.tipoLabel, maquina: t.maquina || '', piezas: t.piezas || [], completo: false,
+    usado: (t.piezas || []).reduce((m, p) => Math.max(m, p.x + p.L), 0), aprov: +t.aprov || 0, consumo: +t.consumo || 0};
+}
+const idCorto = t => t.programa && String(t.id).startsWith(t.programa + '-') ? String(t.id).slice(t.programa.length + 1) : String(t.id);
 
 /* ======================= Consumos ======================= */
-function consumos(){
-  // del programa generado en pantalla o, si no hay, de los tramos guardados del programa elegido
-  let bars = [];
-  if(S.res) S.res.grupos.forEach(g => g.bars.forEach(b => bars.push(Object.assign({tipo: g.tipo, label: g.label, kgm: g.kgm}, b))));
-  const T = TIPOS(), porPieza = {}, porTipo = {}, porOP = {};
+/* kg/m desde la clave del tipo (FORMA-AxB-Ccal), para tramos guardados */
+function kgDeTipo(key){ const m = /^(RED|CUAD|RECT)-([\d.]+)x([\d.]+)-C(\w+)$/.exec(key || ''); return m ? kgPorM({forma: m[1], a: +m[2], b: +m[3]}, m[4]) : null; }
+/* programa que se muestra en Consumos: '' = el generado en pantalla; si no hay, el último guardado */
+function consPid(){
+  const P = S.db.programas || [];
+  if(S.consSel != null && (S.consSel === '' ? S.res : P.some(p => p.id === S.consSel))) return S.consSel;
+  if(S.res) return '';
+  const u = P.slice().sort((a, b) => (a.estado === 'Cancelado') - (b.estado === 'Cancelado') || (+b.fecha || 0) - (+a.fecha || 0))[0]; return u ? u.id : '';
+}
+function barsDe(pid){
+  if(pid === '') return S.res ? S.res.grupos.flatMap(g => g.bars.map(b => Object.assign({tipo: g.tipo, label: g.label}, b))) : [];
+  return (S.db.tramos || []).filter(t => t.programa === pid && t.estado !== 'Cancelado').map(t => { const b = barDe(t);
+    return Object.assign(b, {tipo: t.tipo, label: t.tipoLabel || t.tipo, estado: t.estado, desecho: b.P - b.usado - b.recorte, piezas: b.piezas.map(p => Object.assign({}, p, {consumo: +p.consumo || 0}))}); });
+}
+function consumos(pid){
+  // del programa generado en pantalla o de los tramos guardados del programa elegido (los cancelados no cuentan)
+  // kg y TRA salen del SKU del catálogo (peso y largo del tramo de BC); sin SKU, del cálculo por geometría y el tramo general
+  const bars = barsDe(pid);
+  const porPieza = {}, porTipo = {}, porOP = {}, info = {};
+  const inf = k => info[k] || (info[k] = {kgm: kgmDe(k), tramo: tramoDe(k), sku: (skuDe(k) || {}).sku || ''});
   bars.forEach(b => {
-    const kgm = b.kgm || null, tt = porTipo[b.tipo] = porTipo[b.tipo] || {tipo: b.label, kgm, tramos: 0, recUsados: 0, mmRecUsados: 0, recGen: 0, mmRecGen: 0, consumo: 0, piezas: 0, mmPiezas: 0, desecho: 0};
+    const {kgm, tramo, sku} = inf(b.tipo), tt = porTipo[b.tipo] = porTipo[b.tipo] || {key: b.tipo, tipo: b.label, sku, tramo, kgm, tramos: 0, recUsados: 0, mmRecUsados: 0, recGen: 0, mmRecGen: 0, consumo: 0, piezas: 0, mmPiezas: 0, desecho: 0};
     if(b.origen === 'nuevo') tt.tramos++; else { tt.recUsados++; tt.mmRecUsados += b.P; }
     if(b.recorte){ tt.recGen++; tt.mmRecGen += b.recorte; }
     tt.consumo += b.consumo; tt.desecho += b.desecho;
-    b.piezas.forEach(p => { tt.piezas++; tt.mmPiezas += p.L;
-      const k = p.ruta + '|' + p.pieza + '|' + b.tipo, e = porPieza[k] = porPieza[k] || {ruta: p.ruta, pieza: p.pieza, tipo: b.label, kgm, L: p.L, n: 0, consumo: 0};
-      e.n++; e.consumo += p.consumo;
-      const ko = p.op + '|' + b.tipo, o = porOP[ko] = porOP[ko] || {op: p.op, ruta: p.ruta, tipo: b.label, kgm, n: 0, mm: 0, consumo: 0}; o.n++; o.mm += p.L; o.consumo += p.consumo; });
+    b.piezas.forEach(p => { const kp = p.pzs || 1; tt.piezas += kp; tt.mmPiezas += p.L;   // un dibujo completo cuenta todas sus piezas
+      const k = p.ruta + '|' + p.pieza + '|' + b.tipo, e = porPieza[k] = porPieza[k] || {ruta: p.ruta, pieza: p.pieza, tipo: b.label, sku, tramo, kgm, L: p.L, n: 0, consumo: 0};
+      e.n++; e.pzs = kp; e.consumo += p.consumo;
+      const ko = p.op + '|' + b.tipo, o = porOP[ko] = porOP[ko] || {op: p.op, ruta: p.ruta, key: b.tipo, tipo: b.label, sku, tramo, kgm, n: 0, mm: 0, consumo: 0}; o.n += kp; o.mm += p.L; o.consumo += p.consumo; });
   });
-  return {porPieza: Object.values(porPieza).sort((a, b) => a.ruta.localeCompare(b.ruta) || a.pieza.localeCompare(b.pieza)), porTipo: Object.values(porTipo), porOP: Object.values(porOP).sort((a, b) => a.op.localeCompare(b.op)), hay: bars.length > 0};
+  return {porPieza: Object.values(porPieza).sort((a, b) => String(a.ruta).localeCompare(String(b.ruta)) || String(a.pieza).localeCompare(String(b.pieza))), porTipo: Object.values(porTipo), porOP: Object.values(porOP).sort((a, b) => String(a.op).localeCompare(String(b.op))), hay: bars.length > 0, bars};
 }
 function exportarConsumos(){
   if(!window.XLSX) return toast('No cargó la librería de Excel (requiere internet)', 'er');
-  const C = consumos(); if(!C.hay) return toast('Genera primero los múltiples', 'er');
-  const T = CFG.tramo, wb = XLSX.utils.book_new();
+  const pid = consPid(), C = consumos(pid); if(!C.hay) return toast('Genera los múltiples o elige un programa guardado', 'er');
+  const wb = XLSX.utils.book_new();
   const add = (n, rows) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{Nota: 'Sin datos'}]), n);
-  add('Por pieza', C.porPieza.map(e => ({Ruta: e.ruta, Pieza: e.pieza, Tubular: e.tipo, 'Largo pieza mm': +e.L.toFixed(1), 'Piezas': e.n, 'Consumo real mm/pz': +(e.consumo/e.n).toFixed(1), 'TRA/pz': +(e.consumo/e.n/T).toFixed(4), 'kg/pz': e.kgm ? +(e.consumo/e.n/1000*e.kgm).toFixed(3) : '', 'Aprovechamiento': +(e.L*e.n/e.consumo).toFixed(3)})));
-  add('Por tubular', C.porTipo.map(t => ({Tubular: t.tipo, 'Tramos nuevos': t.tramos, 'Recortes usados': t.recUsados, 'mm de recortes usados': Math.round(t.mmRecUsados), 'Recortes generados': t.recGen, 'mm de recortes generados': Math.round(t.mmRecGen), 'Consumo neto mm': Math.round(t.consumo), 'Tramos equivalentes': +(t.consumo/T).toFixed(3), 'kg': t.kgm ? +(t.consumo/1000*t.kgm).toFixed(2) : '', 'Piezas': t.piezas, 'Aprovechamiento': +(t.mmPiezas/t.consumo).toFixed(3), 'Desecho mm': Math.round(t.desecho)})));
-  add('Por OP', C.porOP.map(o => ({OP: o.op, Ruta: o.ruta, Tubular: o.tipo, Piezas: o.n, 'Largo de piezas mm': Math.round(o.mm), 'Consumo real mm': Math.round(o.consumo), 'Tramos equivalentes': +(o.consumo/T).toFixed(4), kg: o.kgm ? +(o.consumo/1000*o.kgm).toFixed(3) : ''})));
-  if(S.res) add('Tramos', S.res.grupos.flatMap(g => g.bars.map(b => ({Tramo: b.id, Tubular: g.label, Origen: b.origen === 'recorte' ? 'Recorte ' + b.recorteId : 'Nuevo', 'Largo mm': b.P, Piezas: b.piezas.map(p => `${p.pieza} (${p.ruta}) ${f1(p.L)}`).join(' | '), 'Usado mm': Math.round(b.usado), 'Recorte generado': b.recorteNuevo || '', 'Largo recorte mm': b.recorte, 'Desecho mm': Math.round(b.desecho), Aprovechamiento: +b.aprov.toFixed(3)}))));
-  XLSX.writeFile(wb, `Consumos_tubular_${S.res ? S.res.id : hoyId()}.xlsx`);
+  add('Por pieza', C.porPieza.map(e => ({Ruta: e.ruta, Pieza: e.pieza, Tubular: e.tipo, SKU: e.sku, 'Largo pieza mm': +e.L.toFixed(1), 'Piezas': e.n, 'Consumo real mm/pz': +(e.consumo/e.n).toFixed(1), 'TRA/pz': +(e.consumo/e.n/e.tramo).toFixed(4), 'kg/pz': e.kgm ? +(e.consumo/e.n/1000*e.kgm).toFixed(3) : '', 'Aprovechamiento': +(e.L*e.n/e.consumo).toFixed(3)})));
+  add('Por tubular', C.porTipo.map(t => ({Tubular: t.tipo, SKU: t.sku, 'Largo tramo mm': t.tramo, 'Tramos nuevos': t.tramos, 'Recortes usados': t.recUsados, 'mm de recortes usados': Math.round(t.mmRecUsados), 'Recortes generados': t.recGen, 'mm de recortes generados': Math.round(t.mmRecGen), 'Consumo neto mm': Math.round(t.consumo), 'TRA': +(t.consumo/t.tramo).toFixed(3), 'kg': t.kgm ? +(t.consumo/1000*t.kgm).toFixed(2) : '', 'Piezas': t.piezas, 'Aprovechamiento': +(t.mmPiezas/t.consumo).toFixed(3), 'Desecho mm': Math.round(t.desecho)})));
+  add('Por OP', C.porOP.map(o => ({OP: o.op, Ruta: o.ruta, Tubular: o.tipo, SKU: o.sku, Piezas: o.n, 'Largo de piezas mm': Math.round(o.mm), 'Consumo real mm': Math.round(o.consumo), 'TRA': +(o.consumo/o.tramo).toFixed(4), kg: o.kgm ? +(o.consumo/1000*o.kgm).toFixed(3) : ''})));
+  const K = compararBC(C);
+  if(K){
+    add('Contra BC por tubular', K.porTipo.map(x => ({Tubular: x.tipo, SKU: x.skus.join(', '), 'BC esperada TRA': +x.bc.toFixed(3), 'Real TRA': +x.real.toFixed(3), 'Diferencia TRA': +(x.real - x.bc).toFixed(3), 'Diferencia %': x.bc ? +((x.real - x.bc)/x.bc).toFixed(4) : '', 'Diferencia kg': x.kgm ? +((x.real - x.bc)*x.tramo/1000*x.kgm).toFixed(2) : '', 'Tramos nuevos a surtir': x.tramos, 'BC consumida TRA': x.consumida ?? ''})));
+    if(K.porOP.length) add('Contra BC por OP', K.porOP.map(x => ({OP: x.op, Tubular: x.tipo, SKU: x.sku, 'BC esperada TRA': +x.bc.toFixed(4), 'Real TRA': +x.real.toFixed(4), 'Diferencia TRA': +(x.real - x.bc).toFixed(4), 'Diferencia %': x.bc ? +((x.real - x.bc)/x.bc).toFixed(4) : '', 'BC consumida TRA': x.consumida ?? ''})));
+  }
+  add('Tramos', C.bars.map(b => ({Tramo: b.id, Tubular: b.label, Origen: b.origen === 'recorte' ? 'Recorte ' + b.recorteId : 'Nuevo', 'Largo mm': b.P, Piezas: b.piezas.map(p => `${p.pieza} (${p.ruta}) ${f1(p.L)}`).join(' | '), 'Usado mm': Math.round(b.usado), 'Recorte generado': b.recorteNuevo || '', 'Largo recorte mm': b.recorte, 'Desecho mm': Math.round(b.desecho), Aprovechamiento: +(+b.aprov).toFixed(3), Estado: b.estado || 'Sin guardar', 'Máquina': b.maquina || ''})));
+  XLSX.writeFile(wb, `Consumos_tubular_${pid || (S.res ? S.res.id : hoyId())}.xlsx`);
 }
 
 /* ======================= Vistas ======================= */
 function renderProg(){
   const el = $('t-prog'), O = S.ops;
   const rutasLib = new Set(vigentes().vig.map(f => norm(f.p.ruta)));
-  el.innerHTML = `<div class="drop" id="dropProg">📥 Arrastra aquí el Excel <b>Órdenes producción planificadas</b> de Business Central<br><button id="pickProg" style="margin-top:8px">Elegir archivo</button><input type="file" id="inProg" hidden accept=".xlsx,.xls"></div>
-  ${O.length ? `<div class="kpis" style="margin-top:14px"><div class="kpi"><span>OPs</span><b>${O.length}</b></div><div class="kpi"><span>Rutas</span><b>${new Set(O.map(o => o.ruta)).size}</b></div><div class="kpi"><span>Muebles</span><b>${f0(O.reduce((s, o) => s + o.cant, 0))}</b></div>
+  el.innerHTML = `<div class="drop" id="dropProg">📥 Arrastra aquí el Excel <b>PROGRAMA LASER</b> del día (hojas #2 = GW1 y #3 = GW2) o el de <b>órdenes planificadas</b> de Business Central<br><button id="pickProg" style="margin-top:8px">Elegir archivo</button><input type="file" id="inProg" hidden accept=".xlsx,.xls,.xlsm"></div>
+  ${O.length && S.formato === 'laser' ? progLaserHtml() : ''}
+  ${O.length && S.formato !== 'laser' ? `<div class="kpis" style="margin-top:14px"><div class="kpi"><span>OPs</span><b>${O.length}</b></div><div class="kpi"><span>Rutas</span><b>${new Set(O.map(o => o.ruta)).size}</b></div><div class="kpi"><span>Muebles</span><b>${f0(O.reduce((s, o) => s + o.cant, 0))}</b></div>
   <div class="kpi"><span>Rutas con tubular</span><b>${new Set(O.filter(o => rutasLib.has(norm(o.ruta))).map(o => o.ruta)).size}</b></div><div class="kpi"><span>Piezas de tubular</span><b>${f0(S.items.length)}</b></div></div>
   <div class="card"><h3>${esc(S.progFile)}</h3><div class="tw"><table><tr><th>OP</th><th>Ruta</th><th>Descripción</th><th class="n">Cantidad</th><th>Inicio</th><th>Tubular</th></tr>
   ${O.slice().sort((a, b) => (a.inicio || 0) - (b.inicio || 0) || a.idx - b.idx).map(o => { const n = S.items.filter(i => i.op === o.op && i.ruta === o.ruta).length, fu = S.fuera.filter(x => x.o === o);
@@ -1050,36 +1723,86 @@ function renderProg(){
   ['dragleave', 'drop'].forEach(ev => z.addEventListener(ev, e => { e.preventDefault(); z.classList.remove('over'); }));
   z.addEventListener('drop', e => e.dataTransfer.files[0] && abrirPrograma(e.dataTransfer.files[0]));
   $('pickProg').onclick = () => $('inProg').click(); $('inProg').onchange = e => e.target.files[0] && abrirPrograma(e.target.files[0]);
+  if($('progDir')) $('progDir').onclick = () => abrirCarpeta(false);
+  if($('progZzx')) $('progZzx').onclick = () => abrirCentral(false);
+  if($('progCopiar')) $('progCopiar').onclick = () => copiarYAvisar(porCopiarPrograma(), 'el programa');
+  if($('progFalt')) $('progFalt').onclick = exportarFaltantes;
+  el.querySelectorAll('[data-dsel]').forEach(s => s.onchange = () => { if(!s.value) return; ELEC[s.dataset.dsel] = s.value; saveElec(); medirNecesarios(); });
 }
 async function abrirPrograma(file){
-  try{ S.ops = leerPrograma(await file.arrayBuffer(), file.name); S.progFile = file.name; S.res = null; toast(S.ops.length + ' OPs leídas');
-    if(S.lib.length) await medirNecesarios(); else { explotar(); renderAll(); if(API.on()) cargarBibliotecaDrive(false); } }
+  try{ const r = leerPrograma(await file.arrayBuffer(), file.name); S.ops = r.ops; S.formato = r.formato; S.match = null; S.progFile = file.name; S.res = null;
+    toast(r.formato === 'laser' ? `${S.ops.length} renglones · GW1 ${S.ops.filter(o => o.maquina === 'GW1').length} · GW2 ${S.ops.filter(o => o.maquina === 'GW2').length}` : S.ops.length + ' OPs leídas');
+    if(S.lib.length) await medirNecesarios(); else { explotar(); renderAll(); if(API.on() && r.formato !== 'laser') cargarBibliotecaDrive(false); } }
   catch(e){ toast(e.message, 'er'); }
+}
+/* programa por máquina: un renglón por dibujo, con su IGS ligado (o para elegir) */
+function progLaserHtml(){
+  const O = S.ops, M = S.match || {}, nMaq = q => O.filter(o => o.maquina === q).length;
+  const ok = O.filter(o => M[o.idx] && M[o.idx].f).length, elegir = O.filter(o => M[o.idx] && ['ambiguo', 'anterior'].includes(M[o.idx].estado)).length, sin = O.filter(o => M[o.idx] && M[o.idx].estado === 'sin').length;
+  const celda = o => {
+    if(o.omitir) return badge('in', o.omitir);
+    if(!S.lib.length) return badge('in', 'Abre la carpeta de dibujos');
+    const m = M[o.idx]; if(!m) return '—';
+    const fu = S.fuera.find(x => x.o === o), n = S.items.filter(i => i.prio === o.idx).length;
+    const ms = m.f && MEAS[medKey(m.f)], calP = (norm(o.tubular).match(/CAL\.?\s*(\d+)/) || [])[1], tP = CFG.calibres[calP];
+    // informativo: muchos dibujos se hacen con una pared genérica; el calibre que manda es el del programa
+    const difP = ms && ms.ok && ms.wall != null && tP && Math.abs(ms.wall - tP) > 0.15 ? `<div class="mut sm">Pared dibujada ${f2(ms.wall)} mm (el programa dice cal ${calP}, ${f2(tP)} mm)</div>` : '';
+    if(m.f) return `${difP}${n ? badge('ok', '✓ ' + n + (n === 1 ? ' corrida' : ' corridas')) : badge('er', 'No entra')}${m.f.p.multiple || (o.progra > 0 && o.cant > o.progra) ? ' ' + badge('in', 'Completo') : ''}
+      <div class="mut sm">${esc(m.f.path.split('/').slice(1).join('/'))}</div>${fu ? `<div class="sm" style="color:var(--er)">${esc(fu.motivo)}</div>` : ''}`;
+    if(m.estado === 'sin') return badge('er', 'No está en la carpeta');
+    return `${badge('wa', m.estado === 'anterior' ? 'Solo versión anterior' : m.cand.length + ' con ese nombre')}<div><select data-dsel="${esc('D|' + m.clave + '|' + norm(o.ruta))}" style="max-width:340px;margin-top:4px"><option value="">Elige el IGS…</option>${m.cand.map(f => `<option value="${esc(f.id)}">${esc(f.path.split('/').slice(1).join('/'))}</option>`).join('')}</select></div>`;
+  };
+  return `<div class="kpis" style="margin-top:14px"><div class="kpi"><span>Renglones</span><b>${O.length}</b><span>GW1 ${nMaq('GW1')} · GW2 ${nMaq('GW2')}</span></div><div class="kpi"><span>Dibujos ligados</span><b style="color:var(--ok)">${ok}</b></div>
+    <div class="kpi"><span>Por elegir</span><b style="color:${elegir ? 'var(--wa)' : 'inherit'}">${elegir}</b></div><div class="kpi"><span>Sin IGS en la carpeta</span><b style="color:${sin ? 'var(--er)' : 'inherit'}">${sin}</b></div><div class="kpi"><span>Corridas a acomodar</span><b>${f0(S.items.length)}</b></div></div>
+    ${S.lib.length ? '' : `<div class="card row"><span style="flex:1">Para ligar los dibujos abre la carpeta <b>DIBUJOS DE CORTE(OK)</b>. La primera vez se elige y después se recuerda en este equipo.</span><button class="pri" id="progDir">📂 Abrir carpeta de dibujos</button></div>`}
+    ${cenProgHtml(O)}
+    <div class="card"><h3>${esc(S.progFile)}</h3><div class="tw"><table><tr><th>Máquina</th><th>OP</th><th>Modelo</th><th>Parte</th><th>Tubular</th><th>Nombre del dibujo</th><th class="n">Cant.</th><th class="n">Progra.</th><th>IGS</th><th>Carpeta central</th></tr>
+    ${O.map(o => { const e = o.omitir ? null : estadoCentral(o.dibujo, M[o.idx] && M[o.idx].f);
+      return `<tr><td>${badge('in', o.maquina)}</td><td class="sm">${esc(o.op)}</td><td><b>${esc(o.ruta)}</b></td><td class="sm">${esc(o.parte)}</td><td class="sm">${esc(o.tubular)}</td><td>${esc(o.dibujo)}</td><td class="n">${f0(o.cant)}</td><td class="n">${f0(o.progra)}</td><td>${celda(o)}</td>
+      <td>${badgeCentral(e)}</td></tr>`; }).join('')}</table></div></div>`;
+}
+/* resumen de la carpeta central para el programa del día: qué dibujos ya tienen .zzx y qué falta */
+function cenProgHtml(O){
+  if(!S.cen) return `<div class="card row"><span style="flex:1">Abre la <b>carpeta central</b> (OneDrive, una carpeta por modelo con sus IGS y sus .zzx) para ver qué dibujos ya tienen alta en TubesT.</span><button id="progZzx">📂 Carpeta central</button></div>`;
+  const M = S.match || {}, vistos = new Set(), ests = [];
+  O.filter(o => !o.omitir).forEach(o => { const f = M[o.idx] && M[o.idx].f, k = f ? f.id : claveDibujo(o.dibujo); if(vistos.has(k)) return; vistos.add(k); ests.push(estadoCentral(o.dibujo, f)); });
+  const n = st => ests.filter(e => e.st === st).length, pend = porCopiarPrograma().length, re = n('realta') + n('cambio');
+  return `<div class="card"><div class="row"><span style="flex:1">Carpeta central <b>${esc(S.cen.nombre)}</b>: ${n('listo')} de ${ests.length} dibujos del programa ya tienen su .zzx.
+    ${n('alta') ? badge('wa', n('alta') + ' falta alta') : ''} ${re ? badge('er', re + ' por dar de alta otra vez') : ''} ${pend ? badge('in', pend + ' IGS por copiar') : ''}</span>
+    <button id="progZzx">📂 Carpeta central</button><button class="pri" id="progCopiar" ${pend ? '' : 'disabled'} title="Copia a la carpeta de cada modelo los IGS ligados que faltan o que Ingeniería cambió. No borra nada ni toca los .zzx">⬆ Copiar IGS del programa${pend ? ' (' + pend + ')' : ''}</button>
+    <button id="progFalt" title="Excel para los operadores: qué dibujos faltan dar de alta, en qué carpeta está su IGS y con qué nombre se guarda el .zzx">📋 Faltan dar de alta (Excel)</button></div></div>`;
 }
 function renderLib(){
   const el = $('t-lib'); if(!el) return;
   const {vig, conflictos} = vigentes(), rutas = new Set(S.ops.map(o => norm(o.ruta)));
+  const ligados = new Set(Object.values(S.match || {}).filter(x => x.f).map(x => x.f.id)), planta = S.lib.filter(f => f.p.planta);
+  const enPrograma = f => S.formato === 'laser' ? ligados.has(f.id) : rutas.has(norm(f.p.ruta || ''));
   const filt = S.libFilt || (S.ops.length ? 'programa' : 'todo');
-  const lista = S.lib.filter(f => filt === 'todo' || (filt === 'programa' ? rutas.has(norm(f.p.ruta || '')) : filt === 'problemas' ? (f.p.excluir || !f.p.ok || f.estadoVer === 'empate' || evalPieza(f).lv === 'er') : true));
+  const lista = S.lib.filter(f => filt === 'todo' || (filt === 'programa' ? enPrograma(f) : filt === 'problemas' ? (f.p.excluir || !f.p.ok || f.estadoVer === 'empate' || evalPieza(f).lv === 'er') : true));
   const ev = vig.map(evalPieza), nOk = ev.filter(e => e.lv === 'ok').length;
   lista.sort((a, b) => String(a.p.ruta || '').localeCompare(String(b.p.ruta || '')) || String(a.p.pieza || '').localeCompare(String(b.p.pieza || '')) || (b.p.v || 0) - (a.p.v || 0));
   el.innerHTML = `<div class="card"><div class="row"><b style="flex:1">${S.libSrc ? '📚 ' + esc(S.libSrc) : 'Sin biblioteca cargada'}</b>
-  ${API.on() ? `<button class="pri" id="libDrive">☁ Leer biblioteca de Drive</button><button id="libRefresh" title="Vuelve a recorrer todas las carpetas de Drive">🔄 Recorrer de nuevo</button>` : `<span class="mut sm">Sin Apps Script: carga los IGS desde tu equipo</span>`}
-  <button id="libFiles">📁 IGS de este equipo</button><button id="libDir">📂 Carpeta completa</button>
+  <button class="pri" id="libCarpeta" title="La carpeta DIBUJOS DE CORTE(OK) de este equipo; la primera vez se elige y después se recuerda">📂 Carpeta de dibujos</button><button id="libOtra" title="Elegir otra carpeta">Cambiar carpeta</button>
+  <button id="libFiles">📁 IGS sueltos</button><button id="libDir" title="Selector clásico de carpeta (si el navegador no recuerda carpetas)">📂 Carpeta (clásico)</button>
+  ${API.on() ? `<button id="libDrive">☁ Biblioteca de Drive</button><button id="libRefresh" title="Vuelve a recorrer todas las carpetas de Drive">🔄 Recorrer Drive</button>` : ''}
   <input type="file" id="inFiles" hidden multiple accept=".igs,.iges,.gz"><input type="file" id="inDir" hidden webkitdirectory multiple></div>
   ${S.libMsg ? `<p class="mut">⏳ ${esc(S.libMsg)}</p>` : ''}
-  <p class="mut sm" style="margin:8px 0 0">Formato esperado: <code>RUTA_NPZAS_TUBULAR2X1_CAL20_PIEZA vN (fecha).igs.gz</code>. Se usa siempre la versión más alta de cada ruta + pieza; se ignoran cargas "(subiendo)" y la carpeta de prototipos.</p></div>
-  ${S.lib.length ? `<div class="kpis"><div class="kpi"><span>Archivos</span><b>${S.lib.length}</b></div><div class="kpi"><span>Dibujos vigentes</span><b>${vig.length}</b></div><div class="kpi"><span>Listos</span><b style="color:var(--ok)">${nOk}</b></div>
-  <div class="kpi"><span>Con problema</span><b style="color:var(--er)">${ev.filter(e => e.lv === 'er').length}</b></div><div class="kpi"><span>Empates de versión</span><b style="color:${conflictos.length ? 'var(--er)' : 'inherit'}">${conflictos.length}</b></div></div>
-  ${conflictos.length ? `<div class="card"><h3>⚠ Dos dibujos con la misma versión</h3><p class="mut sm">No hay regla segura para elegir; Ingeniería debe borrar el que sobra. Mientras, elige cuál usar:</p>
+  <p class="mut sm" style="margin:8px 0 0">Carpeta DIBUJOS DE CORTE(OK): cada renglón del PROGRAMA LASER se liga por su "Nombre del dibujo"; el tubular sale del programa. Se ignoran las carpetas de versiones anteriores, prototipos, muestras y lámina, y los MULTIPLE se respetan completos.
+  Biblioteca de Drive: <code>RUTA_NPZAS_TUBULAR2X1_CAL20_PIEZA vN (fecha).igs.gz</code>. Fracciones sin "/": <code>1 1-2</code> = 1-1/2, <code>3-4</code> = 3/4. Se usa siempre la versión más alta de cada ruta + pieza; se ignoran cargas "(subiendo)" y la carpeta de prototipos.</p></div>
+  ${S.lib.length && planta.length > S.lib.length/2 ? `<div class="kpis"><div class="kpi"><span>Archivos IGS</span><b>${f0(S.lib.length)}</b></div><div class="kpi"><span>MULTIPLE (se cortan completos)</span><b>${f0(planta.filter(f => f.p.multiple && !f.p.excluir).length)}</b></div>
+  <div class="kpi"><span>Versiones anteriores y muestras</span><b>${f0(planta.filter(f => f.p.excluir).length)}</b></div><div class="kpi"><span>Ligados al programa</span><b style="color:var(--ok)">${ligados.size}</b></div></div>` : ''}
+  ${S.lib.length && planta.length <= S.lib.length/2 ? `<div class="kpis"><div class="kpi"><span>Archivos</span><b>${S.lib.length}</b></div><div class="kpi"><span>Dibujos vigentes</span><b>${vig.length}</b></div><div class="kpi"><span>Listos</span><b style="color:var(--ok)">${nOk}</b></div>
+  <div class="kpi"><span>Con problema</span><b style="color:var(--er)">${ev.filter(e => e.lv === 'er').length}</b></div><div class="kpi"><span>Empates de versión</span><b style="color:${conflictos.length ? 'var(--er)' : 'inherit'}">${conflictos.length}</b></div></div>` : ''}
+  ${S.lib.length ? `${conflictos.length ? `<div class="card"><h3>⚠ Dos dibujos con la misma versión</h3><p class="mut sm">No hay regla segura para elegir; Ingeniería debe borrar el que sobra. Mientras, elige cuál usar:</p>
     ${conflictos.map(c => `<div class="row" style="margin:6px 0"><b>${esc(c.files[0].p.ruta)} · ${esc(c.files[0].p.pieza)}</b>${c.files.map(f => `<button data-elec="${esc(c.k)}" data-id="${esc(f.id)}">${esc(f.p.n)} pz · ${esc(f.p.fecha)}</button>`).join('')}</div>`).join('')}</div>` : ''}
   <div class="card"><div class="row" style="margin-bottom:8px">${[['programa', 'Rutas del programa'], ['problemas', 'Con problema'], ['todo', 'Todo']].map(([k, t]) => `<button data-lf="${k}" class="${k === filt ? 'pri' : ''}">${t}</button>`).join('')}<span class="mut sm">${lista.length} archivos</span></div>
   <div class="tw"><table><tr><th>Ruta</th><th>Pieza</th><th class="n">Pz/mueble</th><th>Tubular (nombre)</th><th class="n">Largo IGS</th><th>Sección IGS</th><th class="n">Pared</th><th>Extremos</th><th>v</th><th>Estado</th><th></th></tr>
   ${lista.slice(0, 800).map(f => { const m = MEAS[medKey(f)], e = f.p.excluir ? {lv: 'in', notas: [f.p.excluir]} : f.estadoVer === 'anterior' ? {lv: 'in', notas: ['Versión anterior (no se usa)']} : f.estadoVer === 'descartado' ? {lv: 'in', notas: ['Descartado en el empate']} : f.estadoVer === 'empate' ? {lv: 'er', notas: ['Empate de versión: elige cuál usar']} : evalPieza(f);
-    const t = f.p.med ? tipoDe(f.p.med, f.p.cal).label : (f.p.cal ? 'cal ' + f.p.cal + ' · sin medida' : '—');
-    return `<tr><td><b>${esc(f.p.ruta || '?')}</b></td><td>${esc(f.p.pieza || f.name)}<div class="mut sm">${esc(f.name)}</div></td><td class="n">${f.p.n ?? '—'}</td><td>${esc(t)}</td><td class="n">${m && m.ok ? f1(m.len) : '—'}</td><td class="sm">${m && m.ok ? f1(m.secA) + ' × ' + f1(m.secB) : '—'}</td><td class="n">${m && m.ok && m.wall != null ? f2(m.wall) : '—'}</td><td class="sm">${m && m.ok && m.ends ? m.ends.map(endTxt).join(' / ') : '—'}${m && m.nFeat ? `<div class="mut">${m.nFeat} barreno(s)/corte(s)</div>` : ''}</td><td>${f.p.v ?? ''}</td>
+    const t = f.p.planta ? 'del programa' : f.p.med ? tipoDe(f.p.med, f.p.cal).label : (f.p.cal ? 'cal ' + f.p.cal + ' · sin medida' : '—');
+    return `<tr><td><b>${esc(f.p.ruta || '?')}</b></td><td>${esc(f.p.pieza || f.name)}${f.p.multiple ? ' ' + badge('in', 'MULTIPLE') : ''}<div class="mut sm">${esc(f.p.planta ? f.path : f.name)}</div></td><td class="n">${f.p.n ?? '—'}</td><td>${esc(t)}</td><td class="n">${m && m.ok ? f1(m.len) : '—'}</td><td class="sm">${m && m.ok ? f1(m.secA) + ' × ' + f1(m.secB) : '—'}</td><td class="n">${m && m.ok && m.wall != null ? f2(m.wall) : '—'}</td><td class="sm">${m && m.ok && m.ends ? m.ends.map(endTxt).join(' / ') : '—'}${m && m.nFeat ? `<div class="mut">${m.nFeat} barreno(s)/corte(s)</div>` : ''}</td><td>${f.p.v ?? ''}</td>
     <td>${badge(e.lv, e.lv === 'ok' ? '✓ Listo' : e.lv === 'in' ? (e.notas[0] || 'Info') : e.lv === 'wa' ? 'Revisar' : 'Error')}${e.lv !== 'ok' && e.lv !== 'in' ? `<div class="sm">${esc(e.notas.join(' · '))}</div>` : ''}</td><td>${f.p.excluir ? '' : `<button data-ver="${esc(f.id)}" title="Ver y medir el IGS">📐</button>`}</td></tr>`; }).join('')}</table></div>
   ${lista.length > 800 ? '<p class="mut sm">Se muestran los primeros 800.</p>' : ''}</div>` : ''}`;
+  $('libCarpeta').onclick = () => abrirCarpeta(false); $('libOtra').onclick = () => abrirCarpeta(true);
   if($('libDrive')) $('libDrive').onclick = () => cargarBibliotecaDrive(false);
   if($('libRefresh')) $('libRefresh').onclick = () => cargarBibliotecaDrive(true);
   $('libFiles').onclick = () => $('inFiles').click(); $('libDir').onclick = () => $('inDir').click();
@@ -1095,16 +1818,16 @@ function renderMult(){
     ${CFG.modo === 'prio' ? `<label class="cfl" style="flex-direction:row;align-items:center;gap:6px" title="Cuántos tramos de piezas siguientes se consideran para llenar cada tramo">Ventana <input type="number" id="mWin" min="1" max="20" step="1" value="${CFG.ventana}" style="width:60px"> tramos</label>` : ''}
     <label class="row sm" style="gap:4px"><input type="checkbox" id="mRec" ${CFG.usarRecortes === false ? '' : 'checked'}> Usar recortes del inventario (${(S.db.recortes || []).filter(r => r.estado === 'Disponible').length} disponibles)</label>
     <span style="flex:1"></span><button class="pri" id="mGen" ${S.items.length ? '' : 'disabled'}>⚙ Generar múltiples</button></div>
-    <p class="mut sm" style="margin:8px 0 0">Tramo ${f0(CFG.tramo)} mm − chuck ${f0(CFG.chuck)} − refrentado ${CFG.refr} = <b>${f0(CFG.tramo - CFG.chuck - CFG.refr)} mm útiles</b> · separación entre piezas ${CFG.kerf} mm · recorte útil mínimo ${f0(CFG.minRem)} mm. ${S.items.length ? f0(S.items.length) + ' piezas en ' + Object.keys(TIPOS()).filter(k => S.items.some(i => i.tipo === k)).length + ' tipos de tubular.' : 'Carga el programa y la biblioteca.'}</p></div>`;
+    <p class="mut sm" style="margin:8px 0 0">Tramo ${f0(CFG.tramo)} mm − chuck ${f0(CFG.chuck)} − refrentado ${CFG.refr} = <b>${f0(CFG.tramo - CFG.chuck - CFG.refr)} mm útiles</b> (si el SKU del catálogo trae otro largo, se usa ese) · separación entre piezas ${CFG.kerf} mm · recorte útil mínimo ${f0(CFG.minRem)} mm. ${S.items.length ? f0(S.items.length) + ' piezas en ' + Object.keys(TIPOS()).filter(k => S.items.some(i => i.tipo === k)).length + ' tipos de tubular.' : 'Carga el programa y la biblioteca.'}</p></div>`;
   if(!R){ el.innerHTML = cfgBar + (S.fuera.length ? fueraHtml() : ''); bindMult(); return; }
-  const tot = R.grupos.reduce((s, g) => { s.tr += g.tot.tramos; s.ru += g.tot.recUsados; s.rg += g.tot.recGenerados; s.c += g.tot.consumo; s.l += g.tot.largoPiezas; s.kg += g.kgm ? g.tot.consumo/1000*g.kgm : 0; s.p += g.tot.piezas; return s; }, {tr: 0, ru: 0, rg: 0, c: 0, l: 0, kg: 0, p: 0});
+  const tot = R.grupos.reduce((s, g) => { s.tr += g.tot.tramos; s.ru += g.tot.recUsados; s.rg += g.tot.recGenerados; s.c += g.tot.consumo; s.l += g.tot.largoPiezas; s.kg += g.kgm ? g.tot.consumo/1000*g.kgm : 0; s.tra += g.tot.consumo/(g.tramo || CFG.tramo); s.p += g.tot.piezas; return s; }, {tr: 0, ru: 0, rg: 0, c: 0, l: 0, kg: 0, tra: 0, p: 0});
   el.innerHTML = cfgBar + `<div class="kpis"><div class="kpi"><span>Tramos nuevos</span><b>${tot.tr}</b></div><div class="kpi"><span>Recortes reutilizados</span><b style="color:var(--ok)">${tot.ru}</b></div>
-  <div class="kpi"><span>Recortes que se generan</span><b>${tot.rg}</b></div><div class="kpi"><span>Aprovechamiento</span><b>${pct(tot.l/tot.c)}</b></div><div class="kpi"><span>Consumo real</span><b>${f2(tot.kg)} kg</b><span>${f2(tot.c/CFG.tramo)} tramos equivalentes</span></div></div>
+  <div class="kpi"><span>Recortes que se generan</span><b>${tot.rg}</b></div><div class="kpi"><span>Aprovechamiento</span><b>${pct(tot.l/tot.c)}</b></div><div class="kpi"><span>Consumo real</span><b>${f2(tot.kg)} kg</b><span>${f2(tot.tra)} TRA (tramos equivalentes)</span></div></div>
   <div class="card"><div class="row"><b style="flex:1">${esc(R.id)} ${R.guardado ? badge('ok', 'Guardado') : badge('wa', 'Sin guardar')}</b>
   <button id="mPrint">🖨 Hoja de corte</button><button id="mXls">📊 Consumos (Excel)</button><button class="pri" id="mSave" ${R.guardado ? 'disabled' : ''}>💾 Aprobar y guardar</button></div>
   <p class="mut sm" style="margin:6px 0 0">Al guardar, los recortes usados quedan reservados y los nuevos se registran "Por generar"; pasan a Disponible cuando el tramo se marca cortado en "Corte en piso".</p></div>
-  ${R.grupos.map((g, gi) => `<details class="card" open><summary><b>${esc(g.label)}</b> ${badge('in', g.tot.tramos + ' tramos nuevos')} ${g.tot.recUsados ? badge('ok', '♻ ' + g.tot.recUsados + ' recortes') : ''} ${badge(g.tot.aprov > .9 ? 'ok' : g.tot.aprov > .8 ? 'wa' : 'er', 'Aprovechamiento ' + pct(g.tot.aprov))}
-    <span class="mut sm">${g.tot.piezas} pzas · ${f2(g.tot.consumo/CFG.tramo)} tramos eq.${g.kgm ? ' · ' + f2(g.tot.consumo/1000*g.kgm) + ' kg' : ''}</span>${g.largas.length ? badge('er', g.largas.length + ' piezas no caben') : ''}</summary>
+  ${R.grupos.map((g, gi) => `<details class="card" open><summary>${g.maquina ? badge('in', g.maquina) + ' ' : ''}<b>${esc(g.label)}</b>${g.completo ? ' ' + badge('ok', '▣ ' + g.dibujo) : ''} ${g.sku ? badge('in', 'SKU ' + g.sku + (g.nSku > 1 ? ` (hay ${g.nSku}; elige en Configuración)` : '')) : badge('wa', 'Sin SKU en el catálogo')}${g.tramo !== CFG.tramo ? ' ' + badge('in', 'tramo ' + f0(g.tramo) + ' mm') : ''} ${badge('in', g.tot.tramos + ' tramos nuevos')} ${g.tot.recUsados ? badge('ok', '♻ ' + g.tot.recUsados + ' recortes') : ''} ${badge(g.tot.aprov > .9 ? 'ok' : g.tot.aprov > .8 ? 'wa' : 'er', 'Aprovechamiento ' + pct(g.tot.aprov))}
+    <span class="mut sm">${g.tot.piezas} pzas · ${f2(g.tot.consumo/(g.tramo || CFG.tramo))} TRA${g.kgm ? ' · ' + f2(g.tot.consumo/1000*g.kgm) + ' kg' : ''}</span>${g.largas.length ? badge('er', g.largas.length + ' piezas no caben') : ''}</summary>
     <div class="legend" style="margin-top:10px">${[...new Map(g.bars.flatMap(b => b.piezas).map(p => [p.ruta + '|' + p.pieza, p])).values()].map(p => `<span><i style="background:${col(p)}"></i>${esc(p.pieza)} <span class="mut">${esc(p.ruta)} · ${f0(p.L)}</span></span>`).join('')}</div>
     ${agrupar(g.bars).map(x => `<div class="bar"><div class="barhd"><b>${esc(x.b.id)}${x.n > 1 ? ` … ×${x.n} iguales` : ''}</b><span class="mut">${esc([...new Set(x.b.piezas.map(p => p.op))].join(', '))}</span><span style="flex:1"></span>
       <button data-igs="${gi}|${g.bars.indexOf(x.b)}" title="IGS con las piezas acomodadas a lo largo del tubo">⬇ IGS</button><button data-hoja="${gi}|${g.bars.indexOf(x.b)}">🖨</button></div>${svgBar(x.b, col)}</div>`).join('')}
@@ -1127,45 +1850,148 @@ function bindMult(){
   $('mRec').onchange = e => { CFG.usarRecortes = e.target.checked; saveCfg(); };
   $('mGen').onclick = generar;
   if(!S.res) return;
-  $('mSave').onclick = guardarPrograma; $('mXls').onclick = exportarConsumos;
+  $('mSave').onclick = guardarPrograma; $('mXls').onclick = () => { S.consSel = ''; exportarConsumos(); };
   $('mPrint').onclick = () => hojaCorte('Programa de corte de tubular ' + S.res.id, S.res.grupos.flatMap(g => g.bars));
   el.querySelectorAll('[data-igs]').forEach(b => b.onclick = () => { const [gi, bi] = b.dataset.igs.split('|').map(Number), g = S.res.grupos[gi]; descargarTramo(g.bars[bi], g.label, false); });
   el.querySelectorAll('[data-hoja]').forEach(b => b.onclick = () => { const [gi, bi] = b.dataset.hoja.split('|').map(Number), g = S.res.grupos[gi]; hojaCorte('Tramo ' + g.bars[bi].id, [g.bars[bi]]); });
 }
+/* ======================= Comparación contra Business Central ======================= */
+let BC = (() => { try{ return JSON.parse(localStorage.getItem('mt-bc') || 'null'); }catch(e){ return null; } })();
+const saveBC = () => { try{ if(BC) localStorage.setItem('mt-bc', JSON.stringify(BC)); else localStorage.removeItem('mt-bc'); }catch(e){} };
+const numBC = v => typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/,/g, '')) || 0;
+/* reporte de BC: «Componentes de órdenes de producción (Consumos)» (por OP) o «COMPONENTES OP (COD. BARRA)» (por centro de trabajo) */
+function leerBC(buf, archivo){
+  const wb = XLSX.read(buf, {type: 'array', cellDates: true});
+  for(const hoja of wb.SheetNames){
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[hoja], {header: 1, defval: '', raw: true});
+    const N = r => r.map(c => norm(c).replace(/\s+/g, ' ').trim()), col = (H, re) => H.findIndex(h => re.test(h));
+    let hi = rows.findIndex(r => { const h = N(r); return h.some(x => /^N[Oº°]\.? ?OP$/.test(x)) && h.some(x => /ESPERADA/.test(x)); });
+    const titulo = rows.slice(0, Math.max(hi, 0)).map(r => r.filter(c => c !== '' && !(c instanceof Date)).join(' ')).filter(Boolean).join(' · ').slice(0, 300);
+    if(hi >= 0){
+      const H = N(rows[hi]), cP = col(H, /^N[Oº°]\.? ?PROD/), cD = col(H, /DESCRIPCI/), cOP = col(H, /^N[Oº°]\.? ?OP$/), cE = col(H, /ESPERADA/), cC = col(H, /CONSUMIDA/), cU = col(H, /UNIDAD/), cR = col(H, /RUTA/);
+      let prod = ''; const filas = [];
+      rows.slice(0, hi).forEach(r => r.forEach(c => { const m = /PRODUCTO:?\s*(\d{6,})/i.exec(String(c)); if(m) prod = m[1]; }));
+      rows.slice(hi + 1).forEach(r => {
+        const mp = cP >= 0 ? /(\d{6,})/.exec(String(r[cP] ?? '')) : null, op = String(r[cOP] ?? '').trim();
+        if(mp) prod = mp[1];
+        if(!op) return;   // renglón del producto o de totales
+        filas.push({sku: prod, desc: cD >= 0 ? String(r[cD]).trim() : '', op, esperada: numBC(r[cE]), consumida: cC >= 0 ? numBC(r[cC]) : null, unidad: cU >= 0 ? norm(r[cU]).trim() : '', ruta: cR >= 0 ? String(r[cR]).trim() : ''});
+      });
+      return {archivo, hoja, formato: 'op', titulo, filas, cargado: Date.now()};
+    }
+    hi = rows.findIndex(r => { const h = N(r); return h.some(x => /COD.*BARRA/.test(x)) && h.some(x => /REQUERID/.test(x)); });
+    if(hi >= 0){
+      const H = N(rows[hi]), cB = col(H, /COD.*BARRA/), cD = col(H, /DESCRIPCI/), cU = col(H, /UNIT|UNIDAD|MEDIDA/), cQ = col(H, /REQUERID/), cEn = col(H, /ENTREGAD/), filas = [];
+      rows.slice(hi + 1).forEach(r => { const m = /(\d{8})/.exec(String(r[cB] ?? '')), q = numBC(r[cQ]); if(!m || !(q > 0)) return;
+        filas.push({sku: m[1], desc: cD >= 0 ? String(r[cD]).trim() : '', op: '', esperada: q, consumida: cEn >= 0 && r[cEn] !== '' ? numBC(r[cEn]) : null, unidad: cU >= 0 ? norm(r[cU]).trim() : ''}); });
+      return {archivo, hoja, formato: 'ct', titulo: rows.slice(0, hi).map(r => r.filter(c => c !== '' && !(c instanceof Date)).join(' ')).filter(Boolean).join(' · ').slice(0, 300), filas, cargado: Date.now()};
+    }
+  }
+  throw new Error('No reconocí el reporte de BC: busco las columnas "No OP" y "Cantidad Esperada" (Componentes de órdenes de producción) o "Cod. Barra" y "Total Requerido" (COMPONENTES OP).');
+}
+/* consumo real del programa contra lo esperado en BC, por tubular y (si el reporte es por OP) por OP; todo en TRA */
+function compararBC(C){
+  if(!BC || !C || !C.hay) return null;
+  const opsProg = new Set(C.porOP.map(o => norm(o.op).trim())), keyDeSku = {};
+  C.porTipo.forEach(t => skusDe(t.key).forEach(s => keyDeSku[s.sku] = t.key));
+  const sinCat = new Map(), otros = new Map(), fueraOP = new Set(), filas = [];
+  BC.filas.forEach(f => { const c = skuPorCodigo(f.sku);
+    if(!c || !c.key){ (f.unidad === 'TRA' || /TUBULAR|PTR/.test(norm(f.desc)) ? sinCat : otros).set(f.sku, f.desc + (f.unidad ? ' (' + f.unidad + ')' : '')); return; }
+    if(BC.formato === 'op' && !opsProg.has(norm(f.op).trim())){ fueraOP.add(f.op); return; }
+    filas.push(Object.assign({}, f, {key: keyDeSku[f.sku] || c.key})); });
+  const porTipo = {};
+  C.porTipo.forEach(t => porTipo[t.key] = {key: t.key, tipo: t.tipo, skus: new Set(t.sku ? [t.sku] : []), tramo: t.tramo, kgm: t.kgm, real: t.consumo/t.tramo, tramos: t.tramos, bc: 0, consumida: null, filasBC: 0});
+  filas.forEach(f => { const c = skuPorCodigo(f.sku), x = porTipo[f.key] = porTipo[f.key] || {key: f.key, tipo: tipoDe(c.med, c.cal).label, skus: new Set(), tramo: c.largo, kgm: c.kgm, real: 0, tramos: 0, bc: 0, consumida: null, filasBC: 0};
+    x.skus.add(f.sku); x.bc += f.esperada; x.filasBC++; if(f.consumida != null) x.consumida = (x.consumida || 0) + f.consumida; });
+  const porOP = {};
+  if(BC.formato === 'op'){
+    C.porOP.forEach(o => { const k = norm(o.op).trim() + '|' + o.key; porOP[k] = {op: o.op, key: o.key, tipo: o.tipo, sku: o.sku, real: o.consumo/o.tramo, bc: 0, consumida: null, filasBC: 0}; });
+    filas.forEach(f => { const k = norm(f.op).trim() + '|' + f.key, x = porOP[k] = porOP[k] || {op: f.op, key: f.key, tipo: porTipo[f.key].tipo, sku: f.sku, real: 0, bc: 0, consumida: null, filasBC: 0};
+      x.bc += f.esperada; x.filasBC++; if(f.consumida != null) x.consumida = (x.consumida || 0) + f.consumida; });
+  }
+  return {formato: BC.formato, porTipo: Object.values(porTipo).map(x => Object.assign(x, {skus: [...x.skus]})), porOP: Object.values(porOP).sort((a, b) => String(a.op).localeCompare(String(b.op)) || String(a.tipo).localeCompare(String(b.tipo))),
+    sinCat: [...sinCat], otros: [...otros], fueraOP: [...fueraOP]};
+}
+/* semáforo de la diferencia real − BC */
+function difBadge(real, bc){
+  if(!(bc > 0)) return badge('wa', 'Sin dato en BC');
+  const d = (real - bc)/bc;
+  return Math.abs(d) <= 0.01 ? badge('in', 'Igual') : d < 0 ? badge('ok', 'Ahorro ' + pct(-d)) : badge('er', 'Exceso ' + pct(d));
+}
+function bcHtml(C, pid){
+  const intro = `<p class="mut sm" style="margin:0">Carga el reporte de BC de las mismas OPs: <b>Componentes de órdenes de producción (Consumos)</b> filtrado por el SKU del tubular (trae, por OP, la cantidad esperada y la consumida) o <b>COMPONENTES OP (COD. BARRA)</b> del CT Laser (total requerido por SKU). Se compara en TRA: tramos del largo de cada SKU.</p>`;
+  const btns = `<button class="pri" id="bcPick">📥 ${BC ? 'Cambiar reporte' : 'Cargar reporte de BC (Excel)'}</button>${BC ? '<button id="bcDel" title="Quitar el reporte cargado">✕ Quitar</button>' : ''}<input type="file" id="bcIn" hidden accept=".xlsx,.xls">`;
+  if(!BC) return `<div class="card"><div class="row" style="margin-bottom:8px"><b style="flex:1">Comparación con Business Central</b>${btns}</div>${intro}</div>`;
+  const K = compararBC(C), fueraPz = pid === '' ? S.fuera.reduce((s, x) => s + x.n, 0) : 0;
+  const avisos = [];
+  if(K.formato === 'ct') avisos.push('Este reporte suma todo el centro de trabajo: compáralo solo si corresponde a las mismas OPs del programa.');
+  if(K.fueraOP.length) avisos.push(`${K.fueraOP.length} OP(s) del reporte no están en este programa y no se comparan: ${esc(K.fueraOP.slice(0, 8).join(', '))}${K.fueraOP.length > 8 ? '…' : ''}`);
+  if(K.sinCat.length) avisos.push(`Tubular(es) del reporte sin SKU en el catálogo (agrégalos en Configuración): ${K.sinCat.map(([s, d]) => esc(s + ' ' + d)).join(' · ')}`);
+  if(fueraPz) avisos.push(`${fueraPz} pieza(s) no entraron a los múltiples (ver Múltiples de corte): el consumo real está incompleto.`);
+  const sinTub = !K.porTipo.some(x => x.filasBC);
+  return `<div class="card"><div class="row" style="margin-bottom:6px"><b style="flex:1">Comparación con Business Central</b>${btns}</div>
+    <p class="mut sm" style="margin:0 0 10px"><code>${esc(BC.archivo)}</code> · ${BC.formato === 'op' ? 'por OP' : 'por centro de trabajo'} · ${BC.filas.length} renglones · cargado ${fecha(BC.cargado)}${BC.titulo ? `<br>${esc(BC.titulo)}` : ''}</p>
+    ${sinTub ? `<p style="color:var(--wa);margin:0 0 10px">El reporte no trae tubulares del catálogo para las OPs de este programa.${K.otros.length ? ` Trae: ${K.otros.slice(0, 6).map(([s, d]) => esc(s + ' ' + d)).join(' · ')}.` : ''}</p>` : ''}
+    ${avisos.map(a => `<p class="sm" style="color:var(--wa);margin:0 0 6px">⚠ ${a}</p>`).join('')}
+    <div class="tw" style="margin-top:6px"><table><tr><th>Tubular</th><th>SKU</th><th class="n">BC esperada</th><th class="n">Real</th><th class="n">Real − BC</th><th class="n">kg</th><th class="n">Tramos a surtir</th><th class="n">BC consumida</th><th></th></tr>
+    ${K.porTipo.map(x => `<tr><td><b>${esc(x.tipo)}</b><div class="mut sm">tramo ${f0(x.tramo)} mm</div></td><td class="sm">${esc(x.skus.join(', ') || '—')}</td><td class="n">${f2(x.bc)} TRA</td><td class="n">${f2(x.real)} TRA</td><td class="n">${(x.real - x.bc > 0 ? '+' : '') + f2(x.real - x.bc)}</td>
+      <td class="n">${x.kgm ? (x.real - x.bc > 0 ? '+' : '') + f2((x.real - x.bc)*x.tramo/1000*x.kgm) : '—'}</td><td class="n">${x.tramos}</td><td class="n">${x.consumida != null ? f2(x.consumida) : '—'}</td><td>${difBadge(x.real, x.bc)}</td></tr>`).join('')}</table></div>
+    <p class="mut sm" style="margin:8px 0 0">Real = consumo neto del programa (incluye chuck, refrentado, separación y desecho; los recortes que se guardan no cuentan). "Tramos a surtir" = tramos nuevos completos que pide el programa. Ahorro / exceso con ±1 % de tolerancia.</p>
+    ${K.porOP.length ? `<details style="margin-top:10px"><summary class="sm" style="cursor:pointer"><b>Por OP</b> · ${K.porOP.length} renglones</summary><div class="tw" style="margin-top:8px"><table><tr><th>OP</th><th>Tubular</th><th>SKU</th><th class="n">BC esperada</th><th class="n">Real</th><th class="n">Real − BC</th><th class="n">BC consumida</th><th></th></tr>
+      ${K.porOP.map(x => `<tr><td>${esc(x.op)}</td><td class="sm">${esc(x.tipo)}</td><td class="sm">${esc(x.sku || '—')}</td><td class="n">${f4(x.bc)}</td><td class="n">${f4(x.real)}</td><td class="n">${(x.real - x.bc > 0 ? '+' : '') + f4(x.real - x.bc)}</td><td class="n">${x.consumida != null ? f4(x.consumida) : '—'}</td><td>${difBadge(x.real, x.bc)}</td></tr>`).join('')}</table></div></details>` : ''}</div>`;
+}
+function bindBC(){
+  if(!$('bcPick')) return;
+  $('bcPick').onclick = () => $('bcIn').click();
+  $('bcIn').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if(!f) return;
+    if(!window.XLSX) return toast('No cargó la librería de Excel (requiere internet)', 'er');
+    try{ BC = leerBC(await f.arrayBuffer(), f.name); saveBC(); toast('Reporte de BC: ' + BC.filas.length + ' renglones'); renderCons(); }catch(err){ toast(err.message, 'er'); } };
+  if($('bcDel')) $('bcDel').onclick = () => { BC = null; saveBC(); renderCons(); };
+}
 function renderCons(){
-  const el = $('t-cons'), C = consumos(), T = CFG.tramo;
-  if(!C.hay) return el.innerHTML = `<div class="card empty">Genera los múltiples para ver el consumo real por pieza y por tubular.</div>`;
-  el.innerHTML = `<div class="card"><div class="row"><span class="mut sm" style="flex:1">El consumo real de cada pieza incluye su parte proporcional del refrentado, la separación entre piezas, el chuck y el sobrante que se desecha. Los recortes que se guardan no cuentan como consumo.</span><button class="pri" id="cXls">📊 Exportar a Excel</button></div></div>
-  <details class="card" open><summary><b>Por tipo de tubular</b></summary><div class="tw" style="margin-top:8px"><table><tr><th>Tubular</th><th class="n">Tramos nuevos</th><th class="n">Recortes usados</th><th class="n">Recortes generados</th><th class="n">Consumo neto</th><th class="n">Tramos eq.</th><th class="n">kg</th><th class="n">Piezas</th><th class="n">Aprovechamiento</th><th class="n">Desecho</th></tr>
-  ${C.porTipo.map(t => `<tr><td><b>${esc(t.tipo)}</b>${t.kgm ? `<div class="mut sm">${f2(t.kgm)} kg/m</div>` : ''}</td><td class="n">${t.tramos}</td><td class="n">${t.recUsados}${t.recUsados ? `<div class="mut sm">${f0(t.mmRecUsados)} mm</div>` : ''}</td><td class="n">${t.recGen}${t.recGen ? `<div class="mut sm">${f0(t.mmRecGen)} mm</div>` : ''}</td>
-  <td class="n">${f0(t.consumo)} mm</td><td class="n">${f2(t.consumo/T)}</td><td class="n">${t.kgm ? f2(t.consumo/1000*t.kgm) : '—'}</td><td class="n">${t.piezas}</td><td class="n">${pct(t.mmPiezas/t.consumo)}</td><td class="n">${f0(t.desecho)} mm</td></tr>`).join('')}</table></div></details>
+  const el = $('t-cons'), pid = consPid(), C = consumos(pid);
+  const P = (S.db.programas || []).filter(p => !(S.res && S.res.guardado && p.id === S.res.id)).sort((a, b) => (+b.fecha || 0) - (+a.fecha || 0));
+  const sel = S.res || P.length ? `<label class="cfl" style="flex-direction:row;align-items:center;gap:6px">Programa <select id="cProg">${S.res ? `<option value="" ${pid === '' ? 'selected' : ''}>${esc(S.res.id)} · en pantalla${S.res.guardado ? '' : ' (sin guardar)'}</option>` : ''}
+    ${P.map(p => `<option value="${esc(p.id)}" ${p.id === pid ? 'selected' : ''}>${esc(p.id)} · ${esc(p.estado || 'Pendiente')} · ${fecha(+p.fecha)}</option>`).join('')}</select></label>` : '';
+  if(!C.hay){ el.innerHTML = (sel ? `<div class="card"><div class="row">${sel}</div></div>` : '') + `<div class="card empty">${sel ? 'Ese programa no tiene tramos vigentes.' : 'Genera los múltiples para ver el consumo real por pieza y por tubular.'}</div>`;
+    if($('cProg')) $('cProg').onchange = e => { S.consSel = e.target.value; renderCons(); }; return; }
+  const kgmTxt = t => `${t.sku ? 'SKU ' + esc(t.sku) : 'sin SKU'} · ${t.kgm ? f2(t.kgm) + ' kg/m' : '— kg/m'} · tramo ${f0(t.tramo)} mm`;
+  el.innerHTML = `<div class="card"><div class="row">${sel}<span class="mut sm" style="flex:1;min-width:240px">El consumo real de cada pieza incluye su parte proporcional del refrentado, la separación entre piezas, el chuck y el sobrante que se desecha. Los recortes que se guardan no cuentan como consumo; los tramos cancelados, tampoco. kg y TRA salen del catálogo de SKU.</span><button class="pri" id="cXls">📊 Exportar a Excel</button></div></div>
+  ${bcHtml(C, pid)}
+  <details class="card" open><summary><b>Por tipo de tubular</b></summary><div class="tw" style="margin-top:8px"><table><tr><th>Tubular</th><th class="n">Tramos nuevos</th><th class="n">Recortes usados</th><th class="n">Recortes generados</th><th class="n">Consumo neto</th><th class="n">TRA</th><th class="n">kg</th><th class="n">Piezas</th><th class="n">Aprovechamiento</th><th class="n">Desecho</th></tr>
+  ${C.porTipo.map(t => `<tr><td><b>${esc(t.tipo)}</b><div class="mut sm">${kgmTxt(t)}</div></td><td class="n">${t.tramos}</td><td class="n">${t.recUsados}${t.recUsados ? `<div class="mut sm">${f0(t.mmRecUsados)} mm</div>` : ''}</td><td class="n">${t.recGen}${t.recGen ? `<div class="mut sm">${f0(t.mmRecGen)} mm</div>` : ''}</td>
+  <td class="n">${f0(t.consumo)} mm</td><td class="n">${f2(t.consumo/t.tramo)}</td><td class="n">${t.kgm ? f2(t.consumo/1000*t.kgm) : '—'}</td><td class="n">${t.piezas}</td><td class="n">${pct(t.mmPiezas/t.consumo)}</td><td class="n">${f0(t.desecho)} mm</td></tr>`).join('')}</table></div></details>
   <details class="card" open><summary><b>Por pieza</b> <span class="mut sm">consumo real promedio por pieza</span></summary><div class="tw" style="margin-top:8px"><table><tr><th>Ruta</th><th>Pieza</th><th>Tubular</th><th class="n">Largo</th><th class="n">Piezas</th><th class="n">Consumo real / pz</th><th class="n">TRA / pz</th><th class="n">kg / pz</th><th class="n">Aprovech.</th></tr>
-  ${C.porPieza.map(e => `<tr><td><b>${esc(e.ruta)}</b></td><td>${esc(e.pieza)}</td><td class="sm">${esc(e.tipo)}</td><td class="n">${f1(e.L)} mm</td><td class="n">${e.n}</td><td class="n">${f1(e.consumo/e.n)} mm</td><td class="n">${f4(e.consumo/e.n/T)}</td><td class="n">${e.kgm ? (e.consumo/e.n/1000*e.kgm).toFixed(3) : '—'}</td><td class="n">${pct(e.L*e.n/e.consumo)}</td></tr>`).join('')}</table></div></details>
-  <details class="card"><summary><b>Por OP</b></summary><div class="tw" style="margin-top:8px"><table><tr><th>OP</th><th>Ruta</th><th>Tubular</th><th class="n">Piezas</th><th class="n">Largo de piezas</th><th class="n">Consumo real</th><th class="n">Tramos eq.</th><th class="n">kg</th></tr>
-  ${C.porOP.map(o => `<tr><td>${esc(o.op)}</td><td>${esc(o.ruta)}</td><td class="sm">${esc(o.tipo)}</td><td class="n">${o.n}</td><td class="n">${f0(o.mm)} mm</td><td class="n">${f0(o.consumo)} mm</td><td class="n">${f4(o.consumo/T)}</td><td class="n">${o.kgm ? f2(o.consumo/1000*o.kgm) : '—'}</td></tr>`).join('')}</table></div></details>`;
-  $('cXls').onclick = exportarConsumos;
+  ${C.porPieza.map(e => `<tr><td><b>${esc(e.ruta)}</b></td><td>${esc(e.pieza)}</td><td class="sm">${esc(e.tipo)}${e.sku ? `<div class="mut">SKU ${esc(e.sku)}</div>` : ''}</td><td class="n">${f1(e.L)} mm</td><td class="n">${e.n}</td><td class="n">${f1(e.consumo/e.n)} mm</td><td class="n">${f4(e.consumo/e.n/e.tramo)}</td><td class="n">${e.kgm ? (e.consumo/e.n/1000*e.kgm).toFixed(3) : '—'}</td><td class="n">${pct(e.L*e.n/e.consumo)}</td></tr>`).join('')}</table></div></details>
+  <details class="card"><summary><b>Por OP</b></summary><div class="tw" style="margin-top:8px"><table><tr><th>OP</th><th>Ruta</th><th>Tubular</th><th class="n">Piezas</th><th class="n">Largo de piezas</th><th class="n">Consumo real</th><th class="n">TRA</th><th class="n">kg</th></tr>
+  ${C.porOP.map(o => `<tr><td>${esc(o.op)}</td><td>${esc(o.ruta)}</td><td class="sm">${esc(o.tipo)}${o.sku ? `<div class="mut">SKU ${esc(o.sku)}</div>` : ''}</td><td class="n">${o.n}</td><td class="n">${f0(o.mm)} mm</td><td class="n">${f0(o.consumo)} mm</td><td class="n">${f4(o.consumo/o.tramo)}</td><td class="n">${o.kgm ? f2(o.consumo/1000*o.kgm) : '—'}</td></tr>`).join('')}</table></div></details>`;
+  $('cXls').onclick = exportarConsumos; bindBC();
+  if($('cProg')) $('cProg').onchange = e => { S.consSel = e.target.value; renderCons(); };
 }
 function renderPiso(){
   const el = $('t-piso'), P = (S.db.programas || []).slice().sort((a, b) => (b.fecha || 0) - (a.fecha || 0)), col = colorMap();
   if(!P.length) return el.innerHTML = `<div class="card empty">Aún no hay programas guardados. Genera los múltiples y presiona "Aprobar y guardar".</div>`;
   const ver = S.pisoVer || 'activos';
-  const lista = P.filter(p => ver === 'todos' || p.estado !== 'Cortado');
+  const lista = P.filter(p => ver === 'todos' || !['Cortado', 'Cancelado'].includes(p.estado));
   el.innerHTML = `<div class="card"><div class="row">${[['activos', 'Pendientes y en proceso'], ['todos', 'Todos']].map(([k, t]) => `<button data-pv="${k}" class="${k === ver ? 'pri' : ''}">${t}</button>`).join('')}
-    <span class="mut sm" style="flex:1">Al descargar el IGS de un tramo queda "En proceso" con su hora de inicio; al descargar el siguiente, el anterior se cierra como cortado. Usa "Terminar corte" para el último del turno.</span><button id="pRef">🔄</button></div></div>
-  ${lista.map(p => { const ts = (S.db.tramos || []).filter(t => t.programa === p.id).sort((a, b) => String(a.tipo).localeCompare(String(b.tipo)) || a.orden - b.orden), hechos = ts.filter(t => t.estado === 'Cortado').length;
-    return `<details class="card" ${p.estado !== 'Cortado' ? 'open' : ''}><summary><b>${esc(p.id)}</b> ${badge(p.estado === 'Cortado' ? 'ok' : p.estado === 'En proceso' ? 'wa' : 'in', p.estado || 'Pendiente')} <span class="mut sm">${fecha(+p.fecha)} · ${esc(p.archivo || '')}</span>
-    <div class="prog" title="${hechos}/${ts.length} tramos"><i style="width:${ts.length ? hechos/ts.length*100 : 0}%"></i></div><span class="sm">${hechos}/${ts.length}</span></summary>
+    <span style="flex:1"></span><span class="sm">Esta pantalla corta en:</span>${CFG.maquinas.map(m => `<button data-maq="${esc(m)}" class="${m === MAQ ? 'pri' : ''}">${esc(m)}</button>`).join('')}<button id="pRef" title="Volver a leer del servidor">🔄</button></div>
+    <p class="mut sm" style="margin:8px 0 0">${MAQ ? `Al descargar el IGS de un tramo queda "En proceso" en <b>${esc(MAQ)}</b> con su hora de inicio; al descargar el siguiente en ${esc(MAQ)}, el anterior se cierra como cortado (lo que esté en proceso en otra máquina no se toca). Usa "Terminar corte" para el último del turno.` : '<b style="color:var(--er)">Elige en qué máquina estás antes de descargar un IGS.</b>'}</p></div>
+  ${lista.map(p => { const ts = (S.db.tramos || []).filter(t => t.programa === p.id).sort((a, b) => String(a.tipo).localeCompare(String(b.tipo)) || a.orden - b.orden), vivos = ts.filter(t => t.estado !== 'Cancelado'), hechos = vivos.filter(t => t.estado === 'Cortado').length;
+    return `<details class="card" ${!['Cortado', 'Cancelado'].includes(p.estado) ? 'open' : ''}><summary><b>${esc(p.id)}</b> ${badge(p.estado === 'Cortado' ? 'ok' : p.estado === 'En proceso' ? 'wa' : 'in', p.estado || 'Pendiente')} <span class="mut sm">${fecha(+p.fecha)} · ${esc(p.archivo || '')}</span>
+    <div class="prog" title="${hechos}/${vivos.length} tramos"><i style="width:${vivos.length ? hechos/vivos.length*100 : 0}%"></i></div><span class="sm">${hechos}/${vivos.length}</span></summary>
     <div class="tw" style="margin-top:8px;max-height:none"><table><tr><th>Tramo</th><th>Tubular</th><th>Material</th><th>Piezas</th><th>Recorte a guardar</th><th>Estado</th><th></th></tr>
-    ${ts.map(t => `<tr><td style="white-space:nowrap"><b>${esc(t.id.split('-').slice(-3).join('-'))}</b></td><td class="sm">${esc(t.tipoLabel)}</td><td class="sm">${t.origen === 'recorte' ? '♻ ' + esc(t.recorteUsado) + ' · ' + f0(t.largo) + ' mm' : 'Nuevo ' + f0(t.largo) + ' mm'}</td>
+    ${ts.map(t => `<tr><td style="white-space:nowrap"><b>${esc(idCorto(t))}</b></td><td class="sm">${esc(t.tipoLabel)}</td><td class="sm">${t.origen === 'recorte' ? '♻ ' + esc(t.recorteUsado) + ' · ' + f0(t.largo) + ' mm' : 'Nuevo ' + f0(t.largo) + ' mm'}</td>
       <td class="sm">${resumenPiezas(t.piezas)}<div class="mut">${esc([...new Set((t.piezas || []).map(x => x.op))].join(', '))}</div></td>
       <td class="sm">${t.recorteNuevo ? '♻ ' + esc(t.recorteNuevo) + ' · ' + f0(t.largoRecorte) + ' mm' : '—'}</td>
-      <td>${badge(t.estado === 'Cortado' ? 'ok' : t.estado === 'En proceso' ? 'wa' : 'in', t.estado)}<div class="mut sm">${t.inicio ? '▶ ' + fecha(+t.inicio) : ''}${t.fin ? '<br>■ ' + fecha(+t.fin) : ''}</div></td>
-      <td style="white-space:nowrap"><button data-pd="${esc(t.id)}" title="Descargar IGS del múltiple">⬇ IGS</button> <button data-ph="${esc(t.id)}" title="Hoja de corte">🖨</button>${t.estado === 'En proceso' ? ` <button class="pri" data-pt="${esc(t.id)}">■ Terminar corte</button>` : ''}</td></tr>`).join('')}</table></div></details>`; }).join('') || '<div class="card empty">No hay programas pendientes.</div>'}`;
+      <td>${badge(t.estado === 'Cortado' ? 'ok' : t.estado === 'En proceso' ? 'wa' : 'in', t.estado)}${t.maquina ? ' ' + badge('in', t.maquina) : ''}<div class="mut sm">${t.inicio ? '▶ ' + fecha(+t.inicio) : ''}${t.fin ? '<br>■ ' + fecha(+t.fin) : ''}</div></td>
+      <td style="white-space:nowrap">${t.estado === 'Cancelado' ? '' : `<button data-pd="${esc(t.id)}" title="Descargar IGS del múltiple">⬇ IGS</button> <button data-ph="${esc(t.id)}" title="Hoja de corte">🖨</button>`}${t.estado === 'En proceso' ? ` <button class="pri" data-pt="${esc(t.id)}">■ Terminar corte</button>` : ''}</td></tr>`).join('')}</table></div>
+    ${!['Cortado', 'Cancelado'].includes(p.estado) && ts.some(t => t.estado === 'Pendiente') ? `<div class="row" style="margin-top:8px"><span style="flex:1"></span><button data-pc="${esc(p.id)}" title="Cancela los tramos pendientes y libera sus recortes reservados">✖ Cancelar tramos pendientes</button></div>` : ''}</details>`; }).join('') || '<div class="card empty">No hay programas pendientes.</div>'}`;
   el.querySelectorAll('[data-pv]').forEach(b => b.onclick = () => { S.pisoVer = b.dataset.pv; renderPiso(); });
+  el.querySelectorAll('[data-maq]').forEach(b => b.onclick = () => { MAQ = b.dataset.maq; saveMaq(); renderPiso(); });
+  el.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => cancelarPrograma(b.dataset.pc));
   $('pRef').onclick = async () => { await API.cargar().catch(e => toast(e.message, 'er')); renderAll(); };
-  const barDe = t => ({id: t.id, P: +t.largo, origen: t.origen, recorteId: t.recorteUsado, recorteNuevo: t.recorteNuevo, recorte: +t.largoRecorte || 0, tipoLabel: t.tipoLabel, piezas: t.piezas,
-    usado: (t.piezas || []).reduce((m, p) => Math.max(m, p.x + p.L), 0), aprov: +t.aprov || 0});
-  el.querySelectorAll('[data-pd]').forEach(b => b.onclick = () => { const t = S.db.tramos.find(x => x.id === b.dataset.pd); descargarTramo(barDe(t), t.tipoLabel, true); });
+  el.querySelectorAll('[data-pd]').forEach(b => b.onclick = () => { if(!MAQ) return toast('Elige arriba en qué máquina estás (' + CFG.maquinas.join(' o ') + ')', 'er');
+    const t = S.db.tramos.find(x => x.id === b.dataset.pd); descargarTramo(barDe(t), t.tipoLabel, true); });
   el.querySelectorAll('[data-ph]').forEach(b => b.onclick = () => { const t = S.db.tramos.find(x => x.id === b.dataset.ph); hojaCorte('Tramo ' + t.id, [barDe(t)]); });
   el.querySelectorAll('[data-pt]').forEach(b => b.onclick = () => terminarCorte(b.dataset.pt));
 }
@@ -1183,7 +2009,7 @@ function renderRec(){
   <details class="card"><summary><b>➕ Registrar recorte a mano</b> <span class="mut sm">recortes que ya existen en el rack</span></summary><div class="row" style="margin-top:10px">
     <select id="rTipo"><option value="">Tubular…</option>${Object.values(T).map(t => `<option value="${esc(t.key)}">${esc(t.label)}</option>`).join('')}</select>
     <input id="rMed" placeholder="o escribe: 2X1 CAL20" size="16"><input type="number" id="rLargo" placeholder="Largo mm" min="1"><input id="rUbi" placeholder="Ubicación (opcional)" size="14"><button class="pri" id="rAdd">Agregar</button></div></details>
-  <div class="card"><div class="row" style="margin-bottom:8px"><select id="rfE">${[['vigentes', 'Vigentes'], ['Disponible', 'Disponibles'], ['Por generar', 'Por generar'], ['Reservado', 'Reservados'], ['Usado', 'Usados'], ['Desechado', 'Desechados'], ['todos', 'Todos']].map(([v, t]) => `<option value="${v}" ${v === fl.estado ? 'selected' : ''}>${t}</option>`).join('')}</select>
+  <div class="card"><div class="row" style="margin-bottom:8px"><select id="rfE">${[['vigentes', 'Vigentes'], ['Disponible', 'Disponibles'], ['Por generar', 'Por generar'], ['Reservado', 'Reservados'], ['Usado', 'Usados'], ['Desechado', 'Desechados'], ['Cancelado', 'Cancelados'], ['todos', 'Todos']].map(([v, t]) => `<option value="${v}" ${v === fl.estado ? 'selected' : ''}>${t}</option>`).join('')}</select>
     <select id="rfT"><option value="">Todos los tubulares</option>${tipos.map(t => `<option value="${esc(t)}" ${t === fl.tipo ? 'selected' : ''}>${esc((R.find(r => r.tipo === t) || {}).tipoLabel || t)}</option>`).join('')}</select><span class="mut sm">${lista.length} recortes</span></div>
   ${lista.length ? `<div class="tw"><table><tr><th>ID</th><th>Tubular</th><th class="n">Largo</th><th class="n">Aprovechable</th><th>Estado</th><th>Origen</th><th>Ubicación</th><th></th></tr>
   ${lista.map(r => `<tr><td><b>${esc(r.id)}</b></td><td class="sm">${esc(r.tipoLabel || r.tipo)}</td><td class="n">${f0(r.largo)} mm</td><td class="n">${f0(util(r))} mm</td>
@@ -1204,6 +2030,19 @@ function renderRec(){
   el.querySelectorAll('[data-rea]').forEach(b => b.onclick = async () => { await API.upsert('recortes', [{id: b.dataset.rea, estado: 'Disponible'}]); renderAll(); });
   el.querySelectorAll('[data-ubi]').forEach(i => i.onchange = () => API.upsert('recortes', [{id: i.dataset.ubi, ubicacion: i.value.trim()}]));
 }
+/* catálogo de tubulares en Configuración: SKU, largo del tramo, kg por tramo y SKU preferido cuando un tubular tiene varios */
+function catHtml(){
+  const L = catalogo(), grupos = {}; L.forEach(c => { if(c.key) (grupos[c.key] = grupos[c.key] || []).push(c); });
+  const dup = Object.entries(grupos).filter(([, l]) => l.length > 1);
+  return `<details class="card" id="catBox" ${S.catOpen ? 'open' : ''}><summary><b>🔩 Catálogo de tubulares (SKU de Business Central)</b> <span class="mut sm">${L.length} SKU</span></summary>
+    <p class="mut sm" style="margin:10px 0">El peso por tramo y el largo dan los kg y los TRA de los consumos y de la comparación con BC; el largo también es el del tramo nuevo de ese tubular en los múltiples. Si el largo está vacío se toma de la descripción (p. ej. "6mts") o el tramo general (${f0(CFG.tramo)} mm).</p>
+    ${dup.length ? `<div class="card" style="background:var(--bg3);padding:.8rem 1rem"><b class="sm">Mismo tubular con varios SKU: elige cuál usar en los consumos</b><div class="row" style="margin-top:8px">${dup.map(([k, l]) => `<label class="cfl" style="flex-direction:row;align-items:center;gap:6px">${esc(tipoDe(l[0].med, l[0].cal).label)} <select data-pref="${esc(k)}">${l.map(c => `<option value="${esc(c.sku)}" ${(CFG.skuPref[k] || l[0].sku) === c.sku ? 'selected' : ''}>${esc(c.sku)} · ${esc(c.desc)}</option>`).join('')}</select></label>`).join('')}</div></div>` : ''}
+    <div class="tw"><table><tr><th>SKU</th><th>Descripción</th><th>Tubular leído</th><th class="n">Largo tramo (mm)</th><th class="n">kg por tramo</th><th class="n">kg/m</th><th></th></tr>
+    ${L.map(c => `<tr><td><input data-cat="${c.i}" data-f="sku" value="${esc(c.sku)}" size="9" style="font-family:var(--mono)"></td><td><input data-cat="${c.i}" data-f="desc" value="${esc(c.desc)}" size="30"></td>
+      <td class="sm">${c.key ? esc(tipoDe(c.med, c.cal).label) : badge('er', 'No leo la medida o el calibre')}</td><td class="n"><input type="number" data-cat="${c.i}" data-f="largo" value="${esc(CFG.catalogo[c.i].largo ?? '')}" placeholder="${c.largo}"></td>
+      <td class="n"><input type="number" step="0.001" data-cat="${c.i}" data-f="peso" value="${esc(c.peso ?? '')}"></td><td class="n">${c.kgm ? f2(c.kgm) : '—'}</td><td><button data-catdel="${c.i}" title="Quitar del catálogo" aria-label="Quitar">✕</button></td></tr>`).join('')}</table></div>
+    <div class="row" style="margin-top:8px"><button id="catAdd">➕ Agregar SKU</button><span class="mut sm">Escribe la descripción como en BC: "Tubular 2 x 1 in Cal 18".</span></div></details>`;
+}
 function renderCfg(){
   const el = $('t-cfg');
   const num = (k, t, step) => `<label class="cfl"><span>${t}</span><input type="number" step="${step || 1}" data-k="${k}" value="${CFG[k]}"></label>`;
@@ -1212,19 +2051,36 @@ function renderCfg(){
     ${num('minRem', 'Recorte útil mínimo para guardar (mm)')}${num('tolSeccion', 'Tolerancia sección nombre vs IGS (mm)', 0.1)}${num('densidad', 'Densidad del acero (g/cm³)', 0.01)}</div>
     <p class="mut sm">Un sobrante se guarda como recorte si, al restarle el chuck y el refrentado, quedan al menos ${f0(CFG.minRem)} mm aprovechables.</p></details>
   <details class="card"><summary><b>📐 Espesor por calibre (mm)</b></summary><div class="grid2" style="margin-top:10px">${Object.entries(CFG.calibres).map(([c, v]) => `<label class="cfl"><span>Calibre ${c}</span><input type="number" step="0.01" data-cal="${c}" value="${v}"></label>`).join('')}</div></details>
+  ${catHtml()}
   <details class="card" open><summary><b>☁ Conexión con Drive (Apps Script)</b></summary><div style="margin-top:10px">
-    <label class="cfl"><span>URL de la aplicación web de Apps Script (termina en /exec)</span><input id="cUrl" value="${esc(CFG.apiUrl)}" placeholder="https://script.google.com/macros/s/…/exec"></label>
+    ${S.authErr ? `<p style="color:var(--er);margin:0 0 10px">⚠ ${esc(MSG_CLAVE)}</p>` : ''}
+    <div class="grid2"><label class="cfl"><span>URL de la aplicación web de Apps Script (termina en /exec)</span><input id="cUrl" value="${esc(CFG.apiUrl)}" placeholder="https://script.google.com/macros/s/…/exec"></label>
+    <label class="cfl"><span>Clave de acceso (la da Ingeniería de Procesos; se guarda solo en este equipo)</span><input id="cClave" type="password" value="${esc(CLAVE)}" autocomplete="off" spellcheck="false"></label></div>
     <div class="row" style="margin-top:8px"><button class="pri" id="cSave">Guardar</button><button id="cTest" ${CFG.apiUrl ? '' : 'disabled'}>Probar conexión</button><span id="cMsg" class="mut sm"></span></div>
     <p class="mut sm">La URL de Línea Italia ya viene integrada; si la borras y guardas, se vuelve a usar la integrada. Sin conexión, la plataforma funciona solo en este navegador (los IGS se cargan desde tu equipo y los programas y recortes se guardan aquí). Con la URL, lee la biblioteca de Drive de Ingeniería y comparte programas, seguimiento y recortes entre equipos.</p></div></details>
   <div class="card"><div class="row"><button id="cExp">⬇ Respaldo (JSON)</button><button id="cImp">⬆ Importar respaldo</button><span style="flex:1"></span><button id="cDef">Valores de fábrica</button></div></div>`;
   el.querySelectorAll('[data-k]').forEach(i => i.onchange = () => { CFG[i.dataset.k] = +i.value; saveCfg(); explotar(); renderSide(); toast('Guardado'); });
   el.querySelectorAll('[data-cal]').forEach(i => i.onchange = () => { CFG.calibres[i.dataset.cal] = +i.value; saveCfg(); });
-  $('cSave').onclick = async () => { CFG.apiUrl = $('cUrl').value.trim() || API_URL; saveCfg(); setConn(); renderCfg(); if(CFG.apiUrl){ try{ await API.cargar(); renderAll(); toast('Conectado'); }catch(e){ toast(e.message, 'er'); } } };
-  $('cTest').onclick = async () => { $('cMsg').textContent = 'Probando…'; try{ const d = await API.jsonp({action: 'ping'}, 20000); $('cMsg').textContent = '✓ ' + (d.mensaje || 'Conectado'); }catch(e){ $('cMsg').textContent = '✗ ' + e.message; } };
+  $('catBox').ontoggle = e => { S.catOpen = e.target.open; };
+  el.querySelectorAll('[data-cat]').forEach(i => i.onchange = () => { const c = CFG.catalogo[+i.dataset.cat], f = i.dataset.f;
+    if(f === 'largo' || f === 'peso'){ if(i.value === '') delete c[f]; else c[f] = +i.value; } else c[f] = i.value.trim();
+    saveCfg(); renderCfg(); });
+  el.querySelectorAll('[data-catdel]').forEach(b => b.onclick = () => { const c = CFG.catalogo[+b.dataset.catdel];
+    if(confirm(`¿Quitar el SKU ${c.sku || '(sin SKU)'} · ${c.desc} del catálogo?`)){ CFG.catalogo.splice(+b.dataset.catdel, 1); saveCfg(); renderCfg(); } });
+  $('catAdd').onclick = () => { CFG.catalogo.push({sku: '', desc: 'Tubular ', peso: 0}); saveCfg(); renderCfg(); };
+  el.querySelectorAll('[data-pref]').forEach(s => s.onchange = () => { CFG.skuPref[s.dataset.pref] = s.value; saveCfg(); toast('Guardado'); });
+  $('cSave').onclick = async () => { CFG.apiUrl = $('cUrl').value.trim() || API_URL; CLAVE = $('cClave').value.trim(); saveCfg(); saveClave(); setConn(); renderCfg();
+    if(CFG.apiUrl){ try{ await API.cargar(); renderAll(); toast('Conectado'); }catch(e){ toast(e.message, 'er'); renderCfg(); } } };
+  // prueba la conexión y, con "estado", que la clave sea correcta
+  $('cTest').onclick = async () => { $('cMsg').textContent = 'Probando…'; CLAVE = $('cClave').value.trim();
+    try{ const d = await API.jsonp({action: 'ping'}, 20000); let txt = '✓ ' + (d.mensaje || 'Conectado') + (d.version ? ' · v' + d.version : '');
+      if(d.version){ try{ await API.jsonp({action: 'estado'}, 30000); txt += ' · clave correcta'; }catch(e){ txt = '✗ ' + e.message; } }
+      else txt += ' · el Apps Script es anterior y todavía no pide clave';
+      $('cMsg').textContent = txt; }catch(e){ $('cMsg').textContent = '✗ ' + e.message; } };
   $('cExp').onclick = () => dl('multiples-tubular_' + hoyId() + '.json', JSON.stringify({cfg: CFG, db: S.db, elecciones: ELEC}, null, 2), 'application/json');
-  $('cImp').onclick = () => { const i = document.createElement('input'); i.type = 'file'; i.accept = '.json'; i.onchange = async () => { try{ const d = JSON.parse(await i.files[0].text()); if(d.cfg) CFG = Object.assign({}, DEF, d.cfg); if(d.elecciones) ELEC = d.elecciones; saveCfg(); saveElec();
+  $('cImp').onclick = () => { const i = document.createElement('input'); i.type = 'file'; i.accept = '.json'; i.onchange = async () => { try{ const d = JSON.parse(await i.files[0].text()); if(d.cfg){ CFG = Object.assign({}, DEF, d.cfg); CFG.catalogo = JSON.parse(JSON.stringify(CFG.catalogo || [])); CFG.skuPref = Object.assign({}, CFG.skuPref); } if(d.elecciones) ELEC = d.elecciones; saveCfg(); saveElec();
     if(d.db && !API.on()){ S.db = d.db; localStorage.setItem('mt-db', JSON.stringify(S.db)); } toast('Respaldo importado'); renderAll(); }catch(e){ toast('Archivo no válido', 'er'); } }; i.click(); };
-  $('cDef').onclick = () => { if(confirm('¿Regresar tramo, chuck, separación y calibres a los valores de fábrica? La URL se conserva.')){ const u = CFG.apiUrl; CFG = JSON.parse(JSON.stringify(DEF)); CFG.apiUrl = u || API_URL; saveCfg(); renderAll(); } };
+  $('cDef').onclick = () => { if(confirm('¿Regresar tramo, chuck, separación, calibres y catálogo de tubulares a los valores de fábrica? La URL se conserva.')){ const u = CFG.apiUrl; CFG = JSON.parse(JSON.stringify(DEF)); CFG.apiUrl = u || API_URL; saveCfg(); renderAll(); } };
 }
 
 
@@ -1311,49 +2167,65 @@ function dibujarVista(svg, r, V){
 }
 
 /* ======================= Navegación ======================= */
+/* íconos SVG (trazo) y colores del menú, con el mismo estilo de la app OEE Planta */
+const ICO = {
+  prog: '<path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/>',
+  lib: '<path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/>',
+  mult: '<rect x="2" y="9" width="20" height="6" rx="1"/><line x1="8" y1="9" x2="8" y2="15"/><line x1="13" y1="9" x2="13" y2="15"/><line x1="17" y1="9" x2="17" y2="15"/>',
+  modelo: '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>',
+  piso: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/>',
+  rec: '<polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5" rx="1"/><line x1="10" y1="12" x2="14" y2="12"/>',
+  cons: '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>',
+  cfg: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>'
+};
 const MENU = [
-  {g: 'Programar', items: [{k: 'prog', i: '📋', t: 'Programa de producción', d: 'Excel de órdenes planificadas de Business Central: OPs, rutas, cantidades y hora de inicio.'},
-    {k: 'lib', i: '📚', t: 'Biblioteca de IGS', d: 'Dibujos de tubular de Ingeniería en Drive: versión vigente, tubular, largo y sección medidos en el IGS.'},
-    {k: 'mult', i: '🧩', t: 'Múltiples de corte', d: 'Piezas del mismo tubular acomodadas a lo largo de cada tramo para el máximo aprovechamiento.'}]},
-  {g: 'Producción', items: [{k: 'piso', i: '🏭', t: 'Corte en piso', d: 'Descarga de IGS por tramo y seguimiento: pendiente, en proceso, cortado.'},
-    {k: 'rec', i: '♻', t: 'Inventario de recortes', d: 'Sobrantes que vale la pena guardar, listos para usarse en los siguientes programas.'}]},
-  {g: 'Análisis', items: [{k: 'cons', i: '📊', t: 'Consumos reales', d: 'Consumo por pieza, por tipo de tubular y por OP, incluyendo chuck, separación y desecho.'}]},
-  {g: 'Ajustes', closed: true, items: [{k: 'cfg', i: '⚙', t: 'Configuración', d: 'Tramo, chuck, separación, recorte mínimo, calibres y conexión con Apps Script.'}]}
+  {g: 'Programar', items: [{k: 'prog', c: '#4a9eff', t: 'Programa de producción', d: 'Excel PROGRAMA LASER del día (GW1 / GW2) o de órdenes planificadas de BC: dibujos ligados y su alta en TubesT.'},
+    {k: 'lib', c: '#3ecf8e', t: 'Biblioteca de IGS', d: 'Carpeta DIBUJOS DE CORTE(OK): dibujos, MULTIPLE, versiones anteriores y lo que se mide en cada IGS.'},
+    {k: 'modelo', c: '#2dd4bf', t: 'Múltiples por modelo', d: 'Diseña múltiples reutilizables por modelo con sus piezas sueltas; se validan y se dan de alta una sola vez.'},
+    {k: 'mult', c: '#f5a623', t: 'Múltiples de corte', d: 'Piezas del mismo tubular acomodadas a lo largo de cada tramo para el máximo aprovechamiento.'}]},
+  {g: 'Producción', items: [{k: 'piso', c: '#c084fc', t: 'Corte en piso', d: 'Descarga de IGS por tramo y seguimiento: pendiente, en proceso, cortado.'},
+    {k: 'rec', c: '#fb7185', t: 'Inventario de recortes', d: 'Sobrantes que vale la pena guardar, listos para usarse en los siguientes programas.'}]},
+  {g: 'Análisis', items: [{k: 'cons', c: '#38bdf8', t: 'Consumos reales', d: 'Consumo por pieza, por tipo de tubular y por OP, incluyendo chuck, separación y desecho.'}]},
+  {g: 'Ajustes', items: [{k: 'cfg', c: '#8b8fa8', t: 'Configuración', d: 'Tramo, chuck, separación, recorte mínimo, calibres y conexión con Apps Script.'}]}
 ];
-let CUR = 'prog', GRP = {};
-try{ GRP = JSON.parse(localStorage.getItem('mt-grp') || '{}'); }catch(e){}
+let CUR = 'prog';
 function badgeOf(k){
   switch(k){
     case 'prog': return S.ops.length ? ['in', S.ops.length] : null;
     case 'lib': { if(!S.lib.length) return null; const {vig, conflictos} = vigentes(); const er = vig.filter(f => evalPieza(f).lv === 'er').length + conflictos.length; return er ? ['er', er] : ['ok', vig.length]; }
     case 'mult': return S.res ? ['ok', S.res.grupos.reduce((s, g) => s + g.bars.length, 0)] : S.items.length ? ['wa', '!'] : null;
-    case 'piso': { const n = (S.db.tramos || []).filter(t => t.estado !== 'Cortado').length; return n ? ['wa', n] : null; }
+    case 'piso': { const n = (S.db.tramos || []).filter(t => !['Cortado', 'Cancelado'].includes(t.estado)).length; return n ? ['wa', n] : null; }
     case 'rec': { const n = (S.db.recortes || []).filter(r => r.estado === 'Disponible').length; return n ? ['ok', n] : null; }
   }
   return null;
 }
 function renderSide(){
-  $('side').innerHTML = MENU.map((g, gi) => { const closed = GRP[gi] != null ? GRP[gi] : !!g.closed;
-    return `<div class="grp ${closed && !g.items.some(i => i.k === CUR) ? 'closed' : ''}"><button class="gh" data-g="${gi}">${esc(g.g)}<span class="car">▾</span></button><div class="its">${g.items.map(i => { const b = badgeOf(i.k);
-      return `<button data-k="${i.k}" class="${i.k === CUR ? 'on' : ''}"><span>${i.i}</span>${esc(i.t)}${b ? `<span class="cnt b ${b[0]}">${b[1]}</span>` : ''}</button>`; }).join('')}</div></div>`; }).join('');
-  $('side').querySelectorAll('[data-g]').forEach(b => b.onclick = () => { const el = b.parentElement, c = !el.classList.contains('closed'); el.classList.toggle('closed', c); GRP[b.dataset.g] = c; try{ localStorage.setItem('mt-grp', JSON.stringify(GRP)); }catch(e){} });
-  $('side').querySelectorAll('[data-k]').forEach(b => b.onclick = () => { showTab(b.dataset.k); $('side').classList.remove('open'); });
-  $('progName').textContent = S.progFile ? '📋 ' + S.progFile : '';
+  $('nav').innerHTML = MENU.map(g => `<div class="nav-section"><div class="nav-label">${esc(g.g)}</div>${g.items.map(i => { const b = badgeOf(i.k);
+    return `<div class="nav-item ${i.k === CUR ? 'active' : ''}" data-k="${i.k}" data-label="${esc(i.t)}" role="button" tabindex="0" style="--ic:${i.c}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICO[i.k]}</svg><span>${esc(i.t)}</span>${b ? `<span class="nav-cnt b ${b[0]}">${b[1]}</span>` : ''}</div>`; }).join('')}</div>`).join('');
+  $('nav').querySelectorAll('[data-k]').forEach(b => { b.onclick = () => { showTab(b.dataset.k); $('side').classList.remove('open'); };
+    b.onkeydown = e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); b.click(); } }; });
+  $('progName').textContent = S.progFile || '';
 }
-const RENDER = {prog: renderProg, lib: renderLib, mult: renderMult, cons: renderCons, piso: renderPiso, rec: renderRec, cfg: renderCfg};
+const RENDER = {prog: renderProg, lib: renderLib, mult: renderMult, modelo: renderModelo, cons: renderCons, piso: renderPiso, rec: renderRec, cfg: renderCfg};
 function showTab(k){
   const it = MENU.flatMap(g => g.items).find(i => i.k === k) || MENU[0].items[0]; CUR = it.k;
-  $('pageTitle').textContent = it.i + ' ' + it.t; $('pageSub').textContent = it.d;
+  $('pageTitle').textContent = it.t; $('pageSub').textContent = it.d;
   document.querySelectorAll('main section').forEach(s => s.classList.toggle('on', s.id === 't-' + CUR));
   try{ localStorage.setItem('mt-tab', CUR); }catch(e){}
-  RENDER[CUR](); renderSide();
+  // la animación de entrada solo corre al cambiar de pestaña, no en cada refresco de la vista
+  const ct = $('content'); ct.classList.remove('anim'); void ct.offsetWidth; ct.classList.add('anim'); clearTimeout(showTab._t); showTab._t = setTimeout(() => ct.classList.remove('anim'), 700);
+  ct.scrollTop = 0; RENDER[CUR](); renderSide();
 }
 function renderAll(){ RENDER[CUR](); renderSide(); }
 $('menuBtn').onclick = () => $('side').classList.toggle('open');
+// un guardado rechazado (clave, conexión, validación del Apps Script) nunca queda en silencio
+window.addEventListener('unhandledrejection', e => { const m = (e.reason && e.reason.message) || String(e.reason || ''); if(m) toast(m.startsWith('No se') || e.reason.auth ? m : 'No se guardó: ' + m, 'er'); });
+try{ if(localStorage.getItem('mt-sb') === '1') $('side').classList.add('collapsed'); }catch(e){}
+$('sbToggle').onclick = () => { const c = $('side').classList.toggle('collapsed'); try{ localStorage.setItem('mt-sb', c ? '1' : '0'); }catch(e){} };
 (async () => {
   setConn(); let t = 'prog'; try{ t = localStorage.getItem('mt-tab') || 'prog'; }catch(e){}
   showTab(t);
-  try{ await API.cargar(); renderAll(); }catch(e){ toast('No se pudo leer el servidor: ' + e.message, 'er'); }
+  try{ await API.cargar(); renderAll(); }catch(e){ if(e.auth === 'clave'){ showTab('cfg'); toast(MSG_CLAVE, 'er'); } else toast('No se pudo leer el servidor: ' + e.message, 'er'); }
 })();
 window.MT = {S, CFG: () => CFG, explotar, generar, cargarLocal, abrirPrograma, igsTramo};
 </script>
