@@ -266,7 +266,8 @@ const IGES = (() => {
       case 198: p = e.form === 1 ? [1, 2, 5] : [1, 2]; end = e.form === 1 ? 6 : 5; break;
       case 308: { const n = I(3); for(let k = 0; k < n; k++) p.push(4 + k); end = 4 + n; break; }
       case 314: end = /^\d+H/.test(t[4] || '') ? 5 : 4; break;
-      case 402: { if(![1, 7, 14, 15].includes(e.form)) return null; const n = I(1); for(let k = 0; k < n; k++) p.push(2 + k); end = 2 + n; break; }
+      case 402: { if(e.form === 16){ const n = I(2); p = [3]; for(let k = 0; k < n; k++) p.push(4 + k); end = 4 + n; break; }   // asociatividad plana: N.º entradas, N.º entidades, matriz del plano, entidades
+        if(![1, 7, 14, 15].includes(e.form)) return null; const n = I(1); for(let k = 0; k < n; k++) p.push(2 + k); end = 2 + n; break; }
       case 406: end = 2 + I(1); break;
       case 408: p = [1]; end = 6; break;
       case 502: end = 2 + 3*I(1); break;
@@ -790,6 +791,9 @@ let CFG = (() => { let c; try{ c = Object.assign({}, DEF, JSON.parse(localStorag
 const saveCfg = () => { CAT = null; try{ localStorage.setItem('mt-cfg', JSON.stringify(CFG)); }catch(e){} };
 let ELEC = (() => { try{ return JSON.parse(localStorage.getItem('mt-elec') || '{}'); }catch(e){ return {}; } })();
 const saveElec = () => { try{ localStorage.setItem('mt-elec', JSON.stringify(ELEC)); }catch(e){} };
+/* piezas por MULTIPLE cuando el nombre del dibujo no trae "(NPZ)" (por clave del dibujo; se recuerda en este equipo) */
+let PZM = (() => { try{ return JSON.parse(localStorage.getItem('mt-pzmult') || '{}'); }catch(e){ return {}; } })();
+const savePzm = () => { try{ localStorage.setItem('mt-pzmult', JSON.stringify(PZM)); }catch(e){} };
 /* máquina de este equipo (GW1 / GW2): cada pantalla de piso corta en una sola */
 let MAQ = (() => { try{ return localStorage.getItem('mt-maq') || ''; }catch(e){ return ''; } })();
 const saveMaq = () => { try{ localStorage.setItem('mt-maq', MAQ); }catch(e){} };
@@ -829,7 +833,7 @@ function parseMedida(s){
     .replace(/(\d+)[ -](\d+)-(\d+)(?![\d\/.])/g, (m, w, n, d) => fr(n, d) ? `${w}-${n}/${d}` : m)
     .replace(/(^|[^\d\/.-])(\d+)-(\d+)(?![\d\/.])/g, (m, pre, n, d) => fr(n, d) ? `${pre}${n}/${d}` : m);
   // redondo: REDONDO / DIA / Ø o "TUBO 1 1/4 IN" (como lo escribe el programa), siempre que no traiga "A X B"
-  let m = !new RegExp(NUMRE + '\\s*X\\s*' + NUMRE).test(u) && u.match(new RegExp('(?:REDONDO|\\bRED\\b|DIA|DIAM|Ø|\\bTUBO\\b)\\s*-?\\s*' + NUMRE + '\\s*(MM|IN)?'));
+  let m = !new RegExp(NUMRE + '\\s*X\\s*' + NUMRE).test(u) && u.match(new RegExp('(?:REDONDO|\\bRED\\b|DIA|DIAM|Ø|\\bTUBO(?:\\s+MOFLE)?\\b|\\bMOFLE\\b)\\s*-?\\s*' + NUMRE + '\\s*(MM|IN)?'));
   if(m){ const v = frac(m[1]), mm = m[2] === 'MM' || (!m[2] && v > 8); return {forma: 'RED', a: mm ? v : v*25.4, b: mm ? v : v*25.4, pulg: !mm, txt: m[0].trim()}; }
   m = u.match(new RegExp(NUMRE + '\\s*X\\s*' + NUMRE + '\\s*(MM|IN)?'));
   if(m){ const v1 = frac(m[1]), v2 = frac(m[2]), mm = m[3] === 'MM' || (!m[3] && Math.max(v1, v2) > 8);
@@ -885,11 +889,12 @@ function parseNombre(name, path){
 }
 /* nombre de dibujo normalizado: liga el "Nombre del dibujo" del programa con el archivo */
 const claveDibujo = s => norm(s).replace(/\.(IGS|IGES)(\.GZ)*$/, '').replace(/[-_()]/g, ' ').replace(/\b(\d+)\s*PZ[AS]*\b/g, '$1PZ').replace(/\s+/g, ' ').trim();
-/* convención de la carpeta DIBUJOS DE CORTE(OK): LÍNEA/MODELO/[IGES]/nombre libre ("1015 ALMA 1PZ.IGS"); el tubular sale del programa */
+/* convención de la carpeta central: LÍNEA/MODELO/IGS/nombre libre ("1015 ALMA 1PZ.IGS"); el tubular sale del programa.
+   MULTIPLE / MUL = múltiple de Ingeniería; MULT = múltiple armado por la plataforma */
 function parsePlanta(name, path, r){
   const base = name.replace(/\.(igs|iges)(\.gz)*$/i, '').trim(), carpetas = String(path || '').split('/').slice(0, -1);
   const pz = norm(base).match(/\b(\d+)\s*PZ[AS]*\b/), vieja = carpetas.filter(c => /ANTERIOR|VIEJ|OBSOLET/.test(norm(c))).pop();
-  Object.assign(r, {ok: true, planta: true, pieza: base, clave: claveDibujo(base), n: pz ? +pz[1] : null, multiple: /\bMULTIPLE\b|\bMUL\b/.test(norm(base)),
+  Object.assign(r, {ok: true, planta: true, pieza: base, clave: claveDibujo(base), n: pz ? +pz[1] : null, multiple: /\bMULT(IPLE)?\b|\bMUL\b/.test(norm(base)),
     ruta: carpetas.filter(c => !/^IGE?S$/i.test(c.trim())).pop() || ''});
   if(vieja) r.excluir = 'Versión anterior (' + vieja + ')';
   else if(/MUESTRA/.test(norm(path))) r.excluir = 'Muestra';
@@ -978,9 +983,18 @@ function leerProgramaLaser(wb, hojas){
         cant: num(r[cQ]), xMueble: num(r[cX]), progra: num(r[cG]), dibujo: dib, obs: v(cB), inicio: null, idx: idx++};
       if(/NO CORTAR/i.test(dib)) o.omitir = dib;
       else if(/^(SI|SÍ|X|✓|TRUE|VERDADERO|1)$/i.test(v(cC))) o.omitir = 'Ya marcado como cortado';
+      else if(/DIBUJO EN (LA )?MAQUINA/.test(norm(dib))) o.omitir = 'Dibujo en la máquina (no se acomoda)';
       ops.push(o);
     });
   });
+  // "IGUAL A FA-6530": toma el dibujo del renglón de esa OP con la misma parte (o la misma letra final)
+  ops.forEach(o => { const m = norm(o.dibujo).match(/^IGUAL (?:A|QUE)\s+(.+)$/); if(!m) return;
+    const ref = m[1].trim(), suf = (norm(o.ruta).match(/-([A-Z])$/) || [])[1];
+    const cand = ops.filter(x => x !== o && !/^IGUAL /.test(norm(x.dibujo)) && norm(x.ruta).startsWith(ref));
+    const x = cand.find(x => x.parte && norm(x.parte) === norm(o.parte)) || (suf && cand.find(x => norm(x.ruta) === ref + '-' + suf));
+    if(x) Object.assign(o, {dibujoOrig: o.dibujo, dibujo: x.dibujo, nota: 'Igual a ' + x.ruta}); });
+  // sin nombre de dibujo ("0"): se busca por la parte
+  ops.forEach(o => { if(o.dibujo === '0' && o.parte) Object.assign(o, {dibujoOrig: o.dibujo, dibujo: o.parte, nota: 'Sin nombre de dibujo: se buscó por la parte'}); });
   if(!ops.length) throw new Error('Las hojas PROGRAMA LASER #2 y #3 no traen renglones visibles');
   return ops;
 }
@@ -1015,7 +1029,7 @@ function vigentes(){
   }
   return {vig, conflictos};
 }
-function medKey(f){ return 'v2|' + f.id + '|' + (f.modified || f.size || ''); }
+function medKey(f){ return 'v3|' + f.id + '|' + (f.modified || f.size || ''); }
 const endTxt = e => !e ? '—' : e.recto ? 'Recto' : e.inglete ? `Inglete ${e.angulo}°` : `Especial (${f1(e.prof ?? e.profundidad)} mm)`;
 function evalPieza(f){
   const p = f.p, m = MEAS[medKey(f)];
@@ -1023,7 +1037,7 @@ function evalPieza(f){
   if(!p.ok){ r.lv = 'er'; r.notas.push(...p.errores); }
   if(!m){ r.lv = r.lv === 'er' ? 'er' : 'in'; r.notas.push('Sin leer'); return r; }
   if(m.error){ r.lv = 'er'; r.notas.push(m.error); return r; }
-  if(p.planta){}   // carpeta de dibujos: la medida la da el programa
+  if(p.planta){}   // carpeta central: la medida la da el programa
   else if(!p.med){ r.lv = r.lv === 'er' ? 'er' : 'wa'; r.notas.push('El nombre no trae la medida; se usó la sección del IGS'); }
   else if(Math.abs(m.secA - p.med.b) > CFG.tolSeccion || Math.abs(m.secB - p.med.a) > CFG.tolSeccion){ r.lv = 'er'; r.notas.push(`La sección del IGS (${f1(m.secA)} × ${f1(m.secB)} mm) no coincide con el nombre (${f1(p.med.b)} × ${f1(p.med.a)} mm)`); }
   if(m.units && !/MM|MILLIM/.test(m.units)) r.notas.push('Unidades ' + m.units + ' (convertidas a mm)');
@@ -1037,8 +1051,8 @@ function medidaEfectiva(f){ const m = MEAS[medKey(f)]; if(f.p.med) return f.p.me
 async function textoDe(f){
   if(S.raw[f.id]) return S.raw[f.id];
   let txt;
-  if(f.file) txt = await gunzipAll(await f.file.arrayBuffer());
-  else if(f.handle){ f.file = await f.handle.getFile(); txt = await gunzipAll(await f.file.arrayBuffer()); }
+  if(f.handle){ f.file = await f.handle.getFile(); txt = await gunzipAll(await f.file.arrayBuffer()); }   // siempre la versión actual del archivo
+  else if(f.file) txt = await gunzipAll(await f.file.arrayBuffer());
   else txt = await API.archivo(f.id);
   S.raw[f.id] = txt; return txt;
 }
@@ -1087,7 +1101,7 @@ async function medirNecesarios(){
   if(need.length) await medir(need);
   explotar(); renderAll();
 }
-/* liga cada renglón del programa por máquina con su IGS de la carpeta de dibujos; un nombre repetido se decide por el modelo */
+/* liga cada renglón del programa por máquina con su IGS de la carpeta central; un nombre repetido se decide por el modelo */
 function ligarDibujos(){
   const vig = {}, viejos = {};
   S.lib.forEach(f => { if(f.p.planta) ((f.p.excluir ? viejos : vig)[f.p.clave] = (f.p.excluir ? viejos : vig)[f.p.clave] || []).push(f); });
@@ -1096,17 +1110,20 @@ function ligarDibujos(){
   S.ops.forEach(o => {
     if(o.omitir) return;
     const k = claveDibujo(o.dibujo), cand = vig[k] || [], ant = viejos[k] || [], elec = ELEC['D|' + k + '|' + norm(o.ruta)];
-    let f = elec && cand.concat(ant).find(x => x.id === elec), estado = 'ok';
+    let f = elec && cand.concat(ant).find(x => x.id === elec), estado = 'ok', iguales = 0;
     if(!f && cand.length === 1) f = cand[0];
     else if(!f && cand.length > 1){
-      // desempate: carpeta del modelo; o carpeta que empieza con el número del dibujo ("133 LATERAL…" → "133 NV"); un nombre genérico ("ALMA GRANDE") no desempata
+      // desempate: carpeta del modelo; o carpeta con el número del dibujo ("1212-ALMA…" → 1212 antes que 1212-1); un nombre genérico ("ALMA GRANDE") no desempata
       const mod = alnum(o.ruta).replace(/(\d)[A-Z]$/, '$1'), tok0 = alnum(k.split(' ')[0]), tok = /\d/.test(tok0) ? tok0 : '';
       const score = x => { const cs = x.path.split('/').slice(0, -1).map(alnum).filter(Boolean);
-        return (mod && cs.some(c => c === mod || (c.length >= 3 && mod.length >= 3 && (c.includes(mod) || mod.includes(c)))) ? 2 : 0) + (tok && cs.some(c => c.startsWith(tok)) ? 1 : 0); };
-      const sc = cand.map(x => [x, score(x)]).sort((a, b) => b[1] - a[1]);
-      if(sc[0][1] > 0 && sc[0][1] > sc[1][1]) f = sc[0][0]; else estado = 'ambiguo';
+        return (mod && cs.some(c => c === mod || (c.length >= 3 && mod.length >= 3 && (c.includes(mod) || mod.includes(c)))) ? 4 : 0) + (tok && cs.some(c => c === tok) ? 2 : tok && cs.some(c => c.startsWith(tok)) ? 1 : 0); };
+      const sc = cand.map(x => [x, score(x)]).sort((a, b) => b[1] - a[1] || a[0].path.localeCompare(b[0].path));
+      if(sc[0][1] > 0 && sc[0][1] > sc[1][1]) f = sc[0][0];
+      // el mismo dibujo copiado en varios modelos (mismo tamaño en todos): cualquiera sirve, se usa el primero
+      else if(cand.every(x => x.size && x.size === cand[0].size)){ f = sc[0][0]; iguales = cand.length; }
+      else estado = 'ambiguo';
     } else if(!f) estado = ant.length ? 'anterior' : 'sin';
-    S.match[o.idx] = {f: f || null, estado: f ? 'ok' : estado, clave: k, cand: f ? [] : estado === 'ambiguo' ? cand : estado === 'anterior' ? ant : []};
+    S.match[o.idx] = {f: f || null, estado: f ? 'ok' : estado, clave: k, iguales, cand: f ? (iguales ? cand : []) : estado === 'ambiguo' ? cand : estado === 'anterior' ? ant : []};
   });
 }
 function cargarLocal(files){
@@ -1117,78 +1134,47 @@ function cargarLocal(files){
     if(prev >= 0) S.lib[prev] = it; else S.lib.push(it); delete S.raw[id]; });
   S.libSrc = 'Archivos de este equipo'; toast(arr.length + ' IGS cargados'); medirNecesarios();
 }
-/* carpeta DIBUJOS DE CORTE(OK) recordada en este equipo: se elige una vez y después se abre con un clic */
-const SALTAR_DIR = /L[AÁ]MINA|DXF|MELAMINA|PANEL|AC[UÚ]STICO|PROTOTIPO/i;
+/* carpeta recordada en este equipo (IndexedDB): se elige una vez y después se abre con un clic */
 const DIRDB = {
   abrir: () => new Promise((ok, ko) => { const r = indexedDB.open('mt-carpeta', 1); r.onupgradeneeded = () => r.result.createObjectStore('h'); r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error); }),
-  async leer(k = 'dibujos'){ try{ const db = await this.abrir(); return await new Promise(ok => { const q = db.transaction('h').objectStore('h').get(k); q.onsuccess = () => ok(q.result || null); q.onerror = () => ok(null); }); }catch(e){ return null; } },
-  async guardar(h, k = 'dibujos'){ try{ const db = await this.abrir(); db.transaction('h', 'readwrite').objectStore('h').put(h, k); }catch(e){} }
+  async leer(k){ try{ const db = await this.abrir(); return await new Promise(ok => { const q = db.transaction('h').objectStore('h').get(k); q.onsuccess = () => ok(q.result || null); q.onerror = () => ok(null); }); }catch(e){ return null; } },
+  async guardar(h, k){ try{ const db = await this.abrir(); db.transaction('h', 'readwrite').objectStore('h').put(h, k); }catch(e){} }
 };
-async function abrirCarpeta(otra){
-  if(!window.showDirectoryPicker) return $('inDir').click();   // navegador sin acceso a carpetas: selector clásico
-  let h = otra ? null : await DIRDB.leer();
-  try{
-    if(h && (await h.queryPermission({mode: 'read'})) !== 'granted' && (await h.requestPermission({mode: 'read'})) !== 'granted') h = null;
-    if(!h){ h = await window.showDirectoryPicker({id: 'dibujos', mode: 'read'}); await DIRDB.guardar(h); }
-  }catch(e){ if(e.name !== 'AbortError') toast('No se pudo abrir la carpeta: ' + e.message, 'er'); return; }
-  const lista = [];
-  S.libMsg = 'Leyendo la carpeta ' + h.name + '…'; renderLib();
-  const recorrer = async (dir, ruta) => {
-    for await (const [nombre, e] of dir.entries()){
-      const p = ruta ? ruta + '/' + nombre : nombre;
-      if(e.kind === 'directory'){ if(!SALTAR_DIR.test(nombre)) await recorrer(e, p); }
-      else if(/\.(igs|iges)(\.gz)*$/i.test(nombre)){ lista.push({id: 'L:' + h.name + '/' + p, name: nombre, path: h.name + '/' + p, handle: e}); if(lista.length % 250 === 0){ S.libMsg = `Leyendo la carpeta ${h.name}: ${f0(lista.length)} IGS…`; renderLib(); } }
-    }
-  };
-  try{ await recorrer(h, ''); }catch(e){ S.libMsg = ''; renderLib(); return toast('No se pudo leer la carpeta: ' + e.message, 'er'); }
-  S.lib = lista.map(it => Object.assign(it, {p: parseNombre(it.name, it.path)})); S.raw = {}; S.match = null;
-  S.libSrc = 'Carpeta ' + h.name + ' · ' + f0(lista.length) + ' IGS'; S.libMsg = '';
-  toast(f0(lista.length) + ' IGS en ' + h.name); await medirNecesarios();
-}
 const fechaArchivo = () => { const d = new Date(), p = v => String(v).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
 
 /* ======================= Carpeta central por modelo (OneDrive que ven GW1 y GW2) ======================= */
-/* <carpeta central>/<LÍNEA>/<MODELO>/IGS/[subcarpeta/]<dibujo>.IGS   copia vigente de DIBUJOS DE CORTE(OK) (espejo: la plataforma la actualiza si Ingeniería la cambia)
+/* TUBO LASER - DIBUJOS POR MODELO es la fuente de los IGS (ya no DIBUJOS DE CORTE(OK)):
+   <carpeta central>/<LÍNEA>/<MODELO>/IGS/[subcarpeta/]<dibujo>.IGS   dibujo vigente (lo pone o reemplaza Ingeniería)
                                     /ZZX/<dibujo>.zzx                 lo guarda el operador al dar de alta en TubesT, con el mismo nombre del IGS
-                                    /modelo.json                      origen de los IGS que copió la plataforma y receta de sus múltiples
-   Misma regla que herramientas/cargar-carpeta-central.ps1: LÍNEA = primera carpeta de DIBUJOS DE CORTE(OK); MODELO = la siguiente
-   (en FOLIOS se saltan FOLIOS NUEVOS, NUEVOS y FOLIOS SEMANALES); las carpetas más adentro quedan como subcarpetas de IGS;
-   se quita "NV" (solo indica versión actualizada); PLACAS e INGENIERIA no van. La plataforma nunca borra nada ni toca los .zzx. */
-const MAN = 'modelo.json', CEN_FUERA = ['PLACAS', 'INGENIERIA'], CEN_CONT = ['FOLIOS NUEVOS', 'NUEVOS', 'FOLIOS SEMANALES'];
-const sinNV = s => String(s || '').replace(/(^|\s)NV(?=\s|$)/gi, ' ').replace(/\s+/g, ' ').trim().replace(/\.+$/, '');
-const relDib = f => String(f.path || '').split('/').slice(1).join('/') || f.name;   // ruta dentro de DIBUJOS DE CORTE(OK)
+                                    /modelo.json                      receta de los múltiples que armó la plataforma
+   La carga inicial se hizo con herramientas/cargar-carpeta-central.ps1. La plataforma nunca borra nada ni toca los .zzx. */
+const MAN = 'modelo.json';
 const winRuta = s => String(s).replace(/\//g, '\\');
-/* lugar de un dibujo en la carpeta central; null si su línea no va (PLACAS, INGENIERIA) */
+/* lugar de un IGS en la carpeta central: <raíz>/LÍNEA/MODELO/IGS/[sub]/archivo; null si no está dentro de la carpeta IGS de un modelo */
 function lugarCentral(f){
-  const dirs = String(f.path || '').split('/').slice(1, -1).map(c => c.trim()).filter(Boolean);
-  if(dirs.length && CEN_FUERA.includes(dirs[0].toUpperCase())) return null;
-  const md = dirs.filter(c => !/^IGE?S$/i.test(c));
-  let linea, modelo, sub = '';
-  if(md.length <= 1){ linea = 'OTROS'; modelo = md[0] || 'SIN MODELO'; }
-  else {
-    linea = md[0]; let resto = md.slice(1);
-    if(linea.toUpperCase() === 'FOLIOS') while(resto.length && CEN_CONT.includes(resto[0].toUpperCase())) resto = resto.slice(1);
-    modelo = resto[0] || 'VARIOS'; sub = resto.slice(1).join('/');
-  }
-  linea = sinNV(linea); modelo = sinNV(modelo);
-  return {linea, modelo, sub, key: linea + '/' + modelo};
+  const d = String(f.path || '').split('/').slice(1, -1);
+  if(d.length < 3 || !/^IGE?S$/i.test(d[2].trim())) return null;
+  return {linea: d[0], modelo: d[1], sub: d.slice(3).join('/'), key: d[0] + '/' + d[1]};
 }
 async function abrirCentral(otra){
-  if(!window.showDirectoryPicker) return toast('Este navegador no puede abrir carpetas: usa Chrome o Edge', 'er');
+  if(!window.showDirectoryPicker) return $('inDir').click();   // navegador sin acceso a carpetas: selector clásico (solo lectura)
   let h = otra ? null : await DIRDB.leer('zzx');
   try{
     if(h && (await h.queryPermission({mode: 'readwrite'})) !== 'granted' && (await h.requestPermission({mode: 'readwrite'})) !== 'granted') h = null;
     if(!h){ h = await window.showDirectoryPicker({id: 'central', mode: 'readwrite'}); await DIRDB.guardar(h, 'zzx'); }
   }catch(e){ if(e.name !== 'AbortError') toast('No se pudo abrir la carpeta: ' + e.message, 'er'); return; }
-  S.cenDir = h; toast('Leyendo ' + h.name + '…', 'in'); await leerCentral();
-  if(S.cen){ const t = cuentaCentral(); toast(`${h.name}: ${f0(t.mods)} modelos · ${f0(t.igs)} IGS · ${f0(t.zzx)} .zzx`); }
-  renderAll();
+  S.cenDir = h; S.libMsg = 'Leyendo la carpeta ' + h.name + '…'; renderLib();
+  if(!(await leerCentral())) return;
+  const t = cuentaCentral();
+  if(!t.igs) toast(`No encontré IGS en ${h.name}. Elige la carpeta TUBO LASER - DIBUJOS POR MODELO (con las carpetas LÍNEA \\ MODELO \\ IGS).`, 'er');
+  else toast(`${h.name}: ${f0(t.mods)} modelos · ${f0(t.igs)} IGS · ${f0(t.zzx)} .zzx`);
+  await medirNecesarios();
 }
+/* lee la carpeta central completa: la biblioteca de IGS (S.lib) y, por modelo, sus IGS, sus .zzx y su modelo.json (S.cen) */
 async function leerCentral(){
-  const h = S.cenDir; if(!h) return;
-  const mods = {}, porClave = new Map(), nota = (k, m) => { if(!porClave.has(k)) porClave.set(k, new Set()); porClave.get(k).add(m); };
+  const h = S.cenDir; if(!h) return false;
+  const mods = {}, porClave = new Map(), lib = [], nota = (k, m) => { if(!porClave.has(k)) porClave.set(k, new Set()); porClave.get(k).add(m); };
   const entradas = async d => { const out = []; for await (const [n, e] of d.entries()) out.push([n, e]); return out; };
-  // recorre la carpeta de un modelo: IGS y .zzx en cualquier subcarpeta, más su modelo.json
   const leerModelo = async (d, key) => {
     const M = mods[key] = {igs: new Map(), zzx: new Map(), man: {dibujos: [], multiples: []}};
     const rec = async (dir, rel) => { for(const [n, e] of await entradas(dir)){
@@ -1197,7 +1183,10 @@ async function leerCentral(){
       const esZ = /\.zzx$/i.test(n);
       if(esZ || /\.(igs|iges)$/i.test(n)){ const fl = await e.getFile(), k = claveDibujo(n.replace(/\.zzx$/i, ''));
         const x = {name: n, mod: fl.lastModified, size: fl.size, rel: r, sub: r.split('/').slice(1, -1).join('/')};
-        if(esZ) M.zzx.set(k, x); else { if(!M.igs.has(k)) M.igs.set(k, []); M.igs.get(k).push(x); }
+        if(esZ) M.zzx.set(k, x);
+        else { if(!M.igs.has(k)) M.igs.set(k, []); M.igs.get(k).push(x);
+          if(/^IGE?S\//i.test(r)){ const path = h.name + '/' + key + '/' + r; lib.push({id: 'L:' + path, name: n, path, handle: e, modified: fl.lastModified, size: fl.size});
+            if(lib.length % 250 === 0){ S.libMsg = `Leyendo la carpeta ${h.name}: ${f0(lib.length)} IGS…`; renderLib(); } } }
         nota(k, key); }
       else if(!rel && n === MAN){ try{ const j = JSON.parse(await (await e.getFile()).text()); M.man = {dibujos: j.dibujos || [], multiples: j.multiples || []}; }catch(err){} }
     } };
@@ -1205,116 +1194,72 @@ async function leerCentral(){
   };
   try{
     for(const [ln, dl] of await entradas(h)){
-      if(dl.kind !== 'directory' || CEN_FUERA.includes(ln.toUpperCase())) continue;
+      if(dl.kind !== 'directory') continue;
       const hijos = (await entradas(dl)).filter(([, e]) => e.kind === 'directory');
-      if(hijos.some(([n]) => /^(IGS|ZZX)$/i.test(n))) continue;   // carpeta de modelo suelta en la raíz (estructura anterior): no es una línea
+      if(hijos.some(([n]) => /^(IGE?S|ZZX)$/i.test(n))) continue;   // carpeta de modelo suelta en la raíz (estructura anterior): no es una línea
       for(const [mn, dm] of hijos) await leerModelo(dm, ln + '/' + mn);
     }
-  }catch(e){ return toast('No se pudo leer la carpeta central: ' + e.message, 'er'); }
+  }catch(e){ S.libMsg = ''; renderLib(); toast('No se pudo leer la carpeta central: ' + e.message, 'er'); return false; }
   S.cen = {nombre: h.name, mods, porClave};
+  // múltiples armados por la plataforma: se marcan para no tomarlos como piezas sueltas del modelo
+  const deApp = new Set(); for(const [key, M] of Object.entries(mods)) M.man.multiples.forEach(x => deApp.add(key + '|' + claveDibujo(x.nombre)));
+  S.lib = lib.map(it => { const p = parseNombre(it.name, it.path), L = lugarCentral(it); if(L && deApp.has(L.key + '|' + p.clave)) Object.assign(p, {multiple: true, plataforma: true}); return Object.assign(it, {p}); });
+  S.raw = {}; S.match = null; S.libMsg = '';
+  const t = cuentaCentral(); S.libSrc = `Carpeta central ${h.name} · ${f0(t.mods)} modelos · ${f0(lib.length)} IGS · ${f0(t.zzx)} .zzx`;
+  return true;
 }
 const cuentaCentral = () => { const ms = Object.values(S.cen.mods); return {mods: ms.length, igs: ms.reduce((s, m) => s + [...m.igs.values()].reduce((a, l) => a + l.length, 0), 0), zzx: ms.reduce((s, m) => s + m.zzx.size, 0)}; };
-/* estado de un dibujo en la carpeta central. f = su IGS en DIBUJOS DE CORTE(OK), si está ligado.
-   st: listo · alta (falta dar de alta) · realta (el dibujo cambió después del alta) · cambio (Ingeniería lo cambió: copiar de nuevo) · copiar · sin · fuera */
-const EST_CEN = {listo: ['ok', '✓ listo'], alta: ['wa', 'Falta alta'], realta: ['er', 'Dar de alta otra vez'], cambio: ['er', 'Cambió el dibujo · copiar de nuevo'], copiar: ['in', 'Falta copiar el IGS'], sin: ['in', 'Sin IGS'], fuera: ['in', 'No va en la carpeta central']};
+/* estado de alta en TubesT de un dibujo. f = su IGS de la carpeta central, si está ligado.
+   st: listo (tiene .zzx al día) · alta (falta dar de alta) · realta (el IGS cambió después del alta) · sin (no está en la carpeta central) */
+const EST_CEN = {listo: ['ok', '✓ listo'], alta: ['wa', 'Falta alta'], realta: ['er', 'Dar de alta otra vez'], sin: ['in', 'No está en la carpeta central']};
 function estadoCentral(dibujo, f){
   if(!S.cen) return null;
   const L = f ? lugarCentral(f) : null, k = f ? f.p.clave : claveDibujo(dibujo);
   const res = (st, o) => Object.assign({st, lv: EST_CEN[st][0], txt: EST_CEN[st][1]}, o);
-  if(f && !L) return res('fuera', {mod: '', nombre: f.name, zzxNombre: ''});
   let key = L ? L.key : '';
   if(!L){ const ms = [...(S.cen.porClave.get(k) || [])]; if(ms.length === 1) key = ms[0]; }   // renglón sin IGS ligado: solo si el nombre está en un único modelo
   const M = S.cen.mods[key], lista = (M && M.igs.get(k)) || [];
   const ig = (L && lista.find(x => x.sub === L.sub)) || lista[0], zz = M && M.zzx.get(k);
-  const d = M && M.man.dibujos.find(x => claveDibujo(x.archivo) === k && (!L || (x.sub || '') === L.sub));
-  const copiaDe = d ? d.modificado : ig ? ig.mod : 0;   // fecha del original al copiar (el script de carga conserva la fecha)
-  const srcMod = (f && f.modified) || copiaDe || 0;      // cuándo guardó Ingeniería el dibujo
-  const nombre = ig ? ig.name : f ? f.name.replace(/\.gz$/i, '') : dibujo + '.IGS';
-  const st = f && ig && f.modified && copiaDe && f.modified - copiaDe > 3000 ? 'cambio'
-    : zz && srcMod && zz.mod < srcMod ? 'realta' : zz ? 'listo' : ig ? 'alta' : f ? 'copiar' : 'sin';
-  const mod = key || (L ? L.key : '');
-  return res(st, {mod, L, ig, zz, nombre, igRel: ig ? ig.rel : 'IGS/' + (L && L.sub ? L.sub + '/' : '') + nombre, zzxNombre: nombre.replace(/\.(igs|iges)$/i, '') + '.zzx'});
+  const igMod = (f && f.modified) || (ig && ig.mod) || 0;   // cuándo se guardó el IGS vigente
+  const nombre = ig ? ig.name : f ? f.name : dibujo + '.IGS';
+  const st = zz && igMod && zz.mod < igMod ? 'realta' : zz ? 'listo' : ig || f ? 'alta' : 'sin';
+  return res(st, {mod: key, L, ig, zz, nombre, igRel: ig ? ig.rel : '', zzxNombre: nombre.replace(/\.(igs|iges)$/i, '') + '.zzx'});
 }
-const badgeCentral = e => e ? badge(e.lv, e.txt) + (e.zz ? `<div class="mut sm">${esc(winRuta(e.mod + '/' + e.zz.rel))}</div>` : e.ig ? `<div class="mut sm">${esc(winRuta(e.mod + '/' + e.ig.rel))}</div>` : '') : '—';
+const badgeCentral = e => e ? badge(e.lv, e.txt) + (e.zz ? `<div class="mut sm">${esc(winRuta(e.mod + '/' + e.zz.rel))}</div>` : '') : '—';
 /* ruta del .zzx de un dibujo en la carpeta central; undefined = carpeta sin abrir */
 const zzxDe = dibujo => { if(!S.cen) return undefined; const k = claveDibujo(dibujo), m = [...(S.cen.porClave.get(k) || [])].find(m => S.cen.mods[m].zzx.has(k)); return m ? winRuta(m + '/' + S.cen.mods[m].zzx.get(k).rel) : null; };
 const escribirArchivo = async (dir, n, data) => { const w = await (await dir.getFileHandle(n, {create: true})).createWritable(); await w.write(data); await w.close(); };
 async function leerManif(dir){ try{ const j = JSON.parse(await (await (await dir.getFileHandle(MAN)).getFile()).text()); return {dibujos: j.dibujos || [], multiples: j.multiples || []}; }catch(e){ return {dibujos: [], multiples: []}; } }
-/* carpeta del modelo (crea LÍNEA/MODELO/IGS y ZZX si faltan) */
-async function dirModelo(L){
-  const dm = await (await S.cenDir.getDirectoryHandle(L.linea, {create: true})).getDirectoryHandle(L.modelo, {create: true});
-  await dm.getDirectoryHandle('ZZX', {create: true});
-  let di = await dm.getDirectoryHandle('IGS', {create: true});
-  return {dm, igs: async sub => { let d = di; for(const p of String(sub || '').split('/').filter(Boolean)) d = await d.getDirectoryHandle(p, {create: true}); return d; }};
-}
-/* copia a LÍNEA/MODELO/IGS los IGS vigentes que faltan o que Ingeniería cambió. No toca los .zzx ni borra nada. */
-async function copiarAlCentral(fs){
-  if(!S.cenDir) throw new Error('Abre primero la carpeta central');
-  const r = {copiados: 0, iguales: 0, fuera: 0, conflictos: [], errores: []}, porMod = {};
-  fs.forEach(f => { const L = lugarCentral(f); if(!L){ r.fuera++; return; } (porMod[L.key] = porMod[L.key] || {L, fs: []}).fs.push(f); });
-  for(const {L, fs: lista} of Object.values(porMod)){
-    let D; try{ D = await dirModelo(L); }catch(e){ r.errores.push(L.key + ': ' + e.message); continue; }
-    const man = await leerManif(D.dm); let tocado = false;
-    for(const f of lista){
-      try{
-        if(f.handle && !f.modified){ const fl = await f.handle.getFile(); f.file = fl; f.modified = fl.lastModified; f.size = fl.size; }
-        const e = estadoCentral(f.p.pieza, f), Lf = lugarCentral(f);
-        if(e.ig && e.st !== 'cambio'){ r.iguales++; continue; }
-        // la copia que está es más nueva que este dibujo (p. ej. un folio repetido en FOLIOS NUEVOS): no se reemplaza por uno más viejo
-        if(e.ig && f.modified && f.modified < e.ig.mod - 3000 && !man.dibujos.some(x => claveDibujo(x.archivo) === f.p.clave)){ r.conflictos.push(e.mod + '/' + e.ig.rel + ' (ya está una versión más nueva)'); continue; }
-        const nombre = f.name.replace(/\.gz$/i, ''), dir = await D.igs(Lf.sub);
-        const data = !/\.gz$/i.test(f.name) && (f.file || f.handle) ? (f.file || await f.handle.getFile()) : await textoDe(f);   // copia byte a byte cuando se puede
-        await escribirArchivo(dir, nombre, data);
-        man.dibujos = man.dibujos.filter(x => !(claveDibujo(x.archivo) === f.p.clave && (x.sub || '') === Lf.sub)).concat([{archivo: nombre, sub: Lf.sub, origen: relDib(f), modificado: f.modified || null, tam: f.size || null, copiado: Date.now()}]);
-        tocado = true; r.copiados++;
-      }catch(e){ r.errores.push(f.name + ': ' + e.message); }
-    }
-    if(tocado) await escribirArchivo(D.dm, MAN, JSON.stringify(Object.assign({modelo: L.key, actualizado: Date.now()}, man), null, 2));
-  }
-  await leerCentral(); return r;
-}
-async function copiarYAvisar(fs, que){
-  if(!fs.length) return toast('No hay IGS por copiar: ' + que + ' ya está al día en la carpeta central', 'in');
-  try{ toast(`Copiando ${fs.length} IGS a ${S.cenDir.name}…`, 'in'); const r = await copiarAlCentral(fs);
-    const extra = [r.iguales ? r.iguales + ' ya estaban' : '', r.conflictos.length ? r.conflictos.length + ' sin copiar porque en la carpeta hay una versión más nueva' : '', r.fuera ? r.fuera + ' de PLACAS o INGENIERIA (no van)' : '', r.errores.length ? r.errores.length + ' con error' : ''].filter(Boolean).join(' · ');
-    toast(`${r.copiados} IGS copiados a ${S.cenDir.name}${extra ? ' · ' + extra : ''}`, r.errores.length || r.conflictos.length ? 'wa' : 'ok');
-    if(r.conflictos.length || r.errores.length) console.warn('Carpeta central', r);
-    S.cenRes = r; renderAll(); }
-  catch(e){ toast('No se pudo copiar: ' + e.message, 'er'); }
-}
-/* falta copiar el IGS a la carpeta central: no está (aunque ya haya .zzx) o Ingeniería lo cambió */
-const faltaCopia = e => !!e && e.st !== 'fuera' && e.st !== 'sin' && (!e.ig || e.st === 'cambio');
-/* IGS del programa del día que faltan o cambiaron en la carpeta central */
-const porCopiarPrograma = () => { const vistos = new Set(); return S.ops.filter(o => !o.omitir).map(o => (S.match || {})[o.idx]).filter(m => m && m.f && !vistos.has(m.f.id) && vistos.add(m.f.id)).map(m => m.f).filter(f => faltaCopia(estadoCentral(f.p.pieza, f))); };
 /* lista para los operadores: dibujos del programa que no están listos en la carpeta central y dónde va cada .zzx */
 function exportarFaltantes(){
   if(!window.XLSX) return toast('No cargó la librería de Excel (requiere internet)', 'er');
-  const vistos = new Set(), filas = [], QUE = {alta: 'Dar de alta y guardar el .zzx', realta: 'El dibujo cambió: dar de alta otra vez y reemplazar el .zzx', cambio: 'Copiar el IGS nuevo desde la plataforma y dar de alta otra vez', copiar: 'Copiar el IGS desde la plataforma y dar de alta', fuera: 'No va en la carpeta central (PLACAS o INGENIERIA)', sin: 'Ingeniería: el dibujo no está en DIBUJOS DE CORTE(OK)'};
+  const vistos = new Set(), filas = [], QUE = {alta: 'Dar de alta y guardar el .zzx', realta: 'El IGS cambió: dar de alta otra vez y reemplazar el .zzx', sin: 'Ingeniería: poner el IGS en la carpeta IGS del modelo'};
   S.ops.filter(o => !o.omitir).forEach(o => { const m = (S.match || {})[o.idx], f = m && m.f, e = estadoCentral(o.dibujo, f), k = f ? f.id : claveDibujo(o.dibujo);
     if(!e || e.st === 'listo' || vistos.has(k)) return; vistos.add(k);
-    const conLugar = e.mod && e.st !== 'fuera' && (f || e.zz || e.ig);
-    filas.push({'Máquina': o.maquina, OP: o.op, Modelo: o.ruta, Tubular: o.tubular, 'Nombre del dibujo': o.dibujo, Estado: e.txt, 'Qué hacer': f || e.st !== 'sin' ? QUE[e.st] : m && m.estado !== 'sin' ? 'Elegir el IGS en la plataforma' : QUE.sin,
-      'Carpeta del modelo': conLugar ? winRuta(S.cen.nombre + '/' + e.mod) : '', 'IGS': conLugar ? (e.ig ? '' : '(se copia) ') + winRuta(e.igRel) : '', 'Guardar el .zzx en': conLugar ? winRuta(e.mod + '/ZZX/' + e.zzxNombre) : ''}); });
+    const conLugar = e.mod && e.ig;
+    filas.push({'Máquina': o.maquina, OP: o.op, Modelo: o.ruta, Tubular: o.tubular, 'Nombre del dibujo': o.dibujo, Estado: e.txt, 'Qué hacer': !f && m && m.estado === 'ambiguo' ? 'Elegir el IGS en la plataforma' : QUE[e.st],
+      'Carpeta del modelo': conLugar ? winRuta(S.cen.nombre + '/' + e.mod) : '', 'IGS': conLugar ? winRuta(e.igRel) : '', 'Guardar el .zzx en': conLugar ? winRuta(e.mod + '/ZZX/' + e.zzxNombre) : ''}); });
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filas.length ? filas : [{Nota: 'Todos los dibujos del programa ya tienen su .zzx en la carpeta central'}]), 'Falta dar de alta');
   XLSX.writeFile(wb, `${fechaArchivo()}-dibujos-por-dar-de-alta.xlsx`);
 }
-/* múltiple armado por la plataforma: su IGS va a LÍNEA/MODELO/IGS y su receta a modelo.json */
+/* múltiple armado por la plataforma: su IGS va a LÍNEA/MODELO/IGS (y ZZX si falta) y su receta a modelo.json */
 async function guardarMultiple(L, nombre, txt, entrada){
   if(!S.cenDir) throw new Error('Abre primero la carpeta central');
-  if(!L) throw new Error('Este modelo no va en la carpeta central (PLACAS o INGENIERIA)');
-  const D = await dirModelo(L);
-  await escribirArchivo(await D.igs(''), nombre + '.igs', txt);
-  const man = await leerManif(D.dm); man.multiples = man.multiples.filter(x => x.nombre !== nombre).concat([entrada]);
-  await escribirArchivo(D.dm, MAN, JSON.stringify(Object.assign({modelo: L.key, actualizado: Date.now()}, man), null, 2));
-  await leerCentral();
+  if(!L) throw new Error('No encontré la carpeta de este modelo en la carpeta central');
+  const dm = await (await S.cenDir.getDirectoryHandle(L.linea, {create: true})).getDirectoryHandle(L.modelo, {create: true});
+  await dm.getDirectoryHandle('ZZX', {create: true});
+  await escribirArchivo(await dm.getDirectoryHandle('IGS', {create: true}), nombre + '.igs', txt);
+  const man = await leerManif(dm); man.multiples = man.multiples.filter(x => x.nombre !== nombre).concat([entrada]);
+  await escribirArchivo(dm, MAN, JSON.stringify(Object.assign({modelo: L.key, actualizado: Date.now()}, man), null, 2));
+  await leerCentral(); await medirNecesarios();
 }
 
 /* ======================= Múltiples por modelo ======================= */
-/* modelo de un archivo de la carpeta de dibujos: sus carpetas sin la raíz ni "IGES" (TOP50/1130, FOLIOS/FC-4102) */
-const modeloDe = f => f.path.split('/').slice(1, -1).filter(c => !/^IGE?S$/i.test(c.trim())).join('/');
+/* modelo de un IGS de la carpeta central: LÍNEA/MODELO (TOP50/1130, FOLIOS/FC-4102) */
+const modeloDe = f => { const L = lugarCentral(f); return L ? L.key : ''; };
 const nombreModelo = k => k.split('/').pop();
-const archivosModelo = k => S.lib.filter(f => f.p.planta && !f.p.excluir && modeloDe(f) === k);
+const archivosModelo = k => S.lib.filter(f => f.p.planta && !f.p.excluir && !f.p.plataforma && modeloDe(f) === k);
 /* tubular de una pieza sin programa: sección medida → fracción de pulgada; pared → calibre */
 function tipoGeo(m){
   const a = Math.min(m.secA, m.secB), b = Math.max(m.secA, m.secB);
@@ -1326,9 +1271,12 @@ function tipoGeo(m){
 /* tubular de una pieza del modelo: si el programa cargado trae ese dibujo manda su tubular (con aviso si la pared del IGS no cuadra); si no, la geometría */
 function tipoPieza(f, m){
   const g = tipoGeo(m), o = S.ops.find(o => o.tubular && o.dibujo && claveDibujo(o.dibujo) === f.p.clave), med = o && parseMedida(o.tubular);
-  if(!med) return Object.assign(g, {fuente: 'IGS', aviso: ''});
+  // un IGS de ensamble o panel (sección de más de 6") no es un tubo: no entra a los múltiples
+  const noTubo = Math.max(m.secA, m.secB) > 160 ? `La sección del IGS (${f1(m.secA)} × ${f1(m.secB)} mm) no es de un tubo: revisa el dibujo` : '';
+  if(!med) return Object.assign(g, {fuente: 'IGS', aviso: '', bad: noTubo});
   const cal = (norm(o.tubular).match(/CAL\.?\s*(\d+)/) || [])[1], t = CFG.calibres[cal];
-  return Object.assign({med, cal}, tipoDe(med, cal), {fuente: 'programa', aviso: m.wall != null && t && Math.abs(m.wall - t) > 0.15 ? `Pared del IGS ${f2(m.wall)} mm; el programa dice cal ${cal} (${f2(t)} mm)` : ''});
+  const bad = noTubo || (Math.abs(m.secA - med.b) > CFG.tolSeccion || Math.abs(m.secB - med.a) > CFG.tolSeccion ? `La sección del IGS (${f1(m.secA)} × ${f1(m.secB)} mm) no coincide con el tubular del programa (${o.tubular})` : '');
+  return Object.assign({med, cal}, tipoDe(med, cal), {fuente: 'programa', bad, aviso: m.wall != null && t && Math.abs(m.wall - t) > 0.15 ? `Pared del IGS ${f2(m.wall)} mm; el programa dice cal ${cal} (${f2(t)} mm)` : ''});
 }
 /* piezas por mueble: lo que diga el programa cargado para ese dibujo; si no, 1 */
 const xmDefault = f => { const o = S.ops.find(o => o.dibujo && claveDibujo(o.dibujo) === f.p.clave && o.xMueble > 0); return o ? o.xMueble : 1; };
@@ -1345,7 +1293,8 @@ function armarModelo(lote){
   const M = S.mod, mod = nombreModelo(M.key), items = [], sinMedida = []; let uid = 0;
   archivosModelo(M.key).filter(f => !f.p.multiple && !M.off[f.id]).forEach(f => {
     const m = MEAS[medKey(f)]; if(!m || !m.ok) return sinMedida.push(f);
-    const tg = tipoPieza(f, m), n = Math.max(0, Math.round((M.xm[f.id] != null ? M.xm[f.id] : xmDefault(f)) * lote));
+    const tg = tipoPieza(f, m); if(tg.bad) return sinMedida.push(f);
+    const n = Math.max(0, Math.round((M.xm[f.id] != null ? M.xm[f.id] : xmDefault(f)) * lote));
     for(let i = 0; i < n; i++) items.push({uid: uid++, tipo: tg.key, tipoLabel: tg.label, tipoCorto: tg.corto, L: m.len, prio: 0, op: mod, ruta: mod, pieza: f.p.pieza, fileId: f.id, med: tg.med, cal: tg.cal});
   });
   if(!items.length) return null;
@@ -1358,8 +1307,8 @@ function armarModelo(lote){
     g.pats = pats; });
   return {lote, grupos: res, sinMedida, tramos: res.reduce((s, g) => s + g.bars.length, 0), aprov: res.reduce((s, g) => s + g.tot.largoPiezas, 0)/res.reduce((s, g) => s + g.tot.consumo, 0)};
 }
-/* lugar en la carpeta central de un modelo de DIBUJOS DE CORTE(OK) (el de su primer dibujo vigente) */
-const lugarModelo = k => { const f = archivosModelo(k)[0]; return f ? lugarCentral(f) : null; };
+/* carpeta del modelo en la carpeta central (k = LÍNEA/MODELO) */
+const lugarModelo = k => { const i = String(k || '').indexOf('/'); return i > 0 ? {linea: k.slice(0, i), modelo: k.slice(i + 1), sub: '', key: k} : null; };
 /* múltiples guardados en la carpeta central para este modelo, su .zzx y si alguno de sus dibujos cambió desde entonces */
 function manifModelo(k){
   const L = lugarModelo(k), C = S.cen && L && S.cen.mods[L.key]; if(!C) return [];
@@ -1369,10 +1318,10 @@ function manifModelo(k){
     return Object.assign({}, x, {cambios, st}); });
 }
 function renderModelo(){
-  const el = $('t-modelo'), planta = S.lib.filter(f => f.p.planta && !f.p.excluir);
-  const zzxBtn = `${S.cen ? badge('ok', 'Carpeta central: ' + S.cen.nombre) : ''}<button id="mdZzx" title="Carpeta de OneDrive que también ven GW1 y GW2: una carpeta por modelo con sus IGS, sus .zzx y sus múltiples">📂 Carpeta central</button>`;
-  if(!planta.length){ el.innerHTML = `<div class="card row"><span style="flex:1">Abre la carpeta <b>DIBUJOS DE CORTE(OK)</b> para elegir un modelo.</span><button class="pri" id="mdDir">📂 Abrir carpeta de dibujos</button>${zzxBtn}</div>`;
-    $('mdDir').onclick = () => abrirCarpeta(false); $('mdZzx').onclick = () => abrirCentral(false); return; }
+  const el = $('t-modelo'), planta = S.lib.filter(f => f.p.planta && !f.p.excluir && !f.p.plataforma && modeloDe(f));
+  const zzxBtn = `${S.cen ? badge('ok', 'Carpeta central: ' + S.cen.nombre) : ''}<button id="mdZzx" title="TUBO LASER - DIBUJOS POR MODELO (OneDrive que también ven GW1 y GW2): una carpeta por modelo con sus IGS, sus .zzx y sus múltiples">📂 ${S.cen ? 'Volver a leer' : 'Carpeta central'}</button>`;
+  if(!planta.length){ el.innerHTML = `<div class="card row"><span style="flex:1">Abre la carpeta central <b>TUBO LASER - DIBUJOS POR MODELO</b> para elegir un modelo.</span>${zzxBtn}</div>`;
+    $('mdZzx').onclick = () => abrirCentral(false); $('mdZzx').classList.add('pri'); return; }
   const mods = {}; planta.forEach(f => { const k = modeloDe(f); (mods[k] = mods[k] || []).push(f); });
   const q = norm(S.modQ || ''), keys = Object.keys(mods).filter(k => !q || norm(k).includes(q)).sort((a, b) => a.localeCompare(b, 'es', {numeric: true}));
   const M = S.mod && mods[S.mod.key] ? S.mod : null;
@@ -1387,23 +1336,15 @@ function renderModelo(){
 function modeloHtml(M){
   const fs = archivosModelo(M.key), sueltas = fs.filter(f => !f.p.multiple), mults = fs.filter(f => f.p.multiple), mod = nombreModelo(M.key), man = manifModelo(M.key);
   const fila = f => { const m = MEAS[medKey(f)], tg = m && m.ok ? tipoPieza(f, m) : null, s = tg ? skuDe(tg.key) : null, Tt = tg ? tramoDe(tg.key) : CFG.tramo;
-    const est = !m ? badge('in', 'Midiendo…') : m.error ? badge('er', m.error) : m.len + CFG.refr + CFG.chuck > Tt ? badge('er', 'No cabe en el tramo útil') : !tg.cal ? badge('wa', 'Calibre no reconocido por la pared') : tg.aviso ? badge('wa', tg.aviso) : badge('ok', '✓');
+    const est = !m ? badge('in', 'Midiendo…') : m.error ? badge('er', m.error) : tg.bad ? badge('er', tg.bad) : m.len + CFG.refr + CFG.chuck > Tt ? badge('er', 'No cabe en el tramo útil') : !tg.cal ? badge('wa', 'Calibre no reconocido por la pared') : tg.aviso ? badge('wa', tg.aviso) : badge('ok', '✓');
     return {m, tg, s, est}; };
   const tot = man.length ? `<div class="card"><h3>Múltiples guardados en la carpeta central</h3><div class="tw"><table><tr><th>Múltiple</th><th>Tubular</th><th class="n">Piezas</th><th class="n">Aprovech.</th><th>Guardado</th><th>Estado</th></tr>
     ${man.map(x => `<tr><td><b>${esc(x.nombre)}</b></td><td class="sm">${esc(x.tubular)}</td><td class="n">${x.pzs}</td><td class="n">${pct(x.aprov)}</td><td class="sm">${fecha(x.fecha)}</td><td>${x.st === 'cambio' ? badge('er', 'Cambió: ' + x.cambios.join(', ') + ' · armar y dar de alta otra vez') : x.st === 'copiar' ? badge('er', 'Falta el IGS en la carpeta') : badge(EST_CEN[x.st][0], EST_CEN[x.st][1])}</td></tr>`).join('')}</table></div></div>` : '';
   const ec = S.cen ? new Map(fs.map(f => [f.id, estadoCentral(f.p.pieza, f)])) : null;
-  const cen = !S.cen ? `<div class="card row"><span style="flex:1">Abre la <b>carpeta central</b> para juntar en una carpeta por modelo los IGS de este modelo, sus .zzx y sus múltiples.</span><button id="mdZzx2">📂 Carpeta central</button></div>` : (() => {
-    const L = lugarModelo(M.key);
-    if(!L) return `<div class="card"><span class="mut">Este modelo es de PLACAS o INGENIERIA: no va en la carpeta central.</span></div>`;
-    const C = S.cen.mods[L.key], ests = [...ec.values()], n = st => ests.filter(e => e.st === st).length, pend = ests.filter(faltaCopia).length, re = n('realta') + n('cambio');
-    // IGS de la carpeta central que ya no corresponden a ningún dibujo vigente de ese modelo (sin contar los múltiples de la plataforma)
-    const vivos = new Set(S.lib.filter(f => f.p.planta && !f.p.excluir).filter(f => { const l = lugarCentral(f); return l && l.key === L.key; }).map(f => f.p.clave));
-    const mults = new Set(C ? C.man.multiples.map(x => claveDibujo(x.nombre)) : []);
-    const viejos = C ? [...C.igs.entries()].filter(([k]) => !vivos.has(k) && !mults.has(k)).map(([, l]) => winRuta(l[0].rel)) : [];
-    return `<div class="card"><div class="row"><span style="flex:1"><b>Carpeta central · ${esc(winRuta(S.cen.nombre + '/' + L.key))}</b><br><span class="sm">${ests.filter(e => e.ig).length} de ${fs.length} IGS copiados</span> ${badge('ok', n('listo') + ' con .zzx')} ${n('alta') ? badge('wa', n('alta') + ' falta alta') : ''} ${re ? badge('er', re + ' por dar de alta otra vez') : ''}</span>
-      <button class="pri" id="mdCopiar" ${pend ? '' : 'disabled'} title="Copia a la carpeta del modelo los IGS vigentes que faltan o que Ingeniería cambió. No borra nada ni toca los .zzx">⬆ Copiar IGS del modelo${pend ? ' (' + pend + ')' : ''}</button></div>
-      ${viejos.length ? `<p class="sm" style="color:var(--wa);margin:8px 0 0">Ya no están vigentes en DIBUJOS DE CORTE(OK): ${viejos.map(esc).join(', ')}. La plataforma no borra nada: revisa si se quitan de la carpeta central.</p>` : ''}
-      <p class="mut sm" style="margin:8px 0 0">Los IGS están en la carpeta IGS del modelo. Al dar de alta en TubesT, el operador guarda el .zzx en la carpeta ZZX del mismo modelo, con el mismo nombre del IGS.</p></div>`; })();
+  const cen = !S.cen ? `<div class="card row"><span style="flex:1">Abre la <b>carpeta central</b> (TUBO LASER - DIBUJOS POR MODELO) para ver qué piezas ya tienen su .zzx y guardar ahí los múltiples.</span><button id="mdZzx2">📂 Carpeta central</button></div>` : (() => {
+    const L = lugarModelo(M.key), ests = [...ec.values()], n = st => ests.filter(e => e.st === st).length;
+    return `<div class="card"><div class="row"><span style="flex:1"><b>Carpeta central · ${esc(winRuta(S.cen.nombre + '/' + L.key))}</b><br><span class="sm">${fs.length} IGS en la carpeta IGS del modelo</span> ${badge('ok', n('listo') + ' con .zzx')} ${n('alta') ? badge('wa', n('alta') + ' falta alta') : ''} ${n('realta') ? badge('er', n('realta') + ' por dar de alta otra vez') : ''}</span></div>
+      <p class="mut sm" style="margin:8px 0 0">Al dar de alta en TubesT, el operador guarda el .zzx en la carpeta ZZX del mismo modelo, con el mismo nombre del IGS. Si Ingeniería reemplaza un IGS, la pieza sale "Dar de alta otra vez".</p></div>`; })();
   const R = M.res, C = M.comp;
   return `<div class="card"><h3>${esc(M.key)} <span class="mut sm">${sueltas.length} piezas sueltas · ${mults.length} MULTIPLE de Ingeniería</span></h3>
     <p class="mut sm" style="margin:0 0 10px">El tubular de cada pieza sale del programa cargado si trae ese dibujo; si no, de la sección y la pared medidas en el IGS. Tramo útil: ${f0(CFG.tramo - CFG.chuck - CFG.refr)} mm (tramo ${f0(CFG.tramo)} − chuck ${f0(CFG.chuck)} − refrentado ${CFG.refr}; si el SKU trae otro largo, se usa ese). <b>Confirma el largo del tramo y el chuck con los operadores</b> en Configuración.</p>
@@ -1411,7 +1352,7 @@ function modeloHtml(M){
     ${sueltas.map(f => { const r = fila(f); return `<tr><td><input type="checkbox" data-minc="${esc(f.id)}" ${M.off[f.id] ? '' : 'checked'} aria-label="Incluir"></td><td>${esc(f.p.pieza)}<div class="mut sm">${esc(f.name)}</div></td>
       <td class="sm">${r.tg ? esc(r.tg.label) + `<div class="mut">${r.s ? 'SKU ' + esc(r.s.sku) + ' · ' : ''}según ${r.tg.fuente}</div>` : '—'}</td><td class="n">${r.m && r.m.ok ? f0(r.m.len) : '—'}</td><td class="n">${r.m && r.m.ok && r.m.wall != null ? f2(r.m.wall) : '—'}</td>
       <td class="n"><input type="number" min="0" step="1" data-mxm="${esc(f.id)}" value="${M.xm[f.id] != null ? M.xm[f.id] : xmDefault(f)}" style="width:70px"></td><td>${r.est}</td>${ec ? `<td>${badge(ec.get(f.id).lv, ec.get(f.id).txt)}</td>` : ''}</tr>`; }).join('') || `<tr><td colspan="${ec ? 8 : 7}" class="mut">Este modelo no tiene piezas sueltas.</td></tr>`}</table></div>
-    ${mults.length ? `<p class="sm" style="margin:10px 0 4px"><b>MULTIPLE de Ingeniería actuales</b> (referencia; también se copian a la carpeta central):</p><div class="row">${mults.map(f => { const m = MEAS[medKey(f)], e = ec && ec.get(f.id); return badge('in', f.p.pieza + (m && m.ok ? ' · ' + f0(m.len) + ' mm' : '')) + (e ? ' ' + badge(e.lv, e.txt) : ''); }).join(' ')}</div>` : ''}
+    ${mults.length ? `<p class="sm" style="margin:10px 0 4px"><b>MULTIPLE de Ingeniería actuales</b> (referencia):</p><div class="row">${mults.map(f => { const m = MEAS[medKey(f)], e = ec && ec.get(f.id); return badge('in', f.p.pieza + (m && m.ok ? ' · ' + f0(m.len) + ' mm' : '')) + (e ? ' ' + badge(e.lv, e.txt) : ''); }).join(' ')}</div>` : ''}
     <div class="row" style="margin-top:12px"><label class="cfl" style="flex-direction:row;align-items:center;gap:6px">Muebles por lote <input type="number" id="mdLote" min="1" max="50" step="1" value="${M.lote}" style="width:70px"></label>
       <button class="pri" id="mdArmar">⚙ Armar múltiples</button><button id="mdComp" title="Arma con 1 a 6 muebles y compara tramos y aprovechamiento">Comparar 1 a 6 muebles</button>
       ${R ? '<button id="mdXls">📊 Manifiesto (Excel)</button>' : ''}</div></div>
@@ -1423,7 +1364,7 @@ function modeloHtml(M){
       ${g.pats.map((pt, pi) => `<div class="bar"><div class="barhd"><b>${esc(pt.nombre)}</b> ${badge('in', '×' + pt.n + ' por lote')} ${zzxDe(pt.nombre) ? badge('ok', '✓ .zzx') : ''}<span class="mut sm">${esc(resumenTxt(pt.bar.piezas))}</span><span style="flex:1"></span>
         <button data-migs="${gi}|${pi}" title="IGS del múltiple para validarlo y darlo de alta">⬇ IGS</button>${S.cenDir ? `<button data-mlib="${gi}|${pi}" title="Guarda el IGS del múltiple en la carpeta IGS del modelo (carpeta central) y su receta en modelo.json">💾 A la carpeta central</button>` : ''}</div>${svgBar(pt.bar, colorMapModelo())}</div>`).join('')}
       ${g.largas.length ? `<p class="sm" style="color:var(--er)">No caben en el tramo útil: ${[...new Set(g.largas.map(p => p.pieza))].map(esc).join(', ')}</p>` : ''}</details>`).join('') : ''}
-    ${R && R.sinMedida.length ? `<p class="sm" style="color:var(--wa)">Sin medida (no entran): ${R.sinMedida.map(f => esc(f.p.pieza)).join(', ')}</p>` : ''}
+    ${R && R.sinMedida.length ? `<p class="sm" style="color:var(--wa)">No entran (sin medida o la sección del IGS no es la del tubular): ${R.sinMedida.map(f => esc(f.p.pieza)).join(', ')}</p>` : ''}
     ${tot}`;
 }
 const resumenTxt = pz => { const m = new Map(); pz.forEach(p => m.set(p.pieza, (m.get(p.pieza) || 0) + 1)); return [...m].map(([p, n]) => n + '× ' + p).join(' · '); };
@@ -1438,7 +1379,6 @@ function bindModelo(){
   el.querySelectorAll('[data-mlote]').forEach(b => b.onclick = () => { M.lote = +b.dataset.mlote; M.res = armarModelo(M.lote); renderModelo(); });
   if($('mdXls')) $('mdXls').onclick = () => exportarManifiesto(M);
   if($('mdZzx2')) $('mdZzx2').onclick = () => abrirCentral(false);
-  if($('mdCopiar')) $('mdCopiar').onclick = () => copiarYAvisar(archivosModelo(M.key).filter(f => faltaCopia(estadoCentral(f.p.pieza, f))), 'el modelo');
   const patDe = s => { const [gi, pi] = s.split('|').map(Number), g = M.res.grupos[gi]; return {g, pt: g.pats[pi]}; };
   el.querySelectorAll('[data-migs]').forEach(b => b.onclick = async () => { const {g, pt} = patDe(b.dataset.migs);
     try{ toast('Armando IGS de ' + pt.nombre + '…', 'in'); dl(pt.nombre + '.igs', await igsTramo(pt.bar, g.label), 'application/iges'); }catch(e){ toast(e.message, 'er'); } });
@@ -1490,7 +1430,7 @@ function explotarLaser(){
     let corridas = piezas;
     const fuera = motivo => S.fuera.push({o, f: mt.f || {p: {ruta: o.ruta, pieza: o.dibujo}, id: ''}, n: corridas, motivo});
     if(o.omitir) return fuera(o.omitir);
-    if(!mt.f) return fuera(mt.estado === 'ambiguo' ? `Hay ${mt.cand.length} IGS con ese nombre: elige cuál en Programa` : mt.estado === 'anterior' ? 'Solo hay versión anterior del dibujo: elige en Programa si se usa' : 'No está en la carpeta de dibujos');
+    if(!mt.f) return fuera(mt.estado === 'ambiguo' ? `Hay ${mt.cand.length} IGS con ese nombre: elige cuál en Programa` : mt.estado === 'anterior' ? 'Solo hay versión anterior del dibujo: elige en Programa si se usa' : 'No está en la carpeta central');
     const f = mt.f, m = MEAS[medKey(f)];
     if(!m) return fuera('Sin leer');
     if(m.error) return fuera(m.error);
@@ -1502,8 +1442,8 @@ function explotarLaser(){
     if(m.len + CFG.refr + CFG.chuck > Tt) return fuera(`Mide ${f0(m.len)} mm: no cabe en el tramo útil de ${f0(Tt - CFG.chuck - CFG.refr)} mm`);
     if(!piezas) return fuera('Sin cantidad programada');
     // un MULTIPLE trae varias piezas: se corre Cant. ÷ piezas por dibujo ("(3PZ)" en el nombre); si el nombre no lo dice, no se puede calcular
-    const completo = !!f.p.multiple || (f.p.n || 1) > 1, pzs = completo ? (f.p.n > 1 ? f.p.n : 0) : 1;
-    if(completo && !pzs) return fuera('MULTIPLE sin número de piezas en el nombre (p. ej. "(3PZ)"): no sé cuántas veces correrlo');
+    const completo = !!f.p.multiple || (f.p.n || 1) > 1, pzs = completo ? (f.p.n > 1 ? f.p.n : +PZM[f.p.clave] || 0) : 1;
+    if(completo && !pzs) return fuera('MULTIPLE sin número de piezas en el nombre: escribe cuántas piezas trae');
     corridas = Math.ceil(piezas / pzs);
     for(let i = 0; i < corridas; i++) S.items.push({uid: uid++, tipo: t.key, tipoLabel: t.label, tipoCorto: t.corto, L: m.len, prio: o.idx, op: o.op, ruta: o.ruta, pieza: o.dibujo, fileId: f.id,
       med, cal, pzs, completo, maquina: o.maquina, grupo: o.maquina + '|' + t.key + (completo ? '|' + f.id : '')});
@@ -1723,11 +1663,11 @@ function renderProg(){
   ['dragleave', 'drop'].forEach(ev => z.addEventListener(ev, e => { e.preventDefault(); z.classList.remove('over'); }));
   z.addEventListener('drop', e => e.dataTransfer.files[0] && abrirPrograma(e.dataTransfer.files[0]));
   $('pickProg').onclick = () => $('inProg').click(); $('inProg').onchange = e => e.target.files[0] && abrirPrograma(e.target.files[0]);
-  if($('progDir')) $('progDir').onclick = () => abrirCarpeta(false);
+  if($('progDir')) $('progDir').onclick = () => abrirCentral(false);
   if($('progZzx')) $('progZzx').onclick = () => abrirCentral(false);
-  if($('progCopiar')) $('progCopiar').onclick = () => copiarYAvisar(porCopiarPrograma(), 'el programa');
   if($('progFalt')) $('progFalt').onclick = exportarFaltantes;
   el.querySelectorAll('[data-dsel]').forEach(s => s.onchange = () => { if(!s.value) return; ELEC[s.dataset.dsel] = s.value; saveElec(); medirNecesarios(); });
+  el.querySelectorAll('[data-pzm]').forEach(i => i.onchange = () => { const v = Math.round(+i.value); if(v > 1) PZM[i.dataset.pzm] = v; else delete PZM[i.dataset.pzm]; savePzm(); S.res = null; explotar(); renderAll(); });
 }
 async function abrirPrograma(file){
   try{ const r = leerPrograma(await file.arrayBuffer(), file.name); S.ops = r.ops; S.formato = r.formato; S.match = null; S.progFile = file.name; S.res = null;
@@ -1741,35 +1681,37 @@ function progLaserHtml(){
   const ok = O.filter(o => M[o.idx] && M[o.idx].f).length, elegir = O.filter(o => M[o.idx] && ['ambiguo', 'anterior'].includes(M[o.idx].estado)).length, sin = O.filter(o => M[o.idx] && M[o.idx].estado === 'sin').length;
   const celda = o => {
     if(o.omitir) return badge('in', o.omitir);
-    if(!S.lib.length) return badge('in', 'Abre la carpeta de dibujos');
+    if(!S.lib.length) return badge('in', 'Abre la carpeta central');
     const m = M[o.idx]; if(!m) return '—';
     const fu = S.fuera.find(x => x.o === o), n = S.items.filter(i => i.prio === o.idx).length;
     const ms = m.f && MEAS[medKey(m.f)], calP = (norm(o.tubular).match(/CAL\.?\s*(\d+)/) || [])[1], tP = CFG.calibres[calP];
     // informativo: muchos dibujos se hacen con una pared genérica; el calibre que manda es el del programa
     const difP = ms && ms.ok && ms.wall != null && tP && Math.abs(ms.wall - tP) > 0.15 ? `<div class="mut sm">Pared dibujada ${f2(ms.wall)} mm (el programa dice cal ${calP}, ${f2(tP)} mm)</div>` : '';
-    if(m.f) return `${difP}${n ? badge('ok', '✓ ' + n + (n === 1 ? ' corrida' : ' corridas')) : badge('er', 'No entra')}${m.f.p.multiple || (o.progra > 0 && o.cant > o.progra) ? ' ' + badge('in', 'Completo') : ''}
-      <div class="mut sm">${esc(m.f.path.split('/').slice(1).join('/'))}</div>${fu ? `<div class="sm" style="color:var(--er)">${esc(fu.motivo)}</div>` : ''}`;
+    if(m.f) return `${difP}${n ? badge('ok', '✓ ' + n + (n === 1 ? ' corrida' : ' corridas')) : badge('er', 'No entra')}${m.f.p.multiple || (m.f.p.n || 1) > 1 ? ' ' + badge('in', 'Completo') : ''}
+${m.iguales ? ' ' + `<span title="${esc(m.cand.map(x => x.path.split('/').slice(1, -2).join('/')).join('\n'))}">${badge('in', m.iguales + ' copias iguales')}</span>` : ''}
+      <div class="mut sm">${esc(m.f.path.split('/').slice(1).join('/'))}</div>${fu ? `<div class="sm" style="color:var(--er)">${esc(fu.motivo)}</div>` : ''}
+      ${m.f.p.multiple && !(m.f.p.n > 1) ? `<label class="sm" style="display:flex;gap:6px;align-items:center;margin-top:4px">Piezas por MULTIPLE <input type="number" min="1" step="1" data-pzm="${esc(m.f.p.clave)}" value="${PZM[m.f.p.clave] || ''}" style="width:64px"></label>` : ''}`;
     if(m.estado === 'sin') return badge('er', 'No está en la carpeta');
     return `${badge('wa', m.estado === 'anterior' ? 'Solo versión anterior' : m.cand.length + ' con ese nombre')}<div><select data-dsel="${esc('D|' + m.clave + '|' + norm(o.ruta))}" style="max-width:340px;margin-top:4px"><option value="">Elige el IGS…</option>${m.cand.map(f => `<option value="${esc(f.id)}">${esc(f.path.split('/').slice(1).join('/'))}</option>`).join('')}</select></div>`;
   };
   return `<div class="kpis" style="margin-top:14px"><div class="kpi"><span>Renglones</span><b>${O.length}</b><span>GW1 ${nMaq('GW1')} · GW2 ${nMaq('GW2')}</span></div><div class="kpi"><span>Dibujos ligados</span><b style="color:var(--ok)">${ok}</b></div>
     <div class="kpi"><span>Por elegir</span><b style="color:${elegir ? 'var(--wa)' : 'inherit'}">${elegir}</b></div><div class="kpi"><span>Sin IGS en la carpeta</span><b style="color:${sin ? 'var(--er)' : 'inherit'}">${sin}</b></div><div class="kpi"><span>Corridas a acomodar</span><b>${f0(S.items.length)}</b></div></div>
-    ${S.lib.length ? '' : `<div class="card row"><span style="flex:1">Para ligar los dibujos abre la carpeta <b>DIBUJOS DE CORTE(OK)</b>. La primera vez se elige y después se recuerda en este equipo.</span><button class="pri" id="progDir">📂 Abrir carpeta de dibujos</button></div>`}
+    ${S.lib.length ? '' : `<div class="card row"><span style="flex:1">Para ligar los dibujos abre la carpeta central <b>TUBO LASER - DIBUJOS POR MODELO</b>. La primera vez se elige y después se recuerda en este equipo.</span><button class="pri" id="progDir">📂 Abrir carpeta central</button></div>`}
     ${cenProgHtml(O)}
     <div class="card"><h3>${esc(S.progFile)}</h3><div class="tw"><table><tr><th>Máquina</th><th>OP</th><th>Modelo</th><th>Parte</th><th>Tubular</th><th>Nombre del dibujo</th><th class="n">Cant.</th><th class="n">Progra.</th><th>IGS</th><th>Carpeta central</th></tr>
     ${O.map(o => { const e = o.omitir ? null : estadoCentral(o.dibujo, M[o.idx] && M[o.idx].f);
-      return `<tr><td>${badge('in', o.maquina)}</td><td class="sm">${esc(o.op)}</td><td><b>${esc(o.ruta)}</b></td><td class="sm">${esc(o.parte)}</td><td class="sm">${esc(o.tubular)}</td><td>${esc(o.dibujo)}</td><td class="n">${f0(o.cant)}</td><td class="n">${f0(o.progra)}</td><td>${celda(o)}</td>
+      return `<tr><td>${badge('in', o.maquina)}</td><td class="sm">${esc(o.op)}</td><td><b>${esc(o.ruta)}</b></td><td class="sm">${esc(o.parte)}</td><td class="sm">${esc(o.tubular)}</td><td>${esc(o.dibujo)}${o.nota ? `<div class="mut sm">${esc(o.nota)} (en el programa: "${esc(o.dibujoOrig)}")</div>` : ''}</td><td class="n">${f0(o.cant)}</td><td class="n">${f0(o.progra)}</td><td>${celda(o)}</td>
       <td>${badgeCentral(e)}</td></tr>`; }).join('')}</table></div></div>`;
 }
 /* resumen de la carpeta central para el programa del día: qué dibujos ya tienen .zzx y qué falta */
 function cenProgHtml(O){
-  if(!S.cen) return `<div class="card row"><span style="flex:1">Abre la <b>carpeta central</b> (OneDrive, una carpeta por modelo con sus IGS y sus .zzx) para ver qué dibujos ya tienen alta en TubesT.</span><button id="progZzx">📂 Carpeta central</button></div>`;
+  if(!S.cen) return S.lib.length ? `<div class="card row"><span style="flex:1">Los IGS se cargaron sin la carpeta central: abre <b>TUBO LASER - DIBUJOS POR MODELO</b> para ver qué dibujos ya tienen alta en TubesT.</span><button id="progZzx">📂 Carpeta central</button></div>` : '';
   const M = S.match || {}, vistos = new Set(), ests = [];
   O.filter(o => !o.omitir).forEach(o => { const f = M[o.idx] && M[o.idx].f, k = f ? f.id : claveDibujo(o.dibujo); if(vistos.has(k)) return; vistos.add(k); ests.push(estadoCentral(o.dibujo, f)); });
-  const n = st => ests.filter(e => e.st === st).length, pend = porCopiarPrograma().length, re = n('realta') + n('cambio');
+  const n = st => ests.filter(e => e.st === st).length;
   return `<div class="card"><div class="row"><span style="flex:1">Carpeta central <b>${esc(S.cen.nombre)}</b>: ${n('listo')} de ${ests.length} dibujos del programa ya tienen su .zzx.
-    ${n('alta') ? badge('wa', n('alta') + ' falta alta') : ''} ${re ? badge('er', re + ' por dar de alta otra vez') : ''} ${pend ? badge('in', pend + ' IGS por copiar') : ''}</span>
-    <button id="progZzx">📂 Carpeta central</button><button class="pri" id="progCopiar" ${pend ? '' : 'disabled'} title="Copia a la carpeta de cada modelo los IGS ligados que faltan o que Ingeniería cambió. No borra nada ni toca los .zzx">⬆ Copiar IGS del programa${pend ? ' (' + pend + ')' : ''}</button>
+    ${n('alta') ? badge('wa', n('alta') + ' falta alta') : ''} ${n('realta') ? badge('er', n('realta') + ' por dar de alta otra vez') : ''} ${n('sin') ? badge('in', n('sin') + ' sin IGS en la carpeta') : ''}</span>
+    <button id="progZzx" title="Vuelve a leer la carpeta central (por si un operador guardó .zzx o Ingeniería cambió un IGS)">📂 Volver a leer</button>
     <button id="progFalt" title="Excel para los operadores: qué dibujos faltan dar de alta, en qué carpeta está su IGS y con qué nombre se guarda el .zzx">📋 Faltan dar de alta (Excel)</button></div></div>`;
 }
 function renderLib(){
@@ -1782,15 +1724,13 @@ function renderLib(){
   const ev = vig.map(evalPieza), nOk = ev.filter(e => e.lv === 'ok').length;
   lista.sort((a, b) => String(a.p.ruta || '').localeCompare(String(b.p.ruta || '')) || String(a.p.pieza || '').localeCompare(String(b.p.pieza || '')) || (b.p.v || 0) - (a.p.v || 0));
   el.innerHTML = `<div class="card"><div class="row"><b style="flex:1">${S.libSrc ? '📚 ' + esc(S.libSrc) : 'Sin biblioteca cargada'}</b>
-  <button class="pri" id="libCarpeta" title="La carpeta DIBUJOS DE CORTE(OK) de este equipo; la primera vez se elige y después se recuerda">📂 Carpeta de dibujos</button><button id="libOtra" title="Elegir otra carpeta">Cambiar carpeta</button>
-  <button id="libFiles">📁 IGS sueltos</button><button id="libDir" title="Selector clásico de carpeta (si el navegador no recuerda carpetas)">📂 Carpeta (clásico)</button>
-  ${API.on() ? `<button id="libDrive">☁ Biblioteca de Drive</button><button id="libRefresh" title="Vuelve a recorrer todas las carpetas de Drive">🔄 Recorrer Drive</button>` : ''}
+  <button class="pri" id="libCarpeta" title="TUBO LASER - DIBUJOS POR MODELO (OneDrive); la primera vez se elige y después se recuerda en este equipo">📂 ${S.cen ? 'Volver a leer la carpeta central' : 'Carpeta central'}</button><button id="libOtra" title="Elegir otra carpeta">Cambiar carpeta</button>
+  <button id="libFiles">📁 IGS sueltos</button><button id="libDir" title="Selector clásico de carpeta (si el navegador no recuerda carpetas); no muestra el estado de los .zzx">📂 Carpeta (clásico)</button>
   <input type="file" id="inFiles" hidden multiple accept=".igs,.iges,.gz"><input type="file" id="inDir" hidden webkitdirectory multiple></div>
   ${S.libMsg ? `<p class="mut">⏳ ${esc(S.libMsg)}</p>` : ''}
-  <p class="mut sm" style="margin:8px 0 0">Carpeta DIBUJOS DE CORTE(OK): cada renglón del PROGRAMA LASER se liga por su "Nombre del dibujo"; el tubular sale del programa. Se ignoran las carpetas de versiones anteriores, prototipos, muestras y lámina, y los MULTIPLE se respetan completos.
-  Biblioteca de Drive: <code>RUTA_NPZAS_TUBULAR2X1_CAL20_PIEZA vN (fecha).igs.gz</code>. Fracciones sin "/": <code>1 1-2</code> = 1-1/2, <code>3-4</code> = 3/4. Se usa siempre la versión más alta de cada ruta + pieza; se ignoran cargas "(subiendo)" y la carpeta de prototipos.</p></div>
+  <p class="mut sm" style="margin:8px 0 0">Carpeta central <b>TUBO LASER - DIBUJOS POR MODELO</b>: <code>LÍNEA \\ MODELO \\ IGS</code> con los dibujos y <code>ZZX</code> con las altas de TubesT. Cada renglón del PROGRAMA LASER se liga por su "Nombre del dibujo" (si se repite, decide la carpeta del modelo); el tubular sale del programa y los MULTIPLE se respetan completos.</p></div>
   ${S.lib.length && planta.length > S.lib.length/2 ? `<div class="kpis"><div class="kpi"><span>Archivos IGS</span><b>${f0(S.lib.length)}</b></div><div class="kpi"><span>MULTIPLE (se cortan completos)</span><b>${f0(planta.filter(f => f.p.multiple && !f.p.excluir).length)}</b></div>
-  <div class="kpi"><span>Versiones anteriores y muestras</span><b>${f0(planta.filter(f => f.p.excluir).length)}</b></div><div class="kpi"><span>Ligados al programa</span><b style="color:var(--ok)">${ligados.size}</b></div></div>` : ''}
+  <div class="kpi"><span>${S.cen ? 'Modelos · .zzx guardados' : 'Versiones anteriores y muestras'}</span><b>${S.cen ? f0(cuentaCentral().mods) + ' · ' + f0(cuentaCentral().zzx) : f0(planta.filter(f => f.p.excluir).length)}</b></div><div class="kpi"><span>Ligados al programa</span><b style="color:var(--ok)">${ligados.size}</b></div></div>` : ''}
   ${S.lib.length && planta.length <= S.lib.length/2 ? `<div class="kpis"><div class="kpi"><span>Archivos</span><b>${S.lib.length}</b></div><div class="kpi"><span>Dibujos vigentes</span><b>${vig.length}</b></div><div class="kpi"><span>Listos</span><b style="color:var(--ok)">${nOk}</b></div>
   <div class="kpi"><span>Con problema</span><b style="color:var(--er)">${ev.filter(e => e.lv === 'er').length}</b></div><div class="kpi"><span>Empates de versión</span><b style="color:${conflictos.length ? 'var(--er)' : 'inherit'}">${conflictos.length}</b></div></div>` : ''}
   ${S.lib.length ? `${conflictos.length ? `<div class="card"><h3>⚠ Dos dibujos con la misma versión</h3><p class="mut sm">No hay regla segura para elegir; Ingeniería debe borrar el que sobra. Mientras, elige cuál usar:</p>
@@ -1802,9 +1742,7 @@ function renderLib(){
     return `<tr><td><b>${esc(f.p.ruta || '?')}</b></td><td>${esc(f.p.pieza || f.name)}${f.p.multiple ? ' ' + badge('in', 'MULTIPLE') : ''}<div class="mut sm">${esc(f.p.planta ? f.path : f.name)}</div></td><td class="n">${f.p.n ?? '—'}</td><td>${esc(t)}</td><td class="n">${m && m.ok ? f1(m.len) : '—'}</td><td class="sm">${m && m.ok ? f1(m.secA) + ' × ' + f1(m.secB) : '—'}</td><td class="n">${m && m.ok && m.wall != null ? f2(m.wall) : '—'}</td><td class="sm">${m && m.ok && m.ends ? m.ends.map(endTxt).join(' / ') : '—'}${m && m.nFeat ? `<div class="mut">${m.nFeat} barreno(s)/corte(s)</div>` : ''}</td><td>${f.p.v ?? ''}</td>
     <td>${badge(e.lv, e.lv === 'ok' ? '✓ Listo' : e.lv === 'in' ? (e.notas[0] || 'Info') : e.lv === 'wa' ? 'Revisar' : 'Error')}${e.lv !== 'ok' && e.lv !== 'in' ? `<div class="sm">${esc(e.notas.join(' · '))}</div>` : ''}</td><td>${f.p.excluir ? '' : `<button data-ver="${esc(f.id)}" title="Ver y medir el IGS">📐</button>`}</td></tr>`; }).join('')}</table></div>
   ${lista.length > 800 ? '<p class="mut sm">Se muestran los primeros 800.</p>' : ''}</div>` : ''}`;
-  $('libCarpeta').onclick = () => abrirCarpeta(false); $('libOtra').onclick = () => abrirCarpeta(true);
-  if($('libDrive')) $('libDrive').onclick = () => cargarBibliotecaDrive(false);
-  if($('libRefresh')) $('libRefresh').onclick = () => cargarBibliotecaDrive(true);
+  $('libCarpeta').onclick = () => abrirCentral(false); $('libOtra').onclick = () => abrirCentral(true);
   $('libFiles').onclick = () => $('inFiles').click(); $('libDir').onclick = () => $('inDir').click();
   $('inFiles').onchange = e => { cargarLocal(e.target.files); e.target.value = ''; }; $('inDir').onchange = e => { cargarLocal(e.target.files); e.target.value = ''; };
   el.querySelectorAll('[data-lf]').forEach(b => b.onclick = () => { S.libFilt = b.dataset.lf; renderLib(); });
@@ -2180,7 +2118,7 @@ const ICO = {
 };
 const MENU = [
   {g: 'Programar', items: [{k: 'prog', c: '#4a9eff', t: 'Programa de producción', d: 'Excel PROGRAMA LASER del día (GW1 / GW2) o de órdenes planificadas de BC: dibujos ligados y su alta en TubesT.'},
-    {k: 'lib', c: '#3ecf8e', t: 'Biblioteca de IGS', d: 'Carpeta DIBUJOS DE CORTE(OK): dibujos, MULTIPLE, versiones anteriores y lo que se mide en cada IGS.'},
+    {k: 'lib', c: '#3ecf8e', t: 'Biblioteca de IGS', d: 'Carpeta central TUBO LASER - DIBUJOS POR MODELO: IGS de cada modelo, MULTIPLE, .zzx y lo que se mide en cada IGS.'},
     {k: 'modelo', c: '#2dd4bf', t: 'Múltiples por modelo', d: 'Diseña múltiples reutilizables por modelo con sus piezas sueltas; se validan y se dan de alta una sola vez.'},
     {k: 'mult', c: '#f5a623', t: 'Múltiples de corte', d: 'Piezas del mismo tubular acomodadas a lo largo de cada tramo para el máximo aprovechamiento.'}]},
   {g: 'Producción', items: [{k: 'piso', c: '#c084fc', t: 'Corte en piso', d: 'Descarga de IGS por tramo y seguimiento: pendiente, en proceso, cortado.'},
@@ -2192,7 +2130,7 @@ let CUR = 'prog';
 function badgeOf(k){
   switch(k){
     case 'prog': return S.ops.length ? ['in', S.ops.length] : null;
-    case 'lib': { if(!S.lib.length) return null; const {vig, conflictos} = vigentes(); const er = vig.filter(f => evalPieza(f).lv === 'er').length + conflictos.length; return er ? ['er', er] : ['ok', vig.length]; }
+    case 'lib': { if(!S.lib.length) return null; if(S.lib.filter(f => f.p.planta).length > S.lib.length/2) return ['ok', f0(S.lib.length)]; const {vig, conflictos} = vigentes(); const er = vig.filter(f => evalPieza(f).lv === 'er').length + conflictos.length; return er ? ['er', er] : ['ok', vig.length]; }
     case 'mult': return S.res ? ['ok', S.res.grupos.reduce((s, g) => s + g.bars.length, 0)] : S.items.length ? ['wa', '!'] : null;
     case 'piso': { const n = (S.db.tramos || []).filter(t => !['Cortado', 'Cancelado'].includes(t.estado)).length; return n ? ['wa', n] : null; }
     case 'rec': { const n = (S.db.recortes || []).filter(r => r.estado === 'Disponible').length; return n ? ['ok', n] : null; }
