@@ -1407,7 +1407,7 @@ function modeloHtml(M){
       <p class="mut sm" style="margin:6px 0 0">Menos múltiples distintos = menos altas en TubesT. Elige el lote que dé buen aprovechamiento con pocos múltiples.</p></div>` : ''}
     ${R ? R.grupos.map((g, gi) => `<details class="card" open><summary><b>${esc(g.label)}</b> ${g.sku ? badge('in', 'SKU ' + g.sku) : badge('wa', 'Sin SKU en el catálogo')} ${badge('in', g.bars.length + ' tramos por ' + R.lote + (R.lote === 1 ? ' mueble' : ' muebles'))} ${badge(g.tot.aprov > .9 ? 'ok' : g.tot.aprov > .8 ? 'wa' : 'er', 'Aprovechamiento ' + pct(g.tot.aprov))}</summary>
       ${g.pats.map((pt, pi) => `<div class="bar"><div class="barhd"><b>${esc(pt.nombre)}</b> ${badge('in', '×' + pt.n + ' por lote')} ${zzxDe(pt.nombre) ? badge('ok', '✓ .zzx') : ''}<span class="mut sm">${esc(resumenTxt(pt.bar.piezas))}</span><span style="flex:1"></span>
-        <button data-migs="${gi}|${pi}" title="IGS del múltiple para validarlo y darlo de alta">⬇ IGS</button>${S.cenDir ? `<button data-mlib="${gi}|${pi}" title="Guarda el IGS del múltiple en IGS\\MULTIPLES del modelo (carpeta central) y su receta en modelo.json">💾 A la carpeta central</button>` : ''}</div>${svgBar(pt.bar, colorMapModelo())}</div>`).join('')}
+        <button data-mver="${gi}|${pi}" title="Ver el múltiple con el dibujo de cada pieza (barrenos, ranuras y cortes), con zoom">🔍 Ver</button><button data-migs="${gi}|${pi}" title="IGS del múltiple para validarlo y darlo de alta">⬇ IGS</button>${S.cenDir ? `<button data-mlib="${gi}|${pi}" title="Guarda el IGS del múltiple en IGS\\MULTIPLES del modelo (carpeta central) y su receta en modelo.json">💾 A la carpeta central</button>` : ''}</div>${svgBar(pt.bar, colorMapModelo())}</div>`).join('')}
       ${g.largas.length ? `<p class="sm" style="color:var(--er)">No caben en el tramo útil: ${[...new Set(g.largas.map(p => p.pieza))].map(esc).join(', ')}</p>` : ''}</details>`).join('') : ''}
     ${R && R.sinMedida.length ? `<p class="sm" style="color:var(--wa)">No entran (sin medida o la sección del IGS no es la del tubular): ${R.sinMedida.map(f => esc(f.p.pieza)).join(', ')}</p>` : ''}
     ${tot}`;
@@ -1425,6 +1425,7 @@ function bindModelo(){
   if($('mdXls')) $('mdXls').onclick = () => exportarManifiesto(M);
   if($('mdZzx2')) $('mdZzx2').onclick = () => abrirCentral(false);
   const patDe = s => { const [gi, pi] = s.split('|').map(Number), g = M.res.grupos[gi]; return {g, pt: g.pats[pi]}; };
+  el.querySelectorAll('[data-mver]').forEach(b => b.onclick = () => { const {g, pt} = patDe(b.dataset.mver); abrirVisorTramo(pt.bar, g.label, colorMapModelo()); });
   el.querySelectorAll('[data-migs]').forEach(b => b.onclick = async () => { const {g, pt} = patDe(b.dataset.migs);
     try{ toast('Armando IGS de ' + pt.nombre + '…', 'in'); dl(pt.nombre + '.igs', await igsTramo(pt.bar, g.label), 'application/iges'); }catch(e){ toast(e.message, 'er'); } });
   el.querySelectorAll('[data-mlib]').forEach(b => b.onclick = async () => { const {g, pt} = patDe(b.dataset.mlib);
@@ -1574,18 +1575,94 @@ async function descargarTramo(bar, label, registrar){
     if(registrar) await iniciarCorte(bar.id); }
   catch(e){ toast(e.message, 'er'); }
 }
+/* ======================= Dibujo de las piezas (barrenos, ranuras y cortes) ======================= */
+/* geometría de cada IGS, leída una sola vez: sirve para dibujar la pieza dentro de la barra y para el visor del tramo */
+const GEO = new Map(), GEO_SYM = new Map(), GEO_PEND = new Set();
+function geoDe(fileId){
+  if(GEO.has(fileId)) return GEO.get(fileId);
+  const pr = (async () => { const f = S.lib.find(x => x.id === fileId); if(!f) return null;
+    try{ const txt = await textoDe(f), r = IGES.inspect(txt, f.p.med ? [f.p.med.a, f.p.med.b] : null, f.p.med && f.p.med.forma); if(!r.ok) return null;
+      return {r, k: (MEAS[medKey(f)] || {}).k || 1, name: f.name}; }catch(e){ return null; } })();
+  GEO.set(fileId, pr); return pr;
+}
+/* símbolo SVG de la pieza en planta (barrenos, ranuras y extremos), estirado al rectángulo de la pieza en la barra */
+function simboloGeo(g){
+  const L = g.r.len || 1, W = g.r.secA || 1, d = g.r.polys.filter(pl => pl.feat || pl.end)
+    .map(pl => pl.p.map((q, i) => (i ? 'L' : 'M') + (q[0]/L*1000).toFixed(1) + ',' + (-q[1]/W*100).toFixed(1)).join('')).join('');
+  return d ? `<path d="${d}" fill="none" stroke="#1f1f1d" stroke-width="1" vector-effect="non-scaling-stroke"/>` : '';
+}
+let geoCorriendo = false;
+async function cargarGeoPendientes(){
+  if(geoCorriendo || !GEO_PEND.size) return; geoCorriendo = true;
+  const ids = [...GEO_PEND]; GEO_PEND.clear(); let nuevos = 0, i = 0;
+  const worker = async () => { while(i < ids.length){ const id = ids[i++]; const g = await geoDe(id); if(GEO_SYM.has(id)) continue;
+    GEO_SYM.set(id, g ? {n: GEO_SYM.size, svg: simboloGeo(g)} : null); nuevos++; } };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  let defs = $('geoDefs'); if(!defs){ defs = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); defs.id = 'geoDefs'; defs.setAttribute('width', '0'); defs.setAttribute('height', '0'); defs.style.position = 'absolute'; document.body.appendChild(defs); }
+  defs.innerHTML = [...GEO_SYM.values()].filter(Boolean).map(s => `<symbol id="gs-${s.n}" viewBox="0 -50 1000 100" preserveAspectRatio="none">${s.svg}</symbol>`).join('');
+  geoCorriendo = false;
+  if(nuevos && CFG.verGeo !== false) renderAll();
+  if(GEO_PEND.size) cargarGeoPendientes();
+}
+/* visor de un tramo: todas sus piezas acomodadas con su geometría, con zoom (Planta, Frente, Sección) */
+async function abrirVisorTramo(bar, label, colorOf){
+  toast('Leyendo las piezas de ' + (bar.id || 'el tramo') + '…', 'in');
+  const geos = await Promise.all(bar.piezas.map(p => geoDe(p.fileId)));
+  if(!geos.some(Boolean)) return toast('No pude leer los IGS de este tramo', 'er');
+  S.visor = {tramo: {bar, label, geos, col: colorOf || colorMap()}, vista: 'XY'}; dibujarVisorTramo(); $('toast') && ($('toast').style.display = 'none');
+}
+function dibujarVisorTramo(){
+  const {bar, label, geos, col} = S.visor.tramo, V = S.visor.vista;
+  let mo = $('visor'); if(!mo){ mo = document.createElement('div'); mo.id = 'visor'; mo.className = 'modal'; document.body.appendChild(mo); mo.addEventListener('click', e => { if(e.target === mo) cerrarVisor(); }); }
+  // piezas en su lugar del tramo, en mm (los IGS en pulgadas se convierten con k)
+  const polys = []; let W = 0, Hs = 0;
+  bar.piezas.forEach((p, i) => { const g = geos[i]; if(!g) return; const k = g.k;
+    g.r.polys.forEach(pl => polys.push({p: pl.p.map(q => [p.x + q[0]*k, q[1]*k, q[2]*k]), feat: pl.feat, end: pl.end}));
+    W = Math.max(W, g.r.secA*k); Hs = Math.max(Hs, g.r.secB*k); });
+  const g0 = geos.find(Boolean), gN = [...geos].reverse().find(Boolean);
+  const r = {len: bar.P, secA: W || 25, secB: Hs || 25, polys, feats: [], ends: [g0.r.ends[0], gN.r.ends[1]], wall: g0.r.wall};
+  const usado = bar.usado, ch = CFG.chuck;
+  mo.innerHTML = `<div class="card" role="dialog" aria-label="Visor del tramo"><div class="row" style="margin-bottom:10px"><b style="flex:1;min-width:200px">📐 ${esc(bar.id)} <span class="mut">· ${esc(label || bar.tipoLabel || '')}${bar.maquina ? ' · ' + esc(bar.maquina) : ''}</span>
+    <div class="mut sm" style="font-weight:400">${bar.piezas.length} piezas · tramo ${f0(bar.P)} mm · usado ${f0(usado)} mm · ${bar.recorte ? 'recorte ' + f0(bar.recorte) + ' mm (incluye chuck ' + f0(ch) + ')' : 'chuck ' + f0(ch) + ' mm'} · aprovechamiento ${pct(bar.aprov)}</div></b>
+    <span class="tabs row" style="gap:4px">${[['XY', 'Planta'], ['XZ', 'Frente'], ['YZ', 'Sección']].map(([k, tx]) => `<button data-vv="${k}" class="${k === V ? 'on' : ''}">${tx}</button>`).join('')}</span>
+    <button id="vFit" title="Ajustar (doble clic en el dibujo)">⤢</button><button id="vClose" aria-label="Cerrar">✕</button></div>
+  <svg id="vSvg" style="width:100%;height:34vh"></svg><p class="mut sm" style="margin:6px 0 0">Haz clic en una pieza de la tabla para acercarte a ella · rueda = zoom · arrastrar = mover · ⤢ o doble clic = todo el tramo. Cada color es una pieza; en naranja, sus barrenos y cortes; en gris oscuro, la zona del chuck.</p>
+  <div class="tw" style="margin-top:10px;max-height:none"><table><tr><th>#</th><th>Pieza</th><th>OP</th><th class="n">Desde (mm)</th><th class="n">Hasta (mm)</th><th class="n">Largo (mm)</th><th>IGS</th></tr>
+  ${bar.piezas.map((p, i) => `<tr data-zp="${i}" style="cursor:zoom-in" title="Acercar a esta pieza"><td><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${col(p)}"></i> ${i + 1} 🔍</td><td>${esc(p.pieza)}<div class="mut sm">${esc(p.ruta)}</div></td><td class="sm">${esc(p.op)}</td><td class="n">${f1(p.x)}</td><td class="n">${f1(p.x + p.L)}</td><td class="n">${f1(p.L)}</td><td class="sm">${geos[i] ? esc(geos[i].name) : badge('er', 'No se pudo leer')}</td></tr>`).join('')}</table></div></div>`;
+  mo.querySelectorAll('[data-vv]').forEach(b => b.onclick = () => { S.visor.vista = b.dataset.vv; dibujarVisorTramo(); });
+  $('vClose').onclick = cerrarVisor; $('vFit').onclick = () => { const s = $('vSvg'); setVB(s, Object.assign({}, s._home)); };
+  const svg = $('vSvg'); dibujarVista(svg, r, V);
+  if(V !== 'YZ'){
+    // debajo del dibujo: cada pieza de su color con su nombre, el recorte y el chuck
+    const h = V === 'XY' ? r.secA : r.secB, fs = Math.max(Math.max(r.secA, r.secB)*.5, 6);   // se lee al acercarse a una pieza
+    let ov = bar.piezas.map(p => `<rect x="${p.x}" y="${-h/2}" width="${p.L}" height="${h}" fill="${col(p)}" fill-opacity=".55"/><text x="${p.x + p.L/2}" y="${-h/2 - fs*.5}" font-size="${fs}" text-anchor="middle" fill="var(--tx)">${esc(p.pieza.length > 22 ? p.pieza.slice(0, 21) + '…' : p.pieza)} · ${f0(p.L)}</text>`).join('');
+    if(bar.recorte) ov += `<rect x="${usado}" y="${-h/2}" width="${bar.P - usado - ch}" height="${h}" fill="#c0dd97" fill-opacity=".5"/><text x="${(usado + bar.P - ch)/2}" y="${h/2 + fs*1.3}" font-size="${fs*.9}" text-anchor="middle" fill="#3b6d11">♻ recorte ${f0(bar.recorte)}</text>`;
+    ov += `<rect x="${bar.P - ch}" y="${-h/2}" width="${ch}" height="${h}" fill="#444441" fill-opacity=".55"/><text x="${bar.P - ch/2}" y="${-h/2 - fs*.5}" font-size="${fs}" text-anchor="middle" fill="var(--mut)">chuck ${f0(ch)}</text>`;
+    svg.insertAdjacentHTML('afterbegin', `<g>${ov}</g>`);
+  }
+  // acercar a una pieza: su largo llena el ancho del dibujo, como verla sola en SolidWorks
+  mo.querySelectorAll('[data-zp]').forEach(tr => tr.onclick = () => { if(S.visor.vista === 'YZ'){ S.visor.vista = 'XY'; dibujarVisorTramo(); }
+    const s = $('vSvg'), p = bar.piezas[+tr.dataset.zp], bx = s.getBoundingClientRect(), m = Math.max(p.L*.06, 20), w = p.L + 2*m, h = w*(bx.height/(bx.width || 1));
+    setVB(s, {x: p.x - m, y: -h/2, w, h}); s.scrollIntoView({block: 'nearest'}); });
+}
 function svgBar(b, colorOf, opts){
-  opts = opts || {}; const W = 1000, H = 46, T = b.P, sc = W/Math.max(T, CFG.tramo), ch = CFG.chuck;
+  opts = opts || {}; const W = 1000, H = 46, T = b.P, sc = W/Math.max(T, CFG.tramo), ch = CFG.chuck, geo = CFG.verGeo !== false;
   let s = `<svg viewBox="-2 -2 ${W + 4} ${H + 22}" role="img" aria-label="Tramo ${esc(b.id)}"><rect x="0" y="0" width="${T*sc}" height="${H}" rx="3" fill="var(--tube)" stroke="var(--mut)" stroke-width="1"/>`;
   s += `<defs><pattern id="hR" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="#c0dd97"/><line x1="0" y1="0" x2="0" y2="7" stroke="#639922" stroke-width="2"/></pattern>
     <pattern id="hD" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="var(--hd1)"/><line x1="0" y1="0" x2="0" y2="7" stroke="var(--hd2)" stroke-width="2"/></pattern></defs>`;
-  b.piezas.forEach(p => { const x = p.x*sc, w = p.L*sc, c = colorOf(p);
+  const lbl = 'paint-order="stroke" stroke="rgba(255,255,255,.75)" stroke-width="3"';
+  b.piezas.forEach(p => { const x = p.x*sc, w = p.L*sc, c = colorOf(p), gs = geo ? GEO_SYM.get(p.fileId) : null;
+    if(geo && gs === undefined && p.fileId) GEO_PEND.add(p.fileId);
     s += `<rect x="${x}" y="2" width="${Math.max(w, 1)}" height="${H - 4}" fill="${c}" stroke="#2c2c2a" stroke-width=".8"><title>${esc(p.pieza)} · ${esc(p.ruta)} · ${esc(p.op)} · ${f1(p.L)} mm</title></rect>`;
-    if(w > 46) s += `<text x="${x + w/2}" y="${H/2 - 2}" font-size="11" text-anchor="middle" fill="#1f1f1d">${esc(p.pieza.length*6 > w ? p.pieza.slice(0, Math.max(3, Math.floor(w/6.5))) + '…' : p.pieza)}</text><text x="${x + w/2}" y="${H/2 + 12}" font-size="10" text-anchor="middle" fill="#444441">${f0(p.L)}</text>`; });
+    // barrenos, ranuras y extremos de la pieza (su IGS en planta, estirado a la barra)
+    if(gs) s += `<use href="#gs-${gs.n}" x="${x}" y="2" width="${Math.max(w, 1)}" height="${H - 4}" opacity=".8" pointer-events="none"/>`;
+    if(w > 46) s += `<text x="${x + w/2}" y="${H/2 - 2}" font-size="11" text-anchor="middle" fill="#1f1f1d" ${gs ? lbl : ''}>${esc(p.pieza.length*6 > w ? p.pieza.slice(0, Math.max(3, Math.floor(w/6.5))) + '…' : p.pieza)}</text><text x="${x + w/2}" y="${H/2 + 12}" font-size="10" text-anchor="middle" fill="#444441" ${gs ? lbl : ''}>${f0(p.L)}</text>`; });
   const used = b.usado, rec = b.recorte || 0;
-  if(rec){ const x0 = used*sc, w = (T - used)*sc; s += `<rect x="${x0}" y="2" width="${w}" height="${H - 4}" fill="url(#hR)"/>`; if(w > 60) s += `<text x="${x0 + w/2}" y="${H/2 + 4}" font-size="11" text-anchor="middle" fill="#27500a">♻ ${esc(b.recorteNuevo || 'recorte')} ${f0(rec)}</text>`; }
-  else { const x0 = used*sc, w = Math.max(0, (T - ch - used)*sc); if(w > 0){ s += `<rect x="${x0}" y="2" width="${w}" height="${H - 4}" fill="url(#hD)"/>`; if(w > 50) s += `<text x="${x0 + w/2}" y="${H/2 + 4}" font-size="10" text-anchor="middle" fill="var(--hdt)">sobra ${f0(T - ch - used)}</text>`; }
-    s += `<rect x="${(T - ch)*sc}" y="2" width="${ch*sc}" height="${H - 4}" fill="var(--chuck)"/>`; if(ch*sc > 40) s += `<text x="${(T - ch/2)*sc}" y="${H/2 + 4}" font-size="10" text-anchor="middle" fill="#fff">chuck</text>`; }
+  // el recorte es todo lo que queda después del último corte, incluida la parte que sostiene el chuck: el chuck se marca encima
+  if(rec){ const x0 = used*sc, w = (T - used - ch)*sc; s += `<rect x="${x0}" y="2" width="${(T - used)*sc}" height="${H - 4}" fill="url(#hR)"/>`; if(w > 60) s += `<text x="${x0 + w/2}" y="${H/2 + 4}" font-size="11" text-anchor="middle" fill="#27500a">♻ ${esc(b.recorteNuevo || 'recorte')} ${f0(rec)}</text>`; }
+  else { const x0 = used*sc, w = Math.max(0, (T - ch - used)*sc); if(w > 0){ s += `<rect x="${x0}" y="2" width="${w}" height="${H - 4}" fill="url(#hD)"/>`; if(w > 50) s += `<text x="${x0 + w/2}" y="${H/2 + 4}" font-size="10" text-anchor="middle" fill="var(--hdt)">sobra ${f0(T - ch - used)}</text>`; } }
+  s += `<rect x="${(T - ch)*sc}" y="2" width="${ch*sc}" height="${H - 4}" fill="var(--chuck)" fill-opacity="${rec ? .8 : 1}"><title>Zona del chuck: ${f0(ch)} mm (no se puede cortar)</title></rect>`; if(ch*sc > 40) s += `<text x="${(T - ch/2)*sc}" y="${H/2 + 4}" font-size="10" text-anchor="middle" fill="#fff">chuck ${f0(ch)}</text>`;
+  if(geo && GEO_PEND.size) setTimeout(cargarGeoPendientes, 0);
   s += `<text x="0" y="${H + 16}" font-size="11" fill="var(--mut)">${b.origen === 'recorte' ? '♻ Recorte ' + esc(b.recorteId) + ' · ' : ''}${f0(T)} mm · ${b.piezas.length} pzas · usado ${f0(used)} mm · aprovechamiento ${pct(b.aprov)}</text></svg>`;
   return s;
 }
@@ -1805,6 +1882,7 @@ function renderMult(){
     <label class="cfl" style="flex-direction:row;align-items:center;gap:6px">Criterio <select id="mMode"><option value="prio" ${CFG.modo === 'prio' ? 'selected' : ''}>Prioridad por hora de inicio de OP</option><option value="max" ${CFG.modo === 'max' ? 'selected' : ''}>Máximo aprovechamiento (todo junto)</option></select></label>
     ${CFG.modo === 'prio' ? `<label class="cfl" style="flex-direction:row;align-items:center;gap:6px" title="Cuántos tramos de piezas siguientes se consideran para llenar cada tramo">Ventana <input type="number" id="mWin" min="1" max="20" step="1" value="${CFG.ventana}" style="width:60px"> tramos</label>` : ''}
     <label class="row sm" style="gap:4px"><input type="checkbox" id="mRec" ${CFG.usarRecortes === false ? '' : 'checked'}> Usar recortes del inventario (${(S.db.recortes || []).filter(r => r.estado === 'Disponible').length} disponibles)</label>
+    <label class="row sm" style="gap:4px" title="Dibuja dentro de cada pieza sus barrenos, ranuras y cortes (de su IGS)"><input type="checkbox" id="mGeo" ${CFG.verGeo === false ? '' : 'checked'}> Ver el dibujo de cada pieza</label>
     <span style="flex:1"></span><button class="pri" id="mGen" ${S.items.length ? '' : 'disabled'}>⚙ Generar múltiples</button></div>
     <p class="mut sm" style="margin:8px 0 0">Tramo ${f0(CFG.tramo)} mm − chuck ${f0(CFG.chuck)} − refrentado ${CFG.refr} = <b>${f0(CFG.tramo - CFG.chuck - CFG.refr)} mm útiles</b> (si el SKU del catálogo trae otro largo, se usa ese) · separación entre piezas ${CFG.kerf} mm · recorte útil mínimo ${f0(CFG.minRem)} mm. ${S.items.length ? f0(S.items.length) + ' piezas en ' + Object.keys(TIPOS()).filter(k => S.items.some(i => i.tipo === k)).length + ' tipos de tubular.' : 'Carga el programa y la biblioteca.'}</p></div>`;
   if(!R){ el.innerHTML = cfgBar + (S.fuera.length ? fueraHtml() : ''); bindMult(); return; }
@@ -1818,7 +1896,7 @@ function renderMult(){
     <span class="mut sm">${g.tot.piezas} pzas · ${f2(g.tot.consumo/(g.tramo || CFG.tramo))} TRA${g.kgm ? ' · ' + f2(g.tot.consumo/1000*g.kgm) + ' kg' : ''}</span>${g.largas.length ? badge('er', g.largas.length + ' piezas no caben') : ''}</summary>
     <div class="legend" style="margin-top:10px">${[...new Map(g.bars.flatMap(b => b.piezas).map(p => [p.ruta + '|' + p.pieza, p])).values()].map(p => `<span><i style="background:${col(p)}"></i>${esc(p.pieza)} <span class="mut">${esc(p.ruta)} · ${f0(p.L)}</span></span>`).join('')}</div>
     ${agrupar(g.bars).map(x => `<div class="bar"><div class="barhd"><b>${esc(x.b.id)}${x.n > 1 ? ` … ×${x.n} iguales` : ''}</b><span class="mut">${esc([...new Set(x.b.piezas.map(p => p.op))].join(', '))}</span><span style="flex:1"></span>
-      <button data-igs="${gi}|${g.bars.indexOf(x.b)}" title="IGS con las piezas acomodadas a lo largo del tubo">⬇ IGS</button><button data-hoja="${gi}|${g.bars.indexOf(x.b)}">🖨</button></div>${svgBar(x.b, col)}</div>`).join('')}
+      <button data-ver="${gi}|${g.bars.indexOf(x.b)}" title="Ver el tramo con el dibujo de cada pieza (barrenos, ranuras y cortes), con zoom">🔍 Ver</button><button data-igs="${gi}|${g.bars.indexOf(x.b)}" title="IGS con las piezas acomodadas a lo largo del tubo">⬇ IGS</button><button data-hoja="${gi}|${g.bars.indexOf(x.b)}">🖨</button></div>${svgBar(x.b, col)}</div>`).join('')}
     ${g.largas.length ? `<p style="color:var(--er)" class="sm">No caben en el tramo útil: ${[...new Set(g.largas.map(p => p.pieza + ' (' + f0(p.L) + ' mm)'))].map(esc).join(', ')}</p>` : ''}</details>`).join('')}
   ${S.fuera.length ? fueraHtml() : ''}`;
   bindMult();
@@ -1836,12 +1914,14 @@ function bindMult(){
   $('mMode').onchange = e => { CFG.modo = e.target.value; saveCfg(); renderMult(); };
   if($('mWin')) $('mWin').onchange = e => { CFG.ventana = Math.max(1, +e.target.value || 2); saveCfg(); };
   $('mRec').onchange = e => { CFG.usarRecortes = e.target.checked; saveCfg(); };
+  $('mGeo').onchange = e => { CFG.verGeo = e.target.checked; saveCfg(); renderMult(); };
   $('mGen').onclick = generar;
   if(!S.res) return;
   $('mSave').onclick = guardarPrograma; $('mXls').onclick = () => { S.consSel = ''; exportarConsumos(); };
   $('mPrint').onclick = () => hojaCorte('Programa de corte de tubular ' + S.res.id, S.res.grupos.flatMap(g => g.bars));
   el.querySelectorAll('[data-igs]').forEach(b => b.onclick = () => { const [gi, bi] = b.dataset.igs.split('|').map(Number), g = S.res.grupos[gi]; descargarTramo(g.bars[bi], g.label, false); });
   el.querySelectorAll('[data-hoja]').forEach(b => b.onclick = () => { const [gi, bi] = b.dataset.hoja.split('|').map(Number), g = S.res.grupos[gi]; hojaCorte('Tramo ' + g.bars[bi].id, [g.bars[bi]]); });
+  el.querySelectorAll('[data-ver]').forEach(b => b.onclick = () => { const [gi, bi] = b.dataset.ver.split('|').map(Number), g = S.res.grupos[gi]; abrirVisorTramo(g.bars[bi], g.label); });
 }
 /* ======================= Comparación contra Business Central ======================= */
 let BC = (() => { try{ return JSON.parse(localStorage.getItem('mt-bc') || 'null'); }catch(e){ return null; } })();
