@@ -890,11 +890,11 @@ function parseNombre(name, path){
 /* nombre de dibujo normalizado: liga el "Nombre del dibujo" del programa con el archivo */
 const claveDibujo = s => norm(s).replace(/\.(IGS|IGES)(\.GZ)*$/, '').replace(/[-_()]/g, ' ').replace(/\b(\d+)\s*PZ[AS]*\b/g, '$1PZ').replace(/\s+/g, ' ').trim();
 /* convención de la carpeta central: LÍNEA/MODELO/IGS/nombre libre ("1015 ALMA 1PZ.IGS"); el tubular sale del programa.
-   MULTIPLE / MUL = múltiple de Ingeniería; MULT = múltiple armado por la plataforma. Los múltiples viven en IGS/MULTIPLES. */
+   Múltiple = más de 1 pieza igual en el IGS (MULTIPLE / MUL de Ingeniería, MULT armado por la plataforma, o 2PZ, 3 PZAS…). Viven en IGS/MULTIPLES. */
 function parsePlanta(name, path, r){
   const base = name.replace(/\.(igs|iges)(\.gz)*$/i, '').trim(), carpetas = String(path || '').split('/').slice(0, -1);
   const pz = norm(base).match(/\b(\d+)\s*PZ[AS]*\b/), vieja = carpetas.filter(c => /ANTERIOR|VIEJ|OBSOLET/.test(norm(c))).pop();
-  Object.assign(r, {ok: true, planta: true, pieza: base, clave: claveDibujo(base), n: pz ? +pz[1] : null, multiple: /\bMULT(IPLE)?\b|\bMUL\b/.test(norm(base)),
+  Object.assign(r, {ok: true, planta: true, pieza: base, clave: claveDibujo(base), n: pz ? +pz[1] : null, multiple: esNombreMultiple(base),
     ruta: carpetas.filter(c => !/^IGE?S$/i.test(c.trim())).pop() || ''});
   if(vieja) r.excluir = 'Versión anterior (' + vieja + ')';
   else if(/MUESTRA/.test(norm(path))) r.excluir = 'Muestra';
@@ -1093,7 +1093,10 @@ async function cargarBibliotecaDrive(refrescar){
 }
 async function medirNecesarios(){
   let need;
-  if(S.formato === 'laser'){ ligarDibujos(); const ids = new Set(Object.values(S.match).filter(x => x.f).map(x => x.f.id)); need = S.lib.filter(f => ids.has(f.id)); }
+  if(S.formato === 'laser'){ ligarDibujos(); const ids = new Set();
+    // de un MULTIPLE se mide su pieza suelta (es la que se acomoda), no el múltiple
+    S.ops.forEach(o => { const x = S.match[o.idx]; if(!x || !x.f) return; if(esMultipleYa(x.f)){ const s = sueltaDe(o, x.f); if(s.f) ids.add(s.f.id); } else ids.add(x.f.id); });
+    need = S.lib.filter(f => ids.has(f.id)); }
   else { const {vig} = vigentes(); const rutas = new Set(S.ops.map(o => norm(o.ruta))); need = vig.filter(f => !S.ops.length || rutas.has(norm(f.p.ruta))); }
   // carpeta recordada: la fecha del archivo se lee al usarlo, así no se vuelve a medir lo que no cambió
   for(const f of need) if(f.handle && !f.modified){ try{ const fl = await f.handle.getFile(); f.file = fl; f.modified = fl.lastModified; f.size = fl.size; }catch(e){} }
@@ -1154,7 +1157,9 @@ const fechaArchivo = () => { const d = new Date(), p = v => String(v).padStart(2
 const MAN = 'modelo.json';
 const MULT_DIR = 'MULTIPLES';                                         // IGS/MULTIPLES y ZZX/MULTIPLES (Leonardo, 2026-11-10)
 const enMultiples = sub => /^MULTIPLES(\/|$)/i.test(String(sub || ''));
-const esNombreMultiple = s => /(^|[^A-Z])(MUL|MULT|MULTIPLES?|MULTIPL|MULTIPE|MULTUIPLE)(?![A-Z])/.test(norm(s));   // misma regla que ordenar-multiples.ps1
+/* múltiple = el IGS trae más de 1 pieza igual: dice MULTIPLE / MULT / MUL (o un error de dedo) o 2 o más piezas (2PZ, (3PZ), 4 PZAS, 2 PZS…).
+   "1 PZ" es pieza suelta. Misma regla que herramientas/ordenar-multiples.ps1 (Leonardo, 2026-11-10) */
+function esNombreMultiple(s){ return /(^|[^A-Z])(MUL|MULT|MULTIPLES?|MULTIPL|MULTIPE|MULTUIPLE)(?![A-Z])|(^|[^0-9.])([2-9]|[1-9]\d+)\s*PZ(AS?|S)?(?![A-Z])/.test(norm(s)); }
 const winRuta = s => String(s).replace(/\//g, '\\');
 /* lugar de un IGS en la carpeta central: <raíz>/LÍNEA/MODELO/IGS/[sub]/archivo; null si no está dentro de la carpeta IGS de un modelo */
 function lugarCentral(f){
@@ -1272,6 +1277,29 @@ const archivosModelo = k => S.lib.filter(f => f.p.planta && !f.p.excluir && !f.p
 /* la plataforma arma sus múltiples SOLO con piezas sueltas: nada de IGS/MULTIPLES ni con nombre de múltiple (Leonardo, 2026-11-10) */
 const esMultipleYa = f => !!f.p.multiple || enMultiples((lugarCentral(f) || {}).sub);
 const piezasModelo = k => archivosModelo(k).filter(f => !esMultipleYa(f));
+/* Múltiples de corte combina piezas sueltas de todas las OPs del programa para aprovechar el material: un MULTIPLE del programa
+   se cambia por su pieza suelta (Cant. = piezas). Se busca en la carpeta del modelo (fuera de IGS/MULTIPLES) por la Parte del
+   renglón y el nombre del múltiple antes de "CON"; lo que se elige a mano en Programa manda (mt-suelta). Leonardo, 2026-11-10 */
+let SUELTA = (() => { try{ return JSON.parse(localStorage.getItem('mt-suelta') || '{}'); }catch(e){ return {}; } })();
+const saveSuelta = () => { try{ localStorage.setItem('mt-suelta', JSON.stringify(SUELTA)); }catch(e){} };
+const tokSuelta = s => new Set(norm(s).replace(/\.(IGS|IGES)$/, '').replace(/\b\d+\s*PZ[AS]*\b/g, ' ').replace(/(\d)\s*CM\b/g, '$1').replace(/[^A-Z0-9]+/g, ' ').trim().split(' ')
+  .filter(t => t && !/^(MULTIPLES?|MULTIPL|MULTIPE|MULTUIPLE|MULT|MUL|PZ|PZA|PZAS|PZS|DE|LA|EL|Y)$/.test(t))
+  .map(t => /^[A-Z]{4,}$/.test(t) ? t.replace(/(ES|S|E)$/, '') : t));   // LATERALES = LATERAL, BARRAS = BARRA
+function sueltaDe(o, f){
+  const L = lugarCentral(f), k = f.id + '|' + norm(o.parte || o.dibujo);
+  const cand = L ? piezasModelo(L.key).filter(x => !(x.p.n > 1)).sort((a, b) => a.path.localeCompare(b.path)) : [];
+  const el = SUELTA[k] && cand.find(x => x.id === SUELTA[k]);
+  if(el) return {f: el, cand, k, elegida: true};
+  if(!cand.length) return {f: null, cand, k, motivo: 'MULTIPLE sin piezas sueltas en la carpeta del modelo: Ingeniería debe poner la pieza suelta en IGS'};
+  const P = tokSuelta(o.parte || ''), N = tokSuelta(norm(f.p.pieza || f.name).split(/\bCON\b/)[0]), num = t => /^\d+$/.test(t);
+  const sc = cand.map(x => { let s = 0, pal = 0;
+    tokSuelta(x.p.pieza || x.name).forEach(t => { if(P.has(t)){ s += 3; if(!num(t)) pal++; } if(N.has(t)){ s += 1; if(!num(t)) pal++; } if(!P.has(t) && !N.has(t)) s--; });
+    return {x, s, pal, unaPz: /\b1\s*PZ/.test(norm(x.name))}; }).filter(c => c.pal > 0 && c.s > 0).sort((a, b) => b.s - a.s || b.unaPz - a.unaPz);
+  if(!sc.length) return {f: null, cand, k, motivo: 'MULTIPLE: no encontré su pieza suelta en la carpeta del modelo, elígela en Programa'};
+  const top = sc.filter(c => c.s === sc[0].s && c.unaPz === sc[0].unaPz);
+  if(top.length > 1 && !top.every(c => c.x.size && c.x.size === top[0].x.size)) return {f: null, cand, k, motivo: `MULTIPLE: hay ${top.length} piezas sueltas posibles, elige cuál en Programa`};
+  return {f: sc[0].x, cand, k};
+}
 /* tubular de una pieza sin programa: sección medida → fracción de pulgada; pared → calibre */
 function tipoGeo(m){
   const a = Math.min(m.secA, m.secB), b = Math.max(m.secA, m.secB);
@@ -1430,9 +1458,9 @@ function explotar(){
     });
   });
 }
-/* programa por máquina: cada corrida de un dibujo es una unidad. Los dibujos con varias piezas (MULTIPLE o Cant. > Cant. Progra.)
-   se respetan tal cual y solo comparten tramo con copias de sí mismos (su alta en TubesT se reutiliza);
-   las piezas sueltas del mismo tubular y máquina se acomodan juntas en los tramos. */
+/* programa por máquina: cada pieza es una unidad y las piezas sueltas del mismo tubular y máquina, de todas las OPs, se combinan en los tramos.
+   Un MULTIPLE del programa no se usa: se cambia por su pieza suelta (sueltaDe) y sus Cant. piezas se combinan con las demás.
+   Un dibujo con 2 o más piezas ("(2PZ)", "4 PZAS") también es múltiple y se cambia igual por su pieza suelta. */
 function explotarLaser(){
   if(!S.match) ligarDibujos();
   let uid = 0;
@@ -1443,7 +1471,9 @@ function explotarLaser(){
     const fuera = motivo => S.fuera.push({o, f: mt.f || {p: {ruta: o.ruta, pieza: o.dibujo}, id: ''}, n: corridas, motivo});
     if(o.omitir) return fuera(o.omitir);
     if(!mt.f) return fuera(mt.estado === 'ambiguo' ? `Hay ${mt.cand.length} IGS con ese nombre: elige cuál en Programa` : mt.estado === 'anterior' ? 'Solo hay versión anterior del dibujo: elige en Programa si se usa' : 'No está en la carpeta central');
-    const f = mt.f, m = MEAS[medKey(f)];
+    const sm = esMultipleYa(mt.f) ? sueltaDe(o, mt.f) : null;
+    if(sm && !sm.f) return fuera(sm.motivo);
+    const f = sm ? sm.f : mt.f, m = MEAS[medKey(f)];
     if(!m) return fuera('Sin leer');
     if(m.error) return fuera(m.error);
     const med = parseMedida(o.tubular), cal = (norm(o.tubular).match(/CAL\.?\s*(\d+)/) || [])[1];
@@ -1457,8 +1487,8 @@ function explotarLaser(){
     const completo = !!f.p.multiple || (f.p.n || 1) > 1, pzs = completo ? (f.p.n > 1 ? f.p.n : +PZM[f.p.clave] || 0) : 1;
     if(completo && !pzs) return fuera('MULTIPLE sin número de piezas en el nombre: escribe cuántas piezas trae');
     corridas = Math.ceil(piezas / pzs);
-    for(let i = 0; i < corridas; i++) S.items.push({uid: uid++, tipo: t.key, tipoLabel: t.label, tipoCorto: t.corto, L: m.len, prio: o.idx, op: o.op, ruta: o.ruta, pieza: o.dibujo, fileId: f.id,
-      med, cal, pzs, completo, maquina: o.maquina, grupo: o.maquina + '|' + t.key + (completo ? '|' + f.id : '')});
+    for(let i = 0; i < corridas; i++) S.items.push({uid: uid++, tipo: t.key, tipoLabel: t.label, tipoCorto: t.corto, L: m.len, prio: o.idx, op: o.op, ruta: o.ruta, pieza: sm ? f.p.pieza : o.dibujo, fileId: f.id,
+      med, cal, pzs, completo, maquina: o.maquina, grupo: o.maquina + '|' + t.key + (completo ? '|' + f.id : ''), ...(sm ? {deMultiple: o.dibujo} : {})});
   });
 }
 const TIPOS = () => { const t = {}; S.items.forEach(i => t[i.tipo] = t[i.tipo] || {key: i.tipo, label: i.tipoLabel, corto: i.tipoCorto, med: i.med, cal: i.cal}); (S.db.recortes || []).forEach(r => { if(!t[r.tipo]) t[r.tipo] = {key: r.tipo, label: r.tipoLabel || r.tipo, corto: r.tipoCorto || r.tipo}; }); return t; };
@@ -1679,6 +1709,7 @@ function renderProg(){
   if($('progZzx')) $('progZzx').onclick = () => abrirCentral(false);
   if($('progFalt')) $('progFalt').onclick = exportarFaltantes;
   el.querySelectorAll('[data-dsel]').forEach(s => s.onchange = () => { if(!s.value) return; ELEC[s.dataset.dsel] = s.value; saveElec(); medirNecesarios(); });
+  el.querySelectorAll('[data-suelta]').forEach(s => s.onchange = () => { if(s.value) SUELTA[s.dataset.suelta] = s.value; else delete SUELTA[s.dataset.suelta]; saveSuelta(); S.res = null; medirNecesarios(); });
   el.querySelectorAll('[data-pzm]').forEach(i => i.onchange = () => { const v = Math.round(+i.value); if(v > 1) PZM[i.dataset.pzm] = v; else delete PZM[i.dataset.pzm]; savePzm(); S.res = null; explotar(); renderAll(); });
 }
 async function abrirPrograma(file){
@@ -1696,13 +1727,15 @@ function progLaserHtml(){
     if(!S.lib.length) return badge('in', 'Abre la carpeta central');
     const m = M[o.idx]; if(!m) return '—';
     const fu = S.fuera.find(x => x.o === o), n = S.items.filter(i => i.prio === o.idx).length;
-    const ms = m.f && MEAS[medKey(m.f)], calP = (norm(o.tubular).match(/CAL\.?\s*(\d+)/) || [])[1], tP = CFG.calibres[calP];
+    const sm = m.f && esMultipleYa(m.f) ? sueltaDe(o, m.f) : null;   // MULTIPLE: se arma con su pieza suelta
+    const ms = m.f && MEAS[medKey(sm && sm.f ? sm.f : m.f)], calP = (norm(o.tubular).match(/CAL\.?\s*(\d+)/) || [])[1], tP = CFG.calibres[calP];
     // informativo: muchos dibujos se hacen con una pared genérica; el calibre que manda es el del programa
     const difP = ms && ms.ok && ms.wall != null && tP && Math.abs(ms.wall - tP) > 0.15 ? `<div class="mut sm">Pared dibujada ${f2(ms.wall)} mm (el programa dice cal ${calP}, ${f2(tP)} mm)</div>` : '';
-    if(m.f) return `${difP}${n ? badge('ok', '✓ ' + n + (n === 1 ? ' corrida' : ' corridas')) : badge('er', 'No entra')}${m.f.p.multiple || (m.f.p.n || 1) > 1 ? ' ' + badge('in', 'Completo') : ''}
+    if(m.f) return `${difP}${n ? badge('ok', '✓ ' + n + (sm ? (n === 1 ? ' pieza suelta' : ' piezas sueltas') : n === 1 ? ' corrida' : ' corridas')) : badge('er', 'No entra')}${sm ? ' ' + badge('in', 'MULTIPLE: se arma con su pieza suelta') : (m.f.p.n || 1) > 1 ? ' ' + badge('in', 'Completo') : ''}
 ${m.iguales ? ' ' + `<span title="${esc(m.cand.map(x => x.path.split('/').slice(1, -2).join('/')).join('\n'))}">${badge('in', m.iguales + ' copias iguales')}</span>` : ''}
-      <div class="mut sm">${esc(m.f.path.split('/').slice(1).join('/'))}</div>${fu ? `<div class="sm" style="color:var(--er)">${esc(fu.motivo)}</div>` : ''}
-      ${m.f.p.multiple && !(m.f.p.n > 1) ? `<label class="sm" style="display:flex;gap:6px;align-items:center;margin-top:4px">Piezas por MULTIPLE <input type="number" min="1" step="1" data-pzm="${esc(m.f.p.clave)}" value="${PZM[m.f.p.clave] || ''}" style="width:64px"></label>` : ''}`;
+      <div class="mut sm">${esc(m.f.path.split('/').slice(1).join('/'))}</div>
+      ${sm ? `<label class="sm" style="display:flex;gap:6px;align-items:center;margin-top:4px;flex-wrap:wrap">Pieza suelta <select data-suelta="${esc(sm.k)}" style="max-width:320px"><option value="">Elige la pieza suelta…</option>${sm.cand.map(x => `<option value="${esc(x.id)}" ${sm.f && sm.f.id === x.id ? 'selected' : ''}>${esc(x.path.split('/').slice(4).join('/'))}</option>`).join('')}</select>${sm.f && !sm.elegida ? '<span class="mut">automática</span>' : ''}</label>` : ''}
+      ${fu ? `<div class="sm" style="color:var(--er)">${esc(fu.motivo)}</div>` : ''}`;
     if(m.estado === 'sin') return badge('er', 'No está en la carpeta');
     return `${badge('wa', m.estado === 'anterior' ? 'Solo versión anterior' : m.cand.length + ' con ese nombre')}<div><select data-dsel="${esc('D|' + m.clave + '|' + norm(o.ruta))}" style="max-width:340px;margin-top:4px"><option value="">Elige el IGS…</option>${m.cand.map(f => `<option value="${esc(f.id)}">${esc(f.path.split('/').slice(1).join('/'))}</option>`).join('')}</select></div>`;
   };
@@ -1740,8 +1773,8 @@ function renderLib(){
   <button id="libFiles">📁 IGS sueltos</button><button id="libDir" title="Selector clásico de carpeta (si el navegador no recuerda carpetas); no muestra el estado de los .zzx">📂 Carpeta (clásico)</button>
   <input type="file" id="inFiles" hidden multiple accept=".igs,.iges,.gz"><input type="file" id="inDir" hidden webkitdirectory multiple></div>
   ${S.libMsg ? `<p class="mut">⏳ ${esc(S.libMsg)}</p>` : ''}
-  <p class="mut sm" style="margin:8px 0 0">Carpeta central <b>TUBO LASER - DIBUJOS POR MODELO</b>: <code>LÍNEA \\ MODELO \\ IGS</code> con los dibujos y <code>ZZX</code> con las altas de TubesT; los múltiples van aparte en <code>IGS \\ MULTIPLES</code> y <code>ZZX \\ MULTIPLES</code>. Cada renglón del PROGRAMA LASER se liga por su "Nombre del dibujo" (si se repite, decide la carpeta del modelo); el tubular sale del programa y los MULTIPLE se respetan completos.</p></div>
-  ${S.lib.length && planta.length > S.lib.length/2 ? `<div class="kpis"><div class="kpi"><span>Archivos IGS</span><b>${f0(S.lib.length)}</b></div><div class="kpi"><span>MULTIPLE (se cortan completos)</span><b>${f0(planta.filter(f => f.p.multiple && !f.p.excluir).length)}</b></div>
+  <p class="mut sm" style="margin:8px 0 0">Carpeta central <b>TUBO LASER - DIBUJOS POR MODELO</b>: <code>LÍNEA \\ MODELO \\ IGS</code> con los dibujos y <code>ZZX</code> con las altas de TubesT; los múltiples van aparte en <code>IGS \\ MULTIPLES</code> y <code>ZZX \\ MULTIPLES</code>. Cada renglón del PROGRAMA LASER se liga por su "Nombre del dibujo" (si se repite, decide la carpeta del modelo); el tubular sale del programa. Un MULTIPLE del programa no se usa: se cambia por su pieza suelta y se combina con las piezas de las demás OPs.</p></div>
+  ${S.lib.length && planta.length > S.lib.length/2 ? `<div class="kpis"><div class="kpi"><span>Archivos IGS</span><b>${f0(S.lib.length)}</b></div><div class="kpi"><span>MULTIPLE (no se usan para armar)</span><b>${f0(planta.filter(f => f.p.multiple && !f.p.excluir).length)}</b></div>
   <div class="kpi"><span>${S.cen ? 'Modelos · .zzx guardados' : 'Versiones anteriores y muestras'}</span><b>${S.cen ? f0(cuentaCentral().mods) + ' · ' + f0(cuentaCentral().zzx) : f0(planta.filter(f => f.p.excluir).length)}</b></div><div class="kpi"><span>Ligados al programa</span><b style="color:var(--ok)">${ligados.size}</b></div></div>` : ''}
   ${S.lib.length && planta.length <= S.lib.length/2 ? `<div class="kpis"><div class="kpi"><span>Archivos</span><b>${S.lib.length}</b></div><div class="kpi"><span>Dibujos vigentes</span><b>${vig.length}</b></div><div class="kpi"><span>Listos</span><b style="color:var(--ok)">${nOk}</b></div>
   <div class="kpi"><span>Con problema</span><b style="color:var(--er)">${ev.filter(e => e.lv === 'er').length}</b></div><div class="kpi"><span>Empates de versión</span><b style="color:${conflictos.length ? 'var(--er)' : 'inherit'}">${conflictos.length}</b></div></div>` : ''}
