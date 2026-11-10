@@ -890,7 +890,7 @@ function parseNombre(name, path){
 /* nombre de dibujo normalizado: liga el "Nombre del dibujo" del programa con el archivo */
 const claveDibujo = s => norm(s).replace(/\.(IGS|IGES)(\.GZ)*$/, '').replace(/[-_()]/g, ' ').replace(/\b(\d+)\s*PZ[AS]*\b/g, '$1PZ').replace(/\s+/g, ' ').trim();
 /* convención de la carpeta central: LÍNEA/MODELO/IGS/nombre libre ("1015 ALMA 1PZ.IGS"); el tubular sale del programa.
-   MULTIPLE / MUL = múltiple de Ingeniería; MULT = múltiple armado por la plataforma */
+   MULTIPLE / MUL = múltiple de Ingeniería; MULT = múltiple armado por la plataforma. Los múltiples viven en IGS/MULTIPLES. */
 function parsePlanta(name, path, r){
   const base = name.replace(/\.(igs|iges)(\.gz)*$/i, '').trim(), carpetas = String(path || '').split('/').slice(0, -1);
   const pz = norm(base).match(/\b(\d+)\s*PZ[AS]*\b/), vieja = carpetas.filter(c => /ANTERIOR|VIEJ|OBSOLET/.test(norm(c))).pop();
@@ -1145,10 +1145,16 @@ const fechaArchivo = () => { const d = new Date(), p = v => String(v).padStart(2
 /* ======================= Carpeta central por modelo (OneDrive que ven GW1 y GW2) ======================= */
 /* TUBO LASER - DIBUJOS POR MODELO es la fuente de los IGS (ya no DIBUJOS DE CORTE(OK)):
    <carpeta central>/<LÍNEA>/<MODELO>/IGS/[subcarpeta/]<dibujo>.IGS   dibujo vigente (lo pone o reemplaza Ingeniería)
+                                    /IGS/MULTIPLES/[sub/]<dibujo>.IGS solo los múltiples (de Ingeniería y los que arma la plataforma)
                                     /ZZX/<dibujo>.zzx                 lo guarda el operador al dar de alta en TubesT, con el mismo nombre del IGS
+                                    /ZZX/MULTIPLES/<dibujo>.zzx       el .zzx de cada múltiple
                                     /modelo.json                      receta de los múltiples que armó la plataforma
-   La carga inicial se hizo con herramientas/cargar-carpeta-central.ps1. La plataforma nunca borra nada ni toca los .zzx. */
+   La carga inicial se hizo con herramientas/cargar-carpeta-central.ps1 y los múltiples se ordenaron con herramientas/ordenar-multiples.ps1.
+   La plataforma nunca borra nada ni toca los .zzx. */
 const MAN = 'modelo.json';
+const MULT_DIR = 'MULTIPLES';                                         // IGS/MULTIPLES y ZZX/MULTIPLES (Leonardo, 2026-11-10)
+const enMultiples = sub => /^MULTIPLES(\/|$)/i.test(String(sub || ''));
+const esNombreMultiple = s => /(^|[^A-Z])(MUL|MULT|MULTIPLES?|MULTIPL|MULTIPE|MULTUIPLE)(?![A-Z])/.test(norm(s));   // misma regla que ordenar-multiples.ps1
 const winRuta = s => String(s).replace(/\//g, '\\');
 /* lugar de un IGS en la carpeta central: <raíz>/LÍNEA/MODELO/IGS/[sub]/archivo; null si no está dentro de la carpeta IGS de un modelo */
 function lugarCentral(f){
@@ -1203,7 +1209,9 @@ async function leerCentral(){
   S.cen = {nombre: h.name, mods, porClave};
   // múltiples armados por la plataforma: se marcan para no tomarlos como piezas sueltas del modelo
   const deApp = new Set(); for(const [key, M] of Object.entries(mods)) M.man.multiples.forEach(x => deApp.add(key + '|' + claveDibujo(x.nombre)));
-  S.lib = lib.map(it => { const p = parseNombre(it.name, it.path), L = lugarCentral(it); if(L && deApp.has(L.key + '|' + p.clave)) Object.assign(p, {multiple: true, plataforma: true}); return Object.assign(it, {p}); });
+  S.lib = lib.map(it => { const p = parseNombre(it.name, it.path), L = lugarCentral(it);
+    if(L && enMultiples(L.sub)) p.multiple = true;   // todo lo de IGS/MULTIPLES es múltiple, aunque el nombre traiga un error de dedo (MULTIPE, MULTUIPLE…)
+    if(L && deApp.has(L.key + '|' + p.clave)) Object.assign(p, {multiple: true, plataforma: true}); return Object.assign(it, {p}); });
   S.raw = {}; S.match = null; S.libMsg = '';
   const t = cuentaCentral(); S.libSrc = `Carpeta central ${h.name} · ${f0(t.mods)} modelos · ${f0(lib.length)} IGS · ${f0(t.zzx)} .zzx`;
   return true;
@@ -1223,7 +1231,8 @@ function estadoCentral(dibujo, f){
   const igMod = (f && f.modified) || (ig && ig.mod) || 0;   // cuándo se guardó el IGS vigente
   const nombre = ig ? ig.name : f ? f.name : dibujo + '.IGS';
   const st = zz && igMod && zz.mod < igMod ? 'realta' : zz ? 'listo' : ig || f ? 'alta' : 'sin';
-  return res(st, {mod: key, L, ig, zz, nombre, igRel: ig ? ig.rel : '', zzxNombre: nombre.replace(/\.(igs|iges)$/i, '') + '.zzx'});
+  const mult = (ig && enMultiples(ig.sub)) || (f ? !!f.p.multiple : esNombreMultiple(dibujo)), zzxNombre = nombre.replace(/\.(igs|iges)$/i, '') + '.zzx';
+  return res(st, {mod: key, L, ig, zz, nombre, mult, igRel: ig ? ig.rel : '', zzxNombre, zzxRel: 'ZZX/' + (mult ? MULT_DIR + '/' : '') + zzxNombre});
 }
 const badgeCentral = e => e ? badge(e.lv, e.txt) + (e.zz ? `<div class="mut sm">${esc(winRuta(e.mod + '/' + e.zz.rel))}</div>` : '') : '—';
 /* ruta del .zzx de un dibujo en la carpeta central; undefined = carpeta sin abrir */
@@ -1233,23 +1242,23 @@ async function leerManif(dir){ try{ const j = JSON.parse(await (await (await dir
 /* lista para los operadores: dibujos del programa que no están listos en la carpeta central y dónde va cada .zzx */
 function exportarFaltantes(){
   if(!window.XLSX) return toast('No cargó la librería de Excel (requiere internet)', 'er');
-  const vistos = new Set(), filas = [], QUE = {alta: 'Dar de alta y guardar el .zzx', realta: 'El IGS cambió: dar de alta otra vez y reemplazar el .zzx', sin: 'Ingeniería: poner el IGS en la carpeta IGS del modelo'};
+  const vistos = new Set(), filas = [], QUE = {alta: 'Dar de alta y guardar el .zzx', realta: 'El IGS cambió: dar de alta otra vez y reemplazar el .zzx', sin: 'Ingeniería: poner el IGS en la carpeta IGS del modelo', sinM: 'Ingeniería: poner el IGS en IGS\\MULTIPLES del modelo'};
   S.ops.filter(o => !o.omitir).forEach(o => { const m = (S.match || {})[o.idx], f = m && m.f, e = estadoCentral(o.dibujo, f), k = f ? f.id : claveDibujo(o.dibujo);
     if(!e || e.st === 'listo' || vistos.has(k)) return; vistos.add(k);
     const conLugar = e.mod && e.ig;
-    filas.push({'Máquina': o.maquina, OP: o.op, Modelo: o.ruta, Tubular: o.tubular, 'Nombre del dibujo': o.dibujo, Estado: e.txt, 'Qué hacer': !f && m && m.estado === 'ambiguo' ? 'Elegir el IGS en la plataforma' : QUE[e.st],
-      'Carpeta del modelo': conLugar ? winRuta(S.cen.nombre + '/' + e.mod) : '', 'IGS': conLugar ? winRuta(e.igRel) : '', 'Guardar el .zzx en': conLugar ? winRuta(e.mod + '/ZZX/' + e.zzxNombre) : ''}); });
+    filas.push({'Máquina': o.maquina, OP: o.op, Modelo: o.ruta, Tubular: o.tubular, 'Nombre del dibujo': o.dibujo, Estado: e.txt, 'Qué hacer': !f && m && m.estado === 'ambiguo' ? 'Elegir el IGS en la plataforma' : QUE[e.st === 'sin' && e.mult ? 'sinM' : e.st],
+      'Carpeta del modelo': conLugar ? winRuta(S.cen.nombre + '/' + e.mod) : '', 'IGS': conLugar ? winRuta(e.igRel) : '', 'Guardar el .zzx en': conLugar ? winRuta(e.mod + '/' + e.zzxRel) : ''}); });
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filas.length ? filas : [{Nota: 'Todos los dibujos del programa ya tienen su .zzx en la carpeta central'}]), 'Falta dar de alta');
   XLSX.writeFile(wb, `${fechaArchivo()}-dibujos-por-dar-de-alta.xlsx`);
 }
-/* múltiple armado por la plataforma: su IGS va a LÍNEA/MODELO/IGS (y ZZX si falta) y su receta a modelo.json */
+/* múltiple armado por la plataforma: su IGS va a LÍNEA/MODELO/IGS/MULTIPLES (y ZZX/MULTIPLES si falta) y su receta a modelo.json */
 async function guardarMultiple(L, nombre, txt, entrada){
   if(!S.cenDir) throw new Error('Abre primero la carpeta central');
   if(!L) throw new Error('No encontré la carpeta de este modelo en la carpeta central');
   const dm = await (await S.cenDir.getDirectoryHandle(L.linea, {create: true})).getDirectoryHandle(L.modelo, {create: true});
-  await dm.getDirectoryHandle('ZZX', {create: true});
-  await escribirArchivo(await dm.getDirectoryHandle('IGS', {create: true}), nombre + '.igs', txt);
+  await (await dm.getDirectoryHandle('ZZX', {create: true})).getDirectoryHandle(MULT_DIR, {create: true});
+  await escribirArchivo(await (await dm.getDirectoryHandle('IGS', {create: true})).getDirectoryHandle(MULT_DIR, {create: true}), nombre + '.igs', txt);
   const man = await leerManif(dm); man.multiples = man.multiples.filter(x => x.nombre !== nombre).concat([entrada]);
   await escribirArchivo(dm, MAN, JSON.stringify(Object.assign({modelo: L.key, actualizado: Date.now()}, man), null, 2));
   await leerCentral(); await medirNecesarios();
@@ -1344,7 +1353,7 @@ function modeloHtml(M){
   const cen = !S.cen ? `<div class="card row"><span style="flex:1">Abre la <b>carpeta central</b> (TUBO LASER - DIBUJOS POR MODELO) para ver qué piezas ya tienen su .zzx y guardar ahí los múltiples.</span><button id="mdZzx2">📂 Carpeta central</button></div>` : (() => {
     const L = lugarModelo(M.key), ests = [...ec.values()], n = st => ests.filter(e => e.st === st).length;
     return `<div class="card"><div class="row"><span style="flex:1"><b>Carpeta central · ${esc(winRuta(S.cen.nombre + '/' + L.key))}</b><br><span class="sm">${fs.length} IGS en la carpeta IGS del modelo</span> ${badge('ok', n('listo') + ' con .zzx')} ${n('alta') ? badge('wa', n('alta') + ' falta alta') : ''} ${n('realta') ? badge('er', n('realta') + ' por dar de alta otra vez') : ''}</span></div>
-      <p class="mut sm" style="margin:8px 0 0">Al dar de alta en TubesT, el operador guarda el .zzx en la carpeta ZZX del mismo modelo, con el mismo nombre del IGS. Si Ingeniería reemplaza un IGS, la pieza sale "Dar de alta otra vez".</p></div>`; })();
+      <p class="mut sm" style="margin:8px 0 0">Al dar de alta en TubesT, el operador guarda el .zzx en la carpeta ZZX del mismo modelo (el de un múltiple, en ZZX\\MULTIPLES), con el mismo nombre del IGS. Si Ingeniería reemplaza un IGS, la pieza sale "Dar de alta otra vez".</p></div>`; })();
   const R = M.res, C = M.comp;
   return `<div class="card"><h3>${esc(M.key)} <span class="mut sm">${sueltas.length} piezas sueltas · ${mults.length} MULTIPLE de Ingeniería</span></h3>
     <p class="mut sm" style="margin:0 0 10px">El tubular de cada pieza sale del programa cargado si trae ese dibujo; si no, de la sección y la pared medidas en el IGS. Tramo útil: ${f0(CFG.tramo - CFG.chuck - CFG.refr)} mm (tramo ${f0(CFG.tramo)} − chuck ${f0(CFG.chuck)} − refrentado ${CFG.refr}; si el SKU trae otro largo, se usa ese). <b>Confirma el largo del tramo y el chuck con los operadores</b> en Configuración.</p>
@@ -1362,7 +1371,7 @@ function modeloHtml(M){
       <p class="mut sm" style="margin:6px 0 0">Menos múltiples distintos = menos altas en TubesT. Elige el lote que dé buen aprovechamiento con pocos múltiples.</p></div>` : ''}
     ${R ? R.grupos.map((g, gi) => `<details class="card" open><summary><b>${esc(g.label)}</b> ${g.sku ? badge('in', 'SKU ' + g.sku) : badge('wa', 'Sin SKU en el catálogo')} ${badge('in', g.bars.length + ' tramos por ' + R.lote + (R.lote === 1 ? ' mueble' : ' muebles'))} ${badge(g.tot.aprov > .9 ? 'ok' : g.tot.aprov > .8 ? 'wa' : 'er', 'Aprovechamiento ' + pct(g.tot.aprov))}</summary>
       ${g.pats.map((pt, pi) => `<div class="bar"><div class="barhd"><b>${esc(pt.nombre)}</b> ${badge('in', '×' + pt.n + ' por lote')} ${zzxDe(pt.nombre) ? badge('ok', '✓ .zzx') : ''}<span class="mut sm">${esc(resumenTxt(pt.bar.piezas))}</span><span style="flex:1"></span>
-        <button data-migs="${gi}|${pi}" title="IGS del múltiple para validarlo y darlo de alta">⬇ IGS</button>${S.cenDir ? `<button data-mlib="${gi}|${pi}" title="Guarda el IGS del múltiple en la carpeta IGS del modelo (carpeta central) y su receta en modelo.json">💾 A la carpeta central</button>` : ''}</div>${svgBar(pt.bar, colorMapModelo())}</div>`).join('')}
+        <button data-migs="${gi}|${pi}" title="IGS del múltiple para validarlo y darlo de alta">⬇ IGS</button>${S.cenDir ? `<button data-mlib="${gi}|${pi}" title="Guarda el IGS del múltiple en IGS\\MULTIPLES del modelo (carpeta central) y su receta en modelo.json">💾 A la carpeta central</button>` : ''}</div>${svgBar(pt.bar, colorMapModelo())}</div>`).join('')}
       ${g.largas.length ? `<p class="sm" style="color:var(--er)">No caben en el tramo útil: ${[...new Set(g.largas.map(p => p.pieza))].map(esc).join(', ')}</p>` : ''}</details>`).join('') : ''}
     ${R && R.sinMedida.length ? `<p class="sm" style="color:var(--wa)">No entran (sin medida o la sección del IGS no es la del tubular): ${R.sinMedida.map(f => esc(f.p.pieza)).join(', ')}</p>` : ''}
     ${tot}`;
@@ -1384,7 +1393,7 @@ function bindModelo(){
     try{ toast('Armando IGS de ' + pt.nombre + '…', 'in'); dl(pt.nombre + '.igs', await igsTramo(pt.bar, g.label), 'application/iges'); }catch(e){ toast(e.message, 'er'); } });
   el.querySelectorAll('[data-mlib]').forEach(b => b.onclick = async () => { const {g, pt} = patDe(b.dataset.mlib);
     try{ toast('Guardando ' + pt.nombre + '…', 'in'); const L = lugarModelo(M.key); await guardarMultiple(L, pt.nombre, await igsTramo(pt.bar, g.label), entradaManifiesto(M, g, pt));
-      toast(`${pt.nombre} guardado en ${winRuta(S.cen.nombre + '/' + L.key)}\\IGS: falta validarlo y darlo de alta`); renderModelo(); }catch(e){ toast('No se pudo guardar: ' + e.message, 'er'); } });
+      toast(`${pt.nombre} guardado en ${winRuta(S.cen.nombre + '/' + L.key)}\\IGS\\MULTIPLES: falta validarlo y darlo de alta (su .zzx va en ZZX\\MULTIPLES)`); renderModelo(); }catch(e){ toast('No se pudo guardar: ' + e.message, 'er'); } });
 }
 function entradaManifiesto(M, g, pt){
   const b = pt.bar, fuentes = [...new Set(b.piezas.map(p => p.fileId))].map(id => { const f = S.lib.find(x => x.id === id); return {archivo: f.path, modificado: f.modified || null}; });
@@ -1728,7 +1737,7 @@ function renderLib(){
   <button id="libFiles">📁 IGS sueltos</button><button id="libDir" title="Selector clásico de carpeta (si el navegador no recuerda carpetas); no muestra el estado de los .zzx">📂 Carpeta (clásico)</button>
   <input type="file" id="inFiles" hidden multiple accept=".igs,.iges,.gz"><input type="file" id="inDir" hidden webkitdirectory multiple></div>
   ${S.libMsg ? `<p class="mut">⏳ ${esc(S.libMsg)}</p>` : ''}
-  <p class="mut sm" style="margin:8px 0 0">Carpeta central <b>TUBO LASER - DIBUJOS POR MODELO</b>: <code>LÍNEA \\ MODELO \\ IGS</code> con los dibujos y <code>ZZX</code> con las altas de TubesT. Cada renglón del PROGRAMA LASER se liga por su "Nombre del dibujo" (si se repite, decide la carpeta del modelo); el tubular sale del programa y los MULTIPLE se respetan completos.</p></div>
+  <p class="mut sm" style="margin:8px 0 0">Carpeta central <b>TUBO LASER - DIBUJOS POR MODELO</b>: <code>LÍNEA \\ MODELO \\ IGS</code> con los dibujos y <code>ZZX</code> con las altas de TubesT; los múltiples van aparte en <code>IGS \\ MULTIPLES</code> y <code>ZZX \\ MULTIPLES</code>. Cada renglón del PROGRAMA LASER se liga por su "Nombre del dibujo" (si se repite, decide la carpeta del modelo); el tubular sale del programa y los MULTIPLE se respetan completos.</p></div>
   ${S.lib.length && planta.length > S.lib.length/2 ? `<div class="kpis"><div class="kpi"><span>Archivos IGS</span><b>${f0(S.lib.length)}</b></div><div class="kpi"><span>MULTIPLE (se cortan completos)</span><b>${f0(planta.filter(f => f.p.multiple && !f.p.excluir).length)}</b></div>
   <div class="kpi"><span>${S.cen ? 'Modelos · .zzx guardados' : 'Versiones anteriores y muestras'}</span><b>${S.cen ? f0(cuentaCentral().mods) + ' · ' + f0(cuentaCentral().zzx) : f0(planta.filter(f => f.p.excluir).length)}</b></div><div class="kpi"><span>Ligados al programa</span><b style="color:var(--ok)">${ligados.size}</b></div></div>` : ''}
   ${S.lib.length && planta.length <= S.lib.length/2 ? `<div class="kpis"><div class="kpi"><span>Archivos</span><b>${S.lib.length}</b></div><div class="kpi"><span>Dibujos vigentes</span><b>${vig.length}</b></div><div class="kpi"><span>Listos</span><b style="color:var(--ok)">${nOk}</b></div>
