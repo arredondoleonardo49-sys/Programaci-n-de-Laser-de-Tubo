@@ -1269,6 +1269,9 @@ async function guardarMultiple(L, nombre, txt, entrada){
 const modeloDe = f => { const L = lugarCentral(f); return L ? L.key : ''; };
 const nombreModelo = k => k.split('/').pop();
 const archivosModelo = k => S.lib.filter(f => f.p.planta && !f.p.excluir && !f.p.plataforma && modeloDe(f) === k);
+/* la plataforma arma sus múltiples SOLO con piezas sueltas: nada de IGS/MULTIPLES ni con nombre de múltiple (Leonardo, 2026-11-10) */
+const esMultipleYa = f => !!f.p.multiple || enMultiples((lugarCentral(f) || {}).sub);
+const piezasModelo = k => archivosModelo(k).filter(f => !esMultipleYa(f));
 /* tubular de una pieza sin programa: sección medida → fracción de pulgada; pared → calibre */
 function tipoGeo(m){
   const a = Math.min(m.secA, m.secB), b = Math.max(m.secA, m.secB);
@@ -1291,7 +1294,7 @@ function tipoPieza(f, m){
 const xmDefault = f => { const o = S.ops.find(o => o.dibujo && claveDibujo(o.dibujo) === f.p.clave && o.xMueble > 0); return o ? o.xMueble : 1; };
 async function elegirModelo(k){
   S.mod = {key: k, xm: {}, off: {}, lote: (S.mod && S.mod.lote) || 1, res: null, comp: null}; renderModelo();
-  const fs = archivosModelo(k);
+  const fs = piezasModelo(k);   // los múltiples que ya existen no se miden: no se usan para armar
   for(const f of fs) if(f.handle && !f.modified){ try{ const fl = await f.handle.getFile(); f.file = fl; f.modified = fl.lastModified; f.size = fl.size; }catch(e){} }
   const need = fs.filter(f => !MEAS[medKey(f)]);
   if(need.length){ toast(`Midiendo ${need.length} IGS de ${nombreModelo(k)}…`, 'in'); await medir(need); }
@@ -1300,7 +1303,7 @@ async function elegirModelo(k){
 /* acomoda las piezas sueltas de un lote de muebles; cada composición de tramo que se repite es un múltiple */
 function armarModelo(lote){
   const M = S.mod, mod = nombreModelo(M.key), items = [], sinMedida = []; let uid = 0;
-  archivosModelo(M.key).filter(f => !f.p.multiple && !M.off[f.id]).forEach(f => {
+  piezasModelo(M.key).filter(f => !M.off[f.id]).forEach(f => {
     const m = MEAS[medKey(f)]; if(!m || !m.ok) return sinMedida.push(f);
     const tg = tipoPieza(f, m); if(tg.bad) return sinMedida.push(f);
     const n = Math.max(0, Math.round((M.xm[f.id] != null ? M.xm[f.id] : xmDefault(f)) * lote));
@@ -1343,7 +1346,7 @@ function renderModelo(){
   if(M) bindModelo();
 }
 function modeloHtml(M){
-  const fs = archivosModelo(M.key), sueltas = fs.filter(f => !f.p.multiple), mults = fs.filter(f => f.p.multiple), mod = nombreModelo(M.key), man = manifModelo(M.key);
+  const fs = archivosModelo(M.key), sueltas = fs.filter(f => !esMultipleYa(f)), mults = fs.filter(esMultipleYa), mod = nombreModelo(M.key), man = manifModelo(M.key);
   const fila = f => { const m = MEAS[medKey(f)], tg = m && m.ok ? tipoPieza(f, m) : null, s = tg ? skuDe(tg.key) : null, Tt = tg ? tramoDe(tg.key) : CFG.tramo;
     const est = !m ? badge('in', 'Midiendo…') : m.error ? badge('er', m.error) : tg.bad ? badge('er', tg.bad) : m.len + CFG.refr + CFG.chuck > Tt ? badge('er', 'No cabe en el tramo útil') : !tg.cal ? badge('wa', 'Calibre no reconocido por la pared') : tg.aviso ? badge('wa', tg.aviso) : badge('ok', '✓');
     return {m, tg, s, est}; };
@@ -1355,13 +1358,13 @@ function modeloHtml(M){
     return `<div class="card"><div class="row"><span style="flex:1"><b>Carpeta central · ${esc(winRuta(S.cen.nombre + '/' + L.key))}</b><br><span class="sm">${fs.length} IGS en la carpeta IGS del modelo</span> ${badge('ok', n('listo') + ' con .zzx')} ${n('alta') ? badge('wa', n('alta') + ' falta alta') : ''} ${n('realta') ? badge('er', n('realta') + ' por dar de alta otra vez') : ''}</span></div>
       <p class="mut sm" style="margin:8px 0 0">Al dar de alta en TubesT, el operador guarda el .zzx en la carpeta ZZX del mismo modelo (el de un múltiple, en ZZX\\MULTIPLES), con el mismo nombre del IGS. Si Ingeniería reemplaza un IGS, la pieza sale "Dar de alta otra vez".</p></div>`; })();
   const R = M.res, C = M.comp;
-  return `<div class="card"><h3>${esc(M.key)} <span class="mut sm">${sueltas.length} piezas sueltas · ${mults.length} MULTIPLE de Ingeniería</span></h3>
+  return `<div class="card"><h3>${esc(M.key)} <span class="mut sm">${sueltas.length} piezas sueltas · ${mults.length} múltiples ya hechos (no se usan para armar)</span></h3>
     <p class="mut sm" style="margin:0 0 10px">El tubular de cada pieza sale del programa cargado si trae ese dibujo; si no, de la sección y la pared medidas en el IGS. Tramo útil: ${f0(CFG.tramo - CFG.chuck - CFG.refr)} mm (tramo ${f0(CFG.tramo)} − chuck ${f0(CFG.chuck)} − refrentado ${CFG.refr}; si el SKU trae otro largo, se usa ese). <b>Confirma el largo del tramo y el chuck con los operadores</b> en Configuración.</p>
     <div class="tw"><table><tr><th></th><th>Pieza</th><th>Tubular (medido)</th><th class="n">Largo</th><th class="n">Pared</th><th class="n">Por mueble</th><th>Estado</th>${ec ? '<th>Carpeta central</th>' : ''}</tr>
     ${sueltas.map(f => { const r = fila(f); return `<tr><td><input type="checkbox" data-minc="${esc(f.id)}" ${M.off[f.id] ? '' : 'checked'} aria-label="Incluir"></td><td>${esc(f.p.pieza)}<div class="mut sm">${esc(f.name)}</div></td>
       <td class="sm">${r.tg ? esc(r.tg.label) + `<div class="mut">${r.s ? 'SKU ' + esc(r.s.sku) + ' · ' : ''}según ${r.tg.fuente}</div>` : '—'}</td><td class="n">${r.m && r.m.ok ? f0(r.m.len) : '—'}</td><td class="n">${r.m && r.m.ok && r.m.wall != null ? f2(r.m.wall) : '—'}</td>
       <td class="n"><input type="number" min="0" step="1" data-mxm="${esc(f.id)}" value="${M.xm[f.id] != null ? M.xm[f.id] : xmDefault(f)}" style="width:70px"></td><td>${r.est}</td>${ec ? `<td>${badge(ec.get(f.id).lv, ec.get(f.id).txt)}</td>` : ''}</tr>`; }).join('') || `<tr><td colspan="${ec ? 8 : 7}" class="mut">Este modelo no tiene piezas sueltas.</td></tr>`}</table></div>
-    ${mults.length ? `<p class="sm" style="margin:10px 0 4px"><b>MULTIPLE de Ingeniería actuales</b> (referencia):</p><div class="row">${mults.map(f => { const m = MEAS[medKey(f)], e = ec && ec.get(f.id); return badge('in', f.p.pieza + (m && m.ok ? ' · ' + f0(m.len) + ' mm' : '')) + (e ? ' ' + badge(e.lv, e.txt) : ''); }).join(' ')}</div>` : ''}
+    ${mults.length ? `<p class="sm" style="margin:10px 0 4px"><b>Múltiples que ya están en IGS\\MULTIPLES</b> (solo referencia: la plataforma arma con las piezas sueltas de arriba, no con estos):</p><div class="row">${mults.map(f => { const m = MEAS[medKey(f)], e = ec && ec.get(f.id); return badge('in', f.p.pieza + (m && m.ok ? ' · ' + f0(m.len) + ' mm' : '')) + (e ? ' ' + badge(e.lv, e.txt) : ''); }).join(' ')}</div>` : ''}
     <div class="row" style="margin-top:12px"><label class="cfl" style="flex-direction:row;align-items:center;gap:6px">Muebles por lote <input type="number" id="mdLote" min="1" max="50" step="1" value="${M.lote}" style="width:70px"></label>
       <button class="pri" id="mdArmar">⚙ Armar múltiples</button><button id="mdComp" title="Arma con 1 a 6 muebles y compara tramos y aprovechamiento">Comparar 1 a 6 muebles</button>
       ${R ? '<button id="mdXls">📊 Manifiesto (Excel)</button>' : ''}</div></div>
