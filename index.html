@@ -895,7 +895,7 @@ function parsePlanta(name, path, r){
   const base = name.replace(/\.(igs|iges)(\.gz)*$/i, '').trim(), carpetas = String(path || '').split('/').slice(0, -1);
   const pz = norm(base).match(/\b(\d+)\s*PZ[AS]*\b/), vieja = carpetas.filter(c => /ANTERIOR|VIEJ|OBSOLET/.test(norm(c))).pop();
   Object.assign(r, {ok: true, planta: true, pieza: base, clave: claveDibujo(base), n: pz ? +pz[1] : null, multiple: esNombreMultiple(base),
-    ruta: carpetas.filter(c => !/^IGE?S$/i.test(c.trim())).pop() || ''});
+    ruta: carpetas.filter(c => !/^(IGE?S|MULTIPLES)$/i.test(c.trim())).pop() || ''});   // la carpeta MULTIPLES no es el modelo
   if(vieja) r.excluir = 'Versión anterior (' + vieja + ')';
   else if(/MUESTRA/.test(norm(path))) r.excluir = 'Muestra';
   return r;
@@ -1290,12 +1290,14 @@ function sueltaDe(o, f){
   const cand = L ? piezasModelo(L.key).filter(x => !(x.p.n > 1)).sort((a, b) => a.path.localeCompare(b.path)) : [];
   const el = SUELTA[k] && cand.find(x => x.id === SUELTA[k]);
   if(el) return {f: el, cand, k, elegida: true};
-  if(!cand.length) return {f: null, cand, k, motivo: 'MULTIPLE sin piezas sueltas en la carpeta del modelo: Ingeniería debe poner la pieza suelta en IGS'};
-  const P = tokSuelta(o.parte || ''), N = tokSuelta(norm(f.p.pieza || f.name).split(/\bCON\b/)[0]), num = t => /^\d+$/.test(t);
-  const sc = cand.map(x => { let s = 0, pal = 0;
-    tokSuelta(x.p.pieza || x.name).forEach(t => { if(P.has(t)){ s += 3; if(!num(t)) pal++; } if(N.has(t)){ s += 1; if(!num(t)) pal++; } if(!P.has(t) && !N.has(t)) s--; });
-    return {x, s, pal, unaPz: /\b1\s*PZ/.test(norm(x.name))}; }).filter(c => c.pal > 0 && c.s > 0).sort((a, b) => b.s - a.s || b.unaPz - a.unaPz);
-  if(!sc.length) return {f: null, cand, k, motivo: 'MULTIPLE: no encontré su pieza suelta en la carpeta del modelo, elígela en Programa'};
+  if(!cand.length) return {f: null, cand, k, sinSuelta: true, motivo: 'MULTIPLE sin pieza suelta en la carpeta del modelo'};
+  const P = tokSuelta(o.parte || ''), N = tokSuelta(norm(f.p.pieza || f.name).split(/\bCON\b/)[0]), num = t => /^\d+$/.test(t), pal = t => /^[A-Z]+$/.test(t);
+  // la pieza suelta debe traer todas las palabras de la Parte o todas las del nombre del múltiple ("POSTE CENTRAL" no es "POSTE DERECHO")
+  const cubre = (C, T) => { const w = [...T].filter(pal); return w.length > 0 && w.every(t => C.has(t)); };
+  const sc = cand.map(x => { const C = tokSuelta(x.p.pieza || x.name); let s = 0;
+    C.forEach(t => { if(P.has(t)) s += 3; if(N.has(t)) s += 1; if(!P.has(t) && !N.has(t)) s--; });
+    return {x, s, ok: cubre(C, P) || cubre(C, N), unaPz: /\b1\s*PZ/.test(norm(x.name))}; }).filter(c => c.ok && c.s > 0).sort((a, b) => b.s - a.s || b.unaPz - a.unaPz);
+  if(!sc.length) return {f: null, cand, k, sinSuelta: true, motivo: 'MULTIPLE sin pieza suelta en la carpeta del modelo'};
   const top = sc.filter(c => c.s === sc[0].s && c.unaPz === sc[0].unaPz);
   if(top.length > 1 && !top.every(c => c.x.size && c.x.size === top[0].x.size)) return {f: null, cand, k, motivo: `MULTIPLE: hay ${top.length} piezas sueltas posibles, elige cuál en Programa`};
   return {f: sc[0].x, cand, k};
@@ -1471,6 +1473,7 @@ function explotarLaser(){
     const fuera = motivo => S.fuera.push({o, f: mt.f || {p: {ruta: o.ruta, pieza: o.dibujo}, id: ''}, n: corridas, motivo});
     if(o.omitir) return fuera(o.omitir);
     if(!mt.f) return fuera(mt.estado === 'ambiguo' ? `Hay ${mt.cand.length} IGS con ese nombre: elige cuál en Programa` : mt.estado === 'anterior' ? 'Solo hay versión anterior del dibujo: elige en Programa si se usa' : 'No está en la carpeta central');
+    // un MULTIPLE nunca se corta completo: sin pieza suelta no entra (el nombre "7PZAS" puede ser la cantidad y no lo que trae el IGS)
     const sm = esMultipleYa(mt.f) ? sueltaDe(o, mt.f) : null;
     if(sm && !sm.f) return fuera(sm.motivo);
     const f = sm ? sm.f : mt.f, m = MEAS[medKey(f)];
@@ -1731,11 +1734,10 @@ function progLaserHtml(){
     const ms = m.f && MEAS[medKey(sm && sm.f ? sm.f : m.f)], calP = (norm(o.tubular).match(/CAL\.?\s*(\d+)/) || [])[1], tP = CFG.calibres[calP];
     // informativo: muchos dibujos se hacen con una pared genérica; el calibre que manda es el del programa
     const difP = ms && ms.ok && ms.wall != null && tP && Math.abs(ms.wall - tP) > 0.15 ? `<div class="mut sm">Pared dibujada ${f2(ms.wall)} mm (el programa dice cal ${calP}, ${f2(tP)} mm)</div>` : '';
-    if(m.f) return `${difP}${n ? badge('ok', '✓ ' + n + (sm ? (n === 1 ? ' pieza suelta' : ' piezas sueltas') : n === 1 ? ' corrida' : ' corridas')) : badge('er', 'No entra')}${sm ? ' ' + badge('in', 'MULTIPLE: se arma con su pieza suelta') : (m.f.p.n || 1) > 1 ? ' ' + badge('in', 'Completo') : ''}
+    if(m.f) return `${difP}${n ? badge('ok', '✓ ' + n + (sm && sm.f ? (n === 1 ? ' pieza suelta' : ' piezas sueltas') : n === 1 ? ' corrida' : ' corridas')) : badge('er', 'No entra')}${sm ? ' ' + badge(sm.f ? 'in' : 'er', sm.f ? 'MULTIPLE: se arma con su pieza suelta' : 'MULTIPLE sin pieza suelta') : (m.f.p.n || 1) > 1 ? ' ' + badge('in', 'Completo') : ''}
 ${m.iguales ? ' ' + `<span title="${esc(m.cand.map(x => x.path.split('/').slice(1, -2).join('/')).join('\n'))}">${badge('in', m.iguales + ' copias iguales')}</span>` : ''}
       <div class="mut sm">${esc(m.f.path.split('/').slice(1).join('/'))}</div>
-      ${sm ? `<label class="sm" style="display:flex;gap:6px;align-items:center;margin-top:4px;flex-wrap:wrap">Pieza suelta <select data-suelta="${esc(sm.k)}" style="max-width:320px"><option value="">Elige la pieza suelta…</option>${sm.cand.map(x => `<option value="${esc(x.id)}" ${sm.f && sm.f.id === x.id ? 'selected' : ''}>${esc(x.path.split('/').slice(4).join('/'))}</option>`).join('')}</select>${sm.f && !sm.elegida ? '<span class="mut">automática</span>' : ''}</label>` : ''}
-      ${fu ? `<div class="sm" style="color:var(--er)">${esc(fu.motivo)}</div>` : ''}`;
+      ${sm ? `<label class="sm" style="display:flex;gap:6px;align-items:center;margin-top:4px;flex-wrap:wrap">Pieza suelta <select data-suelta="${esc(sm.k)}" style="max-width:320px"><option value="">Elige la pieza suelta…</option>${sm.cand.map(x => `<option value="${esc(x.id)}" ${sm.f && sm.f.id === x.id ? 'selected' : ''}>${esc(x.path.split('/').slice(4).join('/'))}</option>`).join('')}</select>${sm.f && !sm.elegida ? '<span class="mut">automática</span>' : ''}</label>` : ''}      ${fu ? `<div class="sm" style="color:var(--er)">${esc(fu.motivo)}</div>` : ''}`;
     if(m.estado === 'sin') return badge('er', 'No está en la carpeta');
     return `${badge('wa', m.estado === 'anterior' ? 'Solo versión anterior' : m.cand.length + ' con ese nombre')}<div><select data-dsel="${esc('D|' + m.clave + '|' + norm(o.ruta))}" style="max-width:340px;margin-top:4px"><option value="">Elige el IGS…</option>${m.cand.map(f => `<option value="${esc(f.id)}">${esc(f.path.split('/').slice(1).join('/'))}</option>`).join('')}</select></div>`;
   };
