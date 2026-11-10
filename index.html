@@ -890,11 +890,13 @@ function parseNombre(name, path){
 /* nombre de dibujo normalizado: liga el "Nombre del dibujo" del programa con el archivo */
 const claveDibujo = s => norm(s).replace(/\.(IGS|IGES)(\.GZ)*$/, '').replace(/[-_()]/g, ' ').replace(/\b(\d+)\s*PZ[AS]*\b/g, '$1PZ').replace(/\s+/g, ' ').trim();
 /* convención de la carpeta central: LÍNEA/MODELO/IGS/nombre libre ("1015 ALMA 1PZ.IGS"); el tubular sale del programa.
-   Múltiple = más de 1 pieza igual en el IGS (MULTIPLE / MUL de Ingeniería, MULT armado por la plataforma, o 2PZ, 3 PZAS…). Viven en IGS/MULTIPLES. */
+   Múltiple = más de 1 pieza igual en el IGS (MULTIPLE / MUL de Ingeniería, MULT armado por la plataforma, "(2PZ)", "3PZ CON…"). Viven en IGS/MULTIPLES. */
 function parsePlanta(name, path, r){
   const base = name.replace(/\.(igs|iges)(\.gz)*$/i, '').trim(), carpetas = String(path || '').split('/').slice(0, -1);
   const pz = norm(base).match(/\b(\d+)\s*PZ[AS]*\b/), vieja = carpetas.filter(c => /ANTERIOR|VIEJ|OBSOLET/.test(norm(c))).pop();
-  Object.assign(r, {ok: true, planta: true, pieza: base, clave: claveDibujo(base), n: pz ? +pz[1] : null, multiple: esNombreMultiple(base),
+  // "7PZAS" sin paréntesis es la cantidad a cortar: la pieza es 1 (n = null); solo un múltiple trae varias piezas por dibujo
+  const multiple = esNombreMultiple(base);
+  Object.assign(r, {ok: true, planta: true, pieza: base, clave: claveDibujo(base), n: pz && (multiple || +pz[1] === 1) ? +pz[1] : null, multiple,
     ruta: carpetas.filter(c => !/^(IGE?S|MULTIPLES)$/i.test(c.trim())).pop() || ''});   // la carpeta MULTIPLES no es el modelo
   if(vieja) r.excluir = 'Versión anterior (' + vieja + ')';
   else if(/MUESTRA/.test(norm(path))) r.excluir = 'Muestra';
@@ -1157,9 +1159,10 @@ const fechaArchivo = () => { const d = new Date(), p = v => String(v).padStart(2
 const MAN = 'modelo.json';
 const MULT_DIR = 'MULTIPLES';                                         // IGS/MULTIPLES y ZZX/MULTIPLES (Leonardo, 2026-11-10)
 const enMultiples = sub => /^MULTIPLES(\/|$)/i.test(String(sub || ''));
-/* múltiple = el IGS trae más de 1 pieza igual: dice MULTIPLE / MULT / MUL (o un error de dedo) o 2 o más piezas (2PZ, (3PZ), 4 PZAS, 2 PZS…).
-   "1 PZ" es pieza suelta. Misma regla que herramientas/ordenar-multiples.ps1 (Leonardo, 2026-11-10) */
-function esNombreMultiple(s){ return /(^|[^A-Z])(MUL|MULT|MULTIPLES?|MULTIPL|MULTIPE|MULTUIPLE)(?![A-Z])|(^|[^0-9.])([2-9]|[1-9]\d+)\s*PZ(AS?|S)?(?![A-Z])/.test(norm(s)); }
+/* múltiple = el IGS trae más de 1 pieza igual: dice MULTIPLE / MULT / MUL (o un error de dedo), o "(2PZ)" entre paréntesis, o "3PZ CON…" / "2PZ Y…".
+   "N PZAS" sin paréntesis es la cantidad a cortar de una pieza suelta ("F6747-POSTE CENTRAL 7PZAS" = 1 poste). Misma regla que
+   herramientas/ordenar-multiples.ps1 y la rutina ordenar-tubo-laser (Leonardo, 2026-11-10) */
+function esNombreMultiple(s){ return /(^|[^A-Z])(MUL|MULT|MULTIPLES?|MULTIPL|MULTIPE|MULTUIPLE)(?![A-Z])|\(\s*([2-9]|[1-9]\d+)\s*PZ(AS?|S)?\s*\)|(^|[^0-9.])([2-9]|[1-9]\d+)\s*PZ(AS?|S)?\s+(CON|Y)(?![A-Z])/.test(norm(s)); }
 const winRuta = s => String(s).replace(/\//g, '\\');
 /* lugar de un IGS en la carpeta central: <raíz>/LÍNEA/MODELO/IGS/[sub]/archivo; null si no está dentro de la carpeta IGS de un modelo */
 function lugarCentral(f){
@@ -1462,7 +1465,7 @@ function explotar(){
 }
 /* programa por máquina: cada pieza es una unidad y las piezas sueltas del mismo tubular y máquina, de todas las OPs, se combinan en los tramos.
    Un MULTIPLE del programa no se usa: se cambia por su pieza suelta (sueltaDe) y sus Cant. piezas se combinan con las demás.
-   Un dibujo con 2 o más piezas ("(2PZ)", "4 PZAS") también es múltiple y se cambia igual por su pieza suelta. */
+   Un dibujo con 2 o más piezas ("(2PZ)", "3PZ CON…") también es múltiple y se cambia igual por su pieza suelta. */
 function explotarLaser(){
   if(!S.match) ligarDibujos();
   let uid = 0;
