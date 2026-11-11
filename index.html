@@ -119,7 +119,21 @@ td.n,th.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 .bar{margin:6px 0 14px}.bar svg{width:100%;height:auto;display:block}
 .barhd{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px}.barhd b{font-family:var(--mono);font-weight:500}
 .prog{height:6px;background:var(--border);border-radius:3px;overflow:hidden;min-width:80px;flex:1}.prog i{display:block;height:100%;background:var(--green);border-radius:3px}
-.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;margin-bottom:8px}.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12.5px;margin-bottom:8px}.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+/* cada número con lo que es y su unidad (2026-11-10): menos cifras sueltas, más fácil de leer */
+.u{font-size:.8em;color:var(--text2);margin-left:3px;font-family:'IBM Plex Sans',system-ui,sans-serif;font-weight:400;letter-spacing:0}
+.dts{display:flex;flex-wrap:wrap;gap:4px 18px;align-items:baseline;margin:6px 0 0}
+.dt{display:inline-flex;align-items:baseline;gap:6px;white-space:nowrap}
+.dt small{font-size:10.5px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;font-weight:500}
+.dt b{font-family:var(--mono);font-weight:500;color:var(--text);font-size:13px;font-variant-numeric:tabular-nums}
+.dt b.ok{color:var(--green)}.dt b.wa{color:var(--amber)}.dt b.er{color:var(--red)}
+.sub{display:block;font-size:11.5px;color:var(--text2);margin-top:3px;line-height:1.35;word-break:break-word;font-weight:400}
+.barhd .op{font-family:var(--mono);font-size:11.5px;color:var(--text2)}
+details.card>summary>.dts{flex-basis:100%;margin:2px 0 0 18px}
+.bar{margin:10px 0 22px}
+.barhd .n2{font-family:var(--mono);font-size:11px;color:var(--text2)}
+:is(.main,.modal) td .mut.sm,:is(.main,.modal) td>.mut{color:var(--text2)}
+.vlight{background:#f4f4f1;border-radius:var(--radius);border:1px solid var(--border)}
 .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:60;padding:10px 16px;border-radius:var(--radius-lg);box-shadow:0 8px 28px rgba(0,0,0,.45);display:none;font-size:13px;border:1px solid var(--border);background:var(--bg3);color:var(--text);max-width:min(640px,calc(100vw - 32px))}
 .toast.ok{border-color:rgba(62,207,142,.5);color:var(--green)}.toast.er{border-color:rgba(240,96,96,.55);color:var(--red)}.toast.wa{border-color:rgba(245,166,35,.55);color:var(--amber)}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:40;display:flex;align-items:flex-start;justify-content:center;padding:20px 12px;overflow:auto}
@@ -127,6 +141,7 @@ td.n,th.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 .vgrid{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px}
 @media (max-width:900px){.vgrid{grid-template-columns:1fr}}
 #vSvg{width:100%;height:440px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);cursor:grab;touch-action:none;display:block}
+#vSvg.vlight{background:#f4f4f1;border-color:#d3d1c7}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:13px}.kv>span:nth-child(odd){color:var(--text2)}
 .tabs button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
 
@@ -459,9 +474,11 @@ const IGES = (() => {
       }
     };
     rootsOf(m).filter(e => e.status.slice(0, 2) !== '01').forEach(e => visit(e.de, IDM()));
-    // quita duplicados (la misma arista vista desde dos caras)
+    // quita duplicados (la misma arista vista desde dos caras). Va también el centro de la arista: las dos mitades de un
+    // barreno empiezan y terminan en los mismos puntos y, sin él, una mitad se tomaba por repetida (barreno a la mitad)
     const k = q => q.map(v => v.toFixed(2)).join(',');
-    const uniq = new Map(); polys.forEach(pl => { const a = k(pl.p[0]) + '>' + k(pl.p[pl.p.length - 1]) + '#' + pl.p.length, b = k(pl.p[pl.p.length - 1]) + '>' + k(pl.p[0]) + '#' + pl.p.length; if(!uniq.has(a) && !uniq.has(b)) uniq.set(a, pl); });
+    const cen = p => { const s = [0, 0, 0]; p.forEach(q => { s[0] += q[0]; s[1] += q[1]; s[2] += q[2]; }); return s.map(v => (v/p.length).toFixed(2)).join(','); };
+    const uniq = new Map(); polys.forEach(pl => { const n = pl.p.length, c = '@' + cen(pl.p), a = k(pl.p[0]) + '>' + k(pl.p[n - 1]) + '#' + n + c, b = k(pl.p[n - 1]) + '>' + k(pl.p[0]) + '#' + n + c; if(!uniq.has(a) && !uniq.has(b)) uniq.set(a, pl); });
     return [...uniq.values()];
   }
   /* medición completa de una pieza de tubo: alambre orientado (eje = X desde 0), pared, extremos y barrenos */
@@ -807,6 +824,11 @@ const f1 = n => n == null || isNaN(n) ? '—' : (Math.round(n*10)/10).toLocaleSt
 const f2 = n => n == null || isNaN(n) ? '—' : n.toLocaleString('es-MX', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 const f4 = n => n == null || isNaN(n) ? '—' : n.toLocaleString('es-MX', {minimumFractionDigits: 4, maximumFractionDigits: 4});
 const pct = n => n == null || isNaN(n) ? '—' : (n*100).toFixed(1) + ' %';
+/* número con su unidad y dato con su etiqueta: "Usado 5,517 mm" en lugar de cifras sueltas */
+const u = (v, un) => `${v}<span class="u">${un}</span>`;
+const dt = (l, v, un, c) => `<span class="dt"><small>${l}</small><b${c ? ` class="${c}"` : ''}>${v}</b>${un ? `<span class="u">${un}</span>` : ''}</span>`;
+const dts = (...xs) => `<div class="dts">${xs.filter(Boolean).join('')}</div>`;
+const lvAprov = a => a > .9 ? 'ok' : a > .8 ? 'wa' : 'er';
 const fecha = ms => ms ? new Date(ms).toLocaleString('es-MX', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'}) : '—';
 function toast(t, lv){ let d = $('toast'); if(!d){ d = document.createElement('div'); d.id = 'toast'; document.body.appendChild(d); } d.className = 'toast ' + (lv || 'ok'); d.textContent = t; d.style.display = 'block'; clearTimeout(toast._t); toast._t = setTimeout(() => d.style.display = 'none', 3800); }
 const norm = s => String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -1031,7 +1053,7 @@ function vigentes(){
   }
   return {vig, conflictos};
 }
-function medKey(f){ return 'v3|' + f.id + '|' + (f.modified || f.size || ''); }
+function medKey(f){ return 'v4|' + f.id + '|' + (f.modified || f.size || ''); }   // v4: barrenos completos (2026-11-10)
 const endTxt = e => !e ? '—' : e.recto ? 'Recto' : e.inglete ? `Inglete ${e.angulo}°` : `Especial (${f1(e.prof ?? e.profundidad)} mm)`;
 function evalPieza(f){
   const p = f.p, m = MEAS[medKey(f)];
@@ -1242,7 +1264,7 @@ function estadoCentral(dibujo, f){
   const mult = (ig && enMultiples(ig.sub)) || (f ? !!f.p.multiple : esNombreMultiple(dibujo)), zzxNombre = nombre.replace(/\.(igs|iges)$/i, '') + '.zzx';
   return res(st, {mod: key, L, ig, zz, nombre, mult, igRel: ig ? ig.rel : '', zzxNombre, zzxRel: 'ZZX/' + (mult ? MULT_DIR + '/' : '') + zzxNombre});
 }
-const badgeCentral = e => e ? badge(e.lv, e.txt) + (e.zz ? `<div class="mut sm">${esc(winRuta(e.mod + '/' + e.zz.rel))}</div>` : '') : '—';
+const badgeCentral = e => e ? badge(e.lv, e.txt) + (e.zz ? `<span class="sub">${esc(winRuta(e.mod + '/' + e.zz.rel))}</span>` : '') : '—';
 /* ruta del .zzx de un dibujo en la carpeta central; undefined = carpeta sin abrir */
 const zzxDe = dibujo => { if(!S.cen) return undefined; const k = claveDibujo(dibujo), m = [...(S.cen.porClave.get(k) || [])].find(m => S.cen.mods[m].zzx.has(k)); return m ? winRuta(m + '/' + S.cen.mods[m].zzx.get(k).rel) : null; };
 const escribirArchivo = async (dir, n, data) => { const w = await (await dir.getFileHandle(n, {create: true})).createWritable(); await w.write(data); await w.close(); };
@@ -1394,8 +1416,8 @@ function modeloHtml(M){
   return `<div class="card"><h3>${esc(M.key)} <span class="mut sm">${sueltas.length} piezas sueltas · ${mults.length} múltiples ya hechos (no se usan para armar)</span></h3>
     <p class="mut sm" style="margin:0 0 10px">El tubular de cada pieza sale del programa cargado si trae ese dibujo; si no, de la sección y la pared medidas en el IGS. Tramo útil: ${f0(CFG.tramo - CFG.chuck - CFG.refr)} mm (tramo ${f0(CFG.tramo)} − chuck ${f0(CFG.chuck)} − refrentado ${CFG.refr}; si el SKU trae otro largo, se usa ese). <b>Confirma el largo del tramo y el chuck con los operadores</b> en Configuración.</p>
     <div class="tw"><table><tr><th></th><th>Pieza</th><th>Tubular (medido)</th><th class="n">Largo</th><th class="n">Pared</th><th class="n">Por mueble</th><th>Estado</th>${ec ? '<th>Carpeta central</th>' : ''}</tr>
-    ${sueltas.map(f => { const r = fila(f); return `<tr><td><input type="checkbox" data-minc="${esc(f.id)}" ${M.off[f.id] ? '' : 'checked'} aria-label="Incluir"></td><td>${esc(f.p.pieza)}<div class="mut sm">${esc(f.name)}</div></td>
-      <td class="sm">${r.tg ? esc(r.tg.label) + `<div class="mut">${r.s ? 'SKU ' + esc(r.s.sku) + ' · ' : ''}según ${r.tg.fuente}</div>` : '—'}</td><td class="n">${r.m && r.m.ok ? f0(r.m.len) : '—'}</td><td class="n">${r.m && r.m.ok && r.m.wall != null ? f2(r.m.wall) : '—'}</td>
+    ${sueltas.map(f => { const r = fila(f); return `<tr><td><input type="checkbox" data-minc="${esc(f.id)}" ${M.off[f.id] ? '' : 'checked'} aria-label="Incluir"></td><td>${esc(f.p.pieza)}<span class="sub">${esc(f.name)}</span></td>
+      <td class="sm">${r.tg ? esc(r.tg.label) + `<span class="sub">${r.s ? 'SKU ' + esc(r.s.sku) + ' · ' : ''}según ${r.tg.fuente}</span>` : '—'}</td><td class="n">${r.m && r.m.ok ? u(f0(r.m.len), 'mm') : '—'}</td><td class="n">${r.m && r.m.ok && r.m.wall != null ? u(f2(r.m.wall), 'mm') : '—'}</td>
       <td class="n"><input type="number" min="0" step="1" data-mxm="${esc(f.id)}" value="${M.xm[f.id] != null ? M.xm[f.id] : xmDefault(f)}" style="width:70px"></td><td>${r.est}</td>${ec ? `<td>${badge(ec.get(f.id).lv, ec.get(f.id).txt)}</td>` : ''}</tr>`; }).join('') || `<tr><td colspan="${ec ? 8 : 7}" class="mut">Este modelo no tiene piezas sueltas.</td></tr>`}</table></div>
     ${mults.length ? `<p class="sm" style="margin:10px 0 4px"><b>Múltiples que ya están en IGS\\MULTIPLES</b> (solo referencia: la plataforma arma con las piezas sueltas de arriba, no con estos):</p><div class="row">${mults.map(f => { const m = MEAS[medKey(f)], e = ec && ec.get(f.id); return badge('in', f.p.pieza + (m && m.ok ? ' · ' + f0(m.len) + ' mm' : '')) + (e ? ' ' + badge(e.lv, e.txt) : ''); }).join(' ')}</div>` : ''}
     <div class="row" style="margin-top:12px"><label class="cfl" style="flex-direction:row;align-items:center;gap:6px">Muebles por lote <input type="number" id="mdLote" min="1" max="50" step="1" value="${M.lote}" style="width:70px"></label>
@@ -1406,8 +1428,8 @@ function modeloHtml(M){
       ${C.map(r => `<tr><td class="n">${r.lote}</td><td class="n">${r.tramos}</td><td class="n">${f2(r.tramos/r.lote)}</td><td class="n">${pct(r.aprov)}</td><td class="n">${r.pats}</td><td><button data-mlote="${r.lote}">Usar</button></td></tr>`).join('')}</table></div>
       <p class="mut sm" style="margin:6px 0 0">Menos múltiples distintos = menos altas en TubesT. Elige el lote que dé buen aprovechamiento con pocos múltiples.</p></div>` : ''}
     ${R ? R.grupos.map((g, gi) => `<details class="card" open><summary><b>${esc(g.label)}</b> ${g.sku ? badge('in', 'SKU ' + g.sku) : badge('wa', 'Sin SKU en el catálogo')} ${badge('in', g.bars.length + ' tramos por ' + R.lote + (R.lote === 1 ? ' mueble' : ' muebles'))} ${badge(g.tot.aprov > .9 ? 'ok' : g.tot.aprov > .8 ? 'wa' : 'er', 'Aprovechamiento ' + pct(g.tot.aprov))}</summary>
-      ${g.pats.map((pt, pi) => `<div class="bar"><div class="barhd"><b>${esc(pt.nombre)}</b> ${badge('in', '×' + pt.n + ' por lote')} ${zzxDe(pt.nombre) ? badge('ok', '✓ .zzx') : ''}<span class="mut sm">${esc(resumenTxt(pt.bar.piezas))}</span><span style="flex:1"></span>
-        <button data-mver="${gi}|${pi}" title="Ver el múltiple con el dibujo de cada pieza (barrenos, ranuras y cortes), con zoom">🔍 Ver</button><button data-migs="${gi}|${pi}" title="IGS del múltiple para validarlo y darlo de alta">⬇ IGS</button>${S.cenDir ? `<button data-mlib="${gi}|${pi}" title="Guarda el IGS del múltiple en IGS\\MULTIPLES del modelo (carpeta central) y su receta en modelo.json">💾 A la carpeta central</button>` : ''}</div>${svgBar(pt.bar, colorMapModelo())}</div>`).join('')}
+      ${g.pats.map((pt, pi) => `<div class="bar"><div class="barhd"><b>${esc(pt.nombre)}</b> ${badge('in', '×' + pt.n + ' por lote')} ${zzxDe(pt.nombre) ? badge('ok', '✓ .zzx') : ''}<span class="op">${esc(resumenTxt(pt.bar.piezas))}</span><span style="flex:1"></span>
+        <button data-mver="${gi}|${pi}" title="Ver el múltiple con el dibujo de cada pieza (barrenos, ranuras y cortes), con zoom">🔍 Ver</button><button data-migs="${gi}|${pi}" title="IGS del múltiple para validarlo y darlo de alta">⬇ IGS</button>${S.cenDir ? `<button data-mlib="${gi}|${pi}" title="Guarda el IGS del múltiple en IGS\\MULTIPLES del modelo (carpeta central) y su receta en modelo.json">💾 A la carpeta central</button>` : ''}</div>${svgBar(pt.bar, colorMapModelo())}${pieBar(pt.bar)}</div>`).join('')}
       ${g.largas.length ? `<p class="sm" style="color:var(--er)">No caben en el tramo útil: ${[...new Set(g.largas.map(p => p.pieza))].map(esc).join(', ')}</p>` : ''}</details>`).join('') : ''}
     ${R && R.sinMedida.length ? `<p class="sm" style="color:var(--wa)">No entran (sin medida o la sección del IGS no es la del tubular): ${R.sinMedida.map(f => esc(f.p.pieza)).join(', ')}</p>` : ''}
     ${tot}`;
@@ -1587,9 +1609,11 @@ function geoDe(fileId){
 }
 /* símbolo SVG de la pieza en planta (barrenos, ranuras y extremos), estirado al rectángulo de la pieza en la barra */
 function simboloGeo(g){
-  const L = g.r.len || 1, W = g.r.secA || 1, d = g.r.polys.filter(pl => pl.feat || pl.end)
+  // barrenos y cortes en rojo oscuro, extremos en gris oscuro: se distinguen sobre cualquier color de pieza
+  const L = g.r.len || 1, W = g.r.secA || 1, path = f => g.r.polys.filter(f)
     .map(pl => pl.p.map((q, i) => (i ? 'L' : 'M') + (q[0]/L*1000).toFixed(1) + ',' + (-q[1]/W*100).toFixed(1)).join('')).join('');
-  return d ? `<path d="${d}" fill="none" stroke="#1f1f1d" stroke-width="1" vector-effect="non-scaling-stroke"/>` : '';
+  const df = path(pl => pl.feat), de = path(pl => pl.end && !pl.feat);
+  return (de ? `<path d="${de}" fill="none" stroke="#2c2c2a" stroke-width="1" vector-effect="non-scaling-stroke"/>` : '') + (df ? `<path d="${df}" fill="none" stroke="#a32d2d" stroke-width="1.3" vector-effect="non-scaling-stroke"/>` : '');
 }
 let geoCorriendo = false;
 async function cargarGeoPendientes(){
@@ -1622,49 +1646,66 @@ function dibujarVisorTramo(){
   const g0 = geos.find(Boolean), gN = [...geos].reverse().find(Boolean);
   const r = {len: bar.P, secA: W || 25, secB: Hs || 25, polys, feats: [], ends: [g0.r.ends[0], gN.r.ends[1]], wall: g0.r.wall};
   const usado = bar.usado, ch = CFG.chuck;
-  mo.innerHTML = `<div class="card" role="dialog" aria-label="Visor del tramo"><div class="row" style="margin-bottom:10px"><b style="flex:1;min-width:200px">📐 ${esc(bar.id)} <span class="mut">· ${esc(label || bar.tipoLabel || '')}${bar.maquina ? ' · ' + esc(bar.maquina) : ''}</span>
-    <div class="mut sm" style="font-weight:400">${bar.piezas.length} piezas · tramo ${f0(bar.P)} mm · usado ${f0(usado)} mm · ${bar.recorte ? 'recorte ' + f0(bar.recorte) + ' mm (incluye chuck ' + f0(ch) + ')' : 'chuck ' + f0(ch) + ' mm'} · aprovechamiento ${pct(bar.aprov)}</div></b>
-    <span class="tabs row" style="gap:4px">${[['XY', 'Planta'], ['XZ', 'Frente'], ['YZ', 'Sección']].map(([k, tx]) => `<button data-vv="${k}" class="${k === V ? 'on' : ''}">${tx}</button>`).join('')}</span>
-    <button id="vFit" title="Ajustar (doble clic en el dibujo)">⤢</button><button id="vClose" aria-label="Cerrar">✕</button></div>
-  <svg id="vSvg" style="width:100%;height:34vh"></svg><p class="mut sm" style="margin:6px 0 0">Haz clic en una pieza de la tabla para acercarte a ella · rueda = zoom · arrastrar = mover · ⤢ o doble clic = todo el tramo. Cada color es una pieza; en naranja, sus barrenos y cortes; en gris oscuro, la zona del chuck.</p>
-  <div class="tw" style="margin-top:10px;max-height:none"><table><tr><th>#</th><th>Pieza</th><th>OP</th><th class="n">Desde (mm)</th><th class="n">Hasta (mm)</th><th class="n">Largo (mm)</th><th>IGS</th></tr>
-  ${bar.piezas.map((p, i) => `<tr data-zp="${i}" style="cursor:zoom-in" title="Acercar a esta pieza"><td><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${col(p)}"></i> ${i + 1} 🔍</td><td>${esc(p.pieza)}<div class="mut sm">${esc(p.ruta)}</div></td><td class="sm">${esc(p.op)}</td><td class="n">${f1(p.x)}</td><td class="n">${f1(p.x + p.L)}</td><td class="n">${f1(p.L)}</td><td class="sm">${geos[i] ? esc(geos[i].name) : badge('er', 'No se pudo leer')}</td></tr>`).join('')}</table></div></div>`;
+  mo.innerHTML = `<div class="card" role="dialog" aria-label="Visor del tramo"><div class="row" style="margin-bottom:6px;align-items:flex-start"><div style="flex:1;min-width:240px"><b style="font-size:15px">📐 Tramo ${esc(bar.id)}</b> <span class="mut">${esc(label || bar.tipoLabel || '')}${bar.maquina ? ' · ' + esc(bar.maquina) : ''}</span>
+    ${pieBar(bar)}</div>
+    <span class="tabs row" style="gap:4px">${[['XY', 'Planta'], ['XZ', 'Frente'], ['YZ', 'Sección']].map(([k, tx]) => `<button data-vv="${k}" class="${k === V ? 'pri' : ''}">${tx}</button>`).join('')}</span>
+    <button id="vFit" title="Ver todo el tramo (doble clic en el dibujo)">⤢</button><button id="vClose" aria-label="Cerrar">✕</button></div>
+  <svg id="vSvg" class="vlight" style="width:100%;height:36vh"></svg>
+  <div class="row sm" style="margin:8px 0 0;gap:6px 16px;color:var(--text2)"><span><b style="color:#d0341c">━</b> barrenos y cortes</span><span><b style="color:#1a5fb4">━</b> corte de los extremos</span><span><b style="color:#5f5e5a">▨</b> chuck</span><span><b style="color:#7aa83f">▨</b> recorte</span>
+    <span style="flex:1"></span><span class="mut">Clic en una pieza de la tabla para acercarte · rueda = zoom · arrastrar = mover · ⤢ = todo el tramo</span></div>
+  <div class="tw" style="margin-top:10px;max-height:none"><table><tr><th>#</th><th>Pieza</th><th>OP</th><th class="n">Desde</th><th class="n">Hasta</th><th class="n">Largo</th><th>IGS</th></tr>
+  ${bar.piezas.map((p, i) => `<tr data-zp="${i}" style="cursor:zoom-in" title="Acercar a esta pieza"><td style="white-space:nowrap"><i style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${col(p)};vertical-align:-1px"></i> ${i + 1} 🔍</td><td><b>${esc(p.pieza)}</b><span class="sub">${esc(p.ruta)}</span></td><td class="sm">${esc(p.op)}</td><td class="n">${u(f1(p.x), 'mm')}</td><td class="n">${u(f1(p.x + p.L), 'mm')}</td><td class="n"><b>${u(f1(p.L), 'mm')}</b></td><td class="sm">${geos[i] ? esc(geos[i].name) : badge('er', 'No se pudo leer')}</td></tr>`).join('')}</table></div></div>`;
   mo.querySelectorAll('[data-vv]').forEach(b => b.onclick = () => { S.visor.vista = b.dataset.vv; dibujarVisorTramo(); });
   $('vClose').onclick = cerrarVisor; $('vFit').onclick = () => { const s = $('vSvg'); setVB(s, Object.assign({}, s._home)); };
-  const svg = $('vSvg'); dibujarVista(svg, r, V);
+  // colores de plano sobre fondo claro: líneas oscuras, barrenos en rojo y extremos en azul, para que no se pierdan con el color de la pieza
+  const svg = $('vSvg'); dibujarVista(svg, r, V, {tx: '#2c2c2a', feat: '#d0341c', end: '#1a5fb4', dim: '#1a5fb4', mut: '#5f5e5a', w: 1.1, wf: 1.8});
   if(V !== 'YZ'){
-    // debajo del dibujo: cada pieza de su color con su nombre, el recorte y el chuck
-    const h = V === 'XY' ? r.secA : r.secB, fs = Math.max(Math.max(r.secA, r.secB)*.5, 6);   // se lee al acercarse a una pieza
-    let ov = bar.piezas.map(p => `<rect x="${p.x}" y="${-h/2}" width="${p.L}" height="${h}" fill="${col(p)}" fill-opacity=".55"/><text x="${p.x + p.L/2}" y="${-h/2 - fs*.5}" font-size="${fs}" text-anchor="middle" fill="var(--tx)">${esc(p.pieza.length > 22 ? p.pieza.slice(0, 21) + '…' : p.pieza)} · ${f0(p.L)}</text>`).join('');
-    if(bar.recorte) ov += `<rect x="${usado}" y="${-h/2}" width="${bar.P - usado - ch}" height="${h}" fill="#c0dd97" fill-opacity=".5"/><text x="${(usado + bar.P - ch)/2}" y="${h/2 + fs*1.3}" font-size="${fs*.9}" text-anchor="middle" fill="#3b6d11">♻ recorte ${f0(bar.recorte)}</text>`;
-    ov += `<rect x="${bar.P - ch}" y="${-h/2}" width="${ch}" height="${h}" fill="#444441" fill-opacity=".55"/><text x="${bar.P - ch/2}" y="${-h/2 - fs*.5}" font-size="${fs}" text-anchor="middle" fill="var(--mut)">chuck ${f0(ch)}</text>`;
+    // detrás del dibujo: cada pieza con un tinte suave de su color, sus cortes y su nombre arriba; el recorte y el chuck
+    const h = V === 'XY' ? r.secA : r.secB, fs = Math.max(Math.max(r.secA, r.secB)*.28, 5), tag = fs*1.45;
+    let ov = bar.piezas.map(p => `<rect x="${p.x}" y="${-h/2}" width="${p.L}" height="${h}" fill="${col(p)}" fill-opacity=".35"/>
+      <rect x="${p.x}" y="${-h/2 - tag - fs*.3}" width="${p.L}" height="${tag}" rx="${fs*.3}" fill="${col(p)}"/>
+      <text x="${p.x + p.L/2}" y="${-h/2 - fs*.3 - tag*.3}" font-size="${fs}" text-anchor="middle" fill="#1f1f1d" font-weight="600">${esc(p.pieza.length > 26 ? p.pieza.slice(0, 25) + '…' : p.pieza)}</text>
+      <text x="${p.x + p.L/2}" y="${h/2 + fs*1.25}" font-size="${fs*.9}" text-anchor="middle" fill="#2c2c2a">${f0(p.L)} mm</text>
+      <line x1="${p.x}" y1="${-h/2 - tag}" x2="${p.x}" y2="${h/2 + fs*.4}" stroke="#2c2c2a" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/><line x1="${p.x + p.L}" y1="${-h/2 - tag}" x2="${p.x + p.L}" y2="${h/2 + fs*.4}" stroke="#2c2c2a" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>`).join('');
+    if(bar.recorte) ov += `<rect x="${usado}" y="${-h/2}" width="${Math.max(0, bar.P - usado - ch)}" height="${h}" fill="#c0dd97" fill-opacity=".6"/><text x="${(usado + bar.P - ch)/2}" y="${h/2 + fs*1.25}" font-size="${fs*.9}" text-anchor="middle" fill="#3b6d11">♻ recorte ${f0(bar.recorte)} mm</text>`;
+    ov += `<rect x="${bar.P - ch}" y="${-h/2}" width="${ch}" height="${h}" fill="#888780" fill-opacity=".45"/><text x="${bar.P - ch/2}" y="${-h/2 - fs*.3 - tag*.3}" font-size="${fs}" text-anchor="middle" fill="#5f5e5a">chuck ${f0(ch)} mm</text>`;
     svg.insertAdjacentHTML('afterbegin', `<g>${ov}</g>`);
   }
   // acercar a una pieza: su largo llena el ancho del dibujo, como verla sola en SolidWorks
   mo.querySelectorAll('[data-zp]').forEach(tr => tr.onclick = () => { if(S.visor.vista === 'YZ'){ S.visor.vista = 'XY'; dibujarVisorTramo(); }
     const s = $('vSvg'), p = bar.piezas[+tr.dataset.zp], bx = s.getBoundingClientRect(), m = Math.max(p.L*.06, 20), w = p.L + 2*m, h = w*(bx.height/(bx.width || 1));
-    setVB(s, {x: p.x - m, y: -h/2, w, h}); s.scrollIntoView({block: 'nearest'}); });
+    setVB(s, {x: p.x - m, y: -h/2 - r.secA*.4, w, h}); s.scrollIntoView({block: 'nearest'}); });
 }
 function svgBar(b, colorOf, opts){
-  opts = opts || {}; const W = 1000, H = 46, T = b.P, sc = W/Math.max(T, CFG.tramo), ch = CFG.chuck, geo = CFG.verGeo !== false;
-  let s = `<svg viewBox="-2 -2 ${W + 4} ${H + 22}" role="img" aria-label="Tramo ${esc(b.id)}"><rect x="0" y="0" width="${T*sc}" height="${H}" rx="3" fill="var(--tube)" stroke="var(--mut)" stroke-width="1"/>`;
-  s += `<defs><pattern id="hR" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="#c0dd97"/><line x1="0" y1="0" x2="0" y2="7" stroke="#639922" stroke-width="2"/></pattern>
+  // la barra solo dibuja; los datos del tramo van abajo con su etiqueta (pieBar). Dentro de cada pieza va su largo;
+  // el nombre solo si cabe completo (si no, se ve en la leyenda y al pasar el mouse)
+  opts = opts || {}; const W = 1000, H = 50, T = b.P, sc = W/Math.max(T, CFG.tramo), ch = CFG.chuck, geo = CFG.verGeo !== false;
+  let s = `<svg viewBox="-2 -2 ${W + 4} ${H + 4}" role="img" aria-label="Tramo ${esc(b.id)}" style="font-family:'IBM Plex Sans',system-ui,sans-serif"><rect x="0" y="0" width="${T*sc}" height="${H}" rx="3" fill="var(--tube)" stroke="var(--mut)" stroke-width="1"/>`;
+  s += `<defs><pattern id="hR" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="#c0dd97"/><line x1="0" y1="0" x2="0" y2="7" stroke="#97c459" stroke-width="2"/></pattern>
     <pattern id="hD" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="var(--hd1)"/><line x1="0" y1="0" x2="0" y2="7" stroke="var(--hd2)" stroke-width="2"/></pattern></defs>`;
-  const lbl = 'paint-order="stroke" stroke="rgba(255,255,255,.75)" stroke-width="3"';
+  const halo = 'paint-order="stroke" stroke="rgba(255,255,255,.88)" stroke-width="3.5" stroke-linejoin="round"';
   b.piezas.forEach(p => { const x = p.x*sc, w = p.L*sc, c = colorOf(p), gs = geo ? GEO_SYM.get(p.fileId) : null;
     if(geo && gs === undefined && p.fileId) GEO_PEND.add(p.fileId);
-    s += `<rect x="${x}" y="2" width="${Math.max(w, 1)}" height="${H - 4}" fill="${c}" stroke="#2c2c2a" stroke-width=".8"><title>${esc(p.pieza)} · ${esc(p.ruta)} · ${esc(p.op)} · ${f1(p.L)} mm</title></rect>`;
+    s += `<rect x="${x}" y="2" width="${Math.max(w, 1)}" height="${H - 4}" fill="${c}" stroke="#2c2c2a" stroke-width=".8"><title>${esc(p.pieza)} · ${f1(p.L)} mm · ${esc(p.ruta)} · OP ${esc(p.op)}</title></rect>`;
     // barrenos, ranuras y extremos de la pieza (su IGS en planta, estirado a la barra)
-    if(gs) s += `<use href="#gs-${gs.n}" x="${x}" y="2" width="${Math.max(w, 1)}" height="${H - 4}" opacity=".8" pointer-events="none"/>`;
-    if(w > 46) s += `<text x="${x + w/2}" y="${H/2 - 2}" font-size="11" text-anchor="middle" fill="#1f1f1d" ${gs ? lbl : ''}>${esc(p.pieza.length*6 > w ? p.pieza.slice(0, Math.max(3, Math.floor(w/6.5))) + '…' : p.pieza)}</text><text x="${x + w/2}" y="${H/2 + 12}" font-size="10" text-anchor="middle" fill="#444441" ${gs ? lbl : ''}>${f0(p.L)}</text>`; });
+    if(gs) s += `<use href="#gs-${gs.n}" x="${x}" y="2" width="${Math.max(w, 1)}" height="${H - 4}" opacity=".5" pointer-events="none"/>`;
+    const cabe = w > 70 && p.pieza.length*6.1 < w - 10;
+    if(w > 30) s += `<text x="${x + w/2}" y="${cabe ? H - 11 : H/2 + 5}" font-size="13" font-weight="600" text-anchor="middle" fill="#1f1f1d" pointer-events="none" ${halo}>${f0(p.L)}${w > 76 ? '<tspan font-size="9.5" font-weight="400" fill="#5f5e5a"> mm</tspan>' : ''}</text>`;
+    if(cabe) s += `<text x="${x + w/2}" y="17" font-size="10.5" text-anchor="middle" fill="#2c2c2a" pointer-events="none" ${halo}>${esc(p.pieza)}</text>`; });
   const used = b.usado, rec = b.recorte || 0;
   // el recorte es todo lo que queda después del último corte, incluida la parte que sostiene el chuck: el chuck se marca encima
-  if(rec){ const x0 = used*sc, w = (T - used - ch)*sc; s += `<rect x="${x0}" y="2" width="${(T - used)*sc}" height="${H - 4}" fill="url(#hR)"/>`; if(w > 60) s += `<text x="${x0 + w/2}" y="${H/2 + 4}" font-size="11" text-anchor="middle" fill="#27500a">♻ ${esc(b.recorteNuevo || 'recorte')} ${f0(rec)}</text>`; }
-  else { const x0 = used*sc, w = Math.max(0, (T - ch - used)*sc); if(w > 0){ s += `<rect x="${x0}" y="2" width="${w}" height="${H - 4}" fill="url(#hD)"/>`; if(w > 50) s += `<text x="${x0 + w/2}" y="${H/2 + 4}" font-size="10" text-anchor="middle" fill="var(--hdt)">sobra ${f0(T - ch - used)}</text>`; } }
-  s += `<rect x="${(T - ch)*sc}" y="2" width="${ch*sc}" height="${H - 4}" fill="var(--chuck)" fill-opacity="${rec ? .8 : 1}"><title>Zona del chuck: ${f0(ch)} mm (no se puede cortar)</title></rect>`; if(ch*sc > 40) s += `<text x="${(T - ch/2)*sc}" y="${H/2 + 4}" font-size="10" text-anchor="middle" fill="#fff">chuck ${f0(ch)}</text>`;
+  if(rec){ const x0 = used*sc, w = (T - used - ch)*sc; s += `<rect x="${x0}" y="2" width="${(T - used)*sc}" height="${H - 4}" fill="url(#hR)"><title>Recorte que se guarda${b.recorteNuevo ? ' ' + esc(b.recorteNuevo) : ''}: ${f0(rec)} mm (incluye la parte del chuck)</title></rect>`;
+    if(w > 44) s += `<text x="${x0 + w/2}" y="${H/2 + 5}" font-size="12" font-weight="600" text-anchor="middle" fill="#27500a" pointer-events="none" ${halo}>♻ ${f0(rec)}${w > 90 ? '<tspan font-size="9.5" font-weight="400"> mm</tspan>' : ''}</text>`; }
+  else { const x0 = used*sc, w = Math.max(0, (T - ch - used)*sc); if(w > 0){ s += `<rect x="${x0}" y="2" width="${w}" height="${H - 4}" fill="url(#hD)"><title>Sobra a desecho: ${f0(T - ch - used)} mm</title></rect>`; if(w > 60) s += `<text x="${x0 + w/2}" y="${H/2 + 4}" font-size="10.5" text-anchor="middle" fill="var(--hdt)" pointer-events="none">sobra ${f0(T - ch - used)}</text>`; } }
+  s += `<rect x="${(T - ch)*sc}" y="2" width="${ch*sc}" height="${H - 4}" fill="var(--chuck)" fill-opacity="${rec ? .85 : 1}"><title>Zona del chuck: ${f0(ch)} mm (no se puede cortar)</title></rect>`; if(ch*sc > 34) s += `<text x="${(T - ch/2)*sc}" y="${H/2 + 4}" font-size="10.5" text-anchor="middle" fill="#fff" pointer-events="none">chuck</text>`;
   if(geo && GEO_PEND.size) setTimeout(cargarGeoPendientes, 0);
-  s += `<text x="0" y="${H + 16}" font-size="11" fill="var(--mut)">${b.origen === 'recorte' ? '♻ Recorte ' + esc(b.recorteId) + ' · ' : ''}${f0(T)} mm · ${b.piezas.length} pzas · usado ${f0(used)} mm · aprovechamiento ${pct(b.aprov)}</text></svg>`;
-  return s;
+  return s + '</svg>';
+}
+/* datos del tramo abajo de la barra, cada uno con su etiqueta y unidad */
+function pieBar(b){
+  const ch = CFG.chuck, sobra = Math.max(0, b.P - b.usado - ch);
+  return dts(dt(b.origen === 'recorte' ? 'Recorte ' + esc(b.recorteId || '') : 'Tramo nuevo', f0(b.P), 'mm'), dt('Piezas', b.piezas.length), dt('Usado', f0(b.usado), 'mm'),
+    b.recorte ? dt('Recorte a guardar', f0(b.recorte), 'mm', 'ok') : dt('Sobra', f0(sobra), 'mm'), dt('Chuck', f0(ch), 'mm'), dt('Aprovechamiento', pct(b.aprov), '', lvAprov(b.aprov)));
 }
 function colorMap(){ const keys = [...new Set(S.items.map(i => i.ruta + '|' + i.pieza))]; (S.db.tramos || []).forEach(t => (t.piezas || []).forEach(p => { const k = p.ruta + '|' + p.pieza; if(!keys.includes(k)) keys.push(k); }));
   return p => PAL[keys.indexOf(p.ruta + '|' + p.pieza) % PAL.length] || PAL[0]; }
@@ -1813,10 +1854,10 @@ function progLaserHtml(){
     const sm = m.f && esMultipleYa(m.f) ? sueltaDe(o, m.f) : null;   // MULTIPLE: se arma con su pieza suelta
     const ms = m.f && MEAS[medKey(sm && sm.f ? sm.f : m.f)], calP = (norm(o.tubular).match(/CAL\.?\s*(\d+)/) || [])[1], tP = CFG.calibres[calP];
     // informativo: muchos dibujos se hacen con una pared genérica; el calibre que manda es el del programa
-    const difP = ms && ms.ok && ms.wall != null && tP && Math.abs(ms.wall - tP) > 0.15 ? `<div class="mut sm">Pared dibujada ${f2(ms.wall)} mm (el programa dice cal ${calP}, ${f2(tP)} mm)</div>` : '';
-    if(m.f) return `${difP}${n ? badge('ok', '✓ ' + n + (sm && sm.f ? (n === 1 ? ' pieza suelta' : ' piezas sueltas') : n === 1 ? ' corrida' : ' corridas')) : badge('er', 'No entra')}${sm ? ' ' + badge(sm.f ? 'in' : 'er', sm.f ? 'MULTIPLE: se arma con su pieza suelta' : 'MULTIPLE sin pieza suelta') : (m.f.p.n || 1) > 1 ? ' ' + badge('in', 'Completo') : ''}
+    const difP = ms && ms.ok && ms.wall != null && tP && Math.abs(ms.wall - tP) > 0.15 ? `<span class="sub">Pared dibujada ${f2(ms.wall)} mm; el programa dice cal ${calP} (${f2(tP)} mm)</span>` : '';
+    if(m.f) return `${n ? badge('ok', '✓ ' + n + (sm && sm.f ? (n === 1 ? ' pieza suelta' : ' piezas sueltas') : n === 1 ? ' corrida' : ' corridas')) : badge('er', 'No entra')}${sm ? ' ' + badge(sm.f ? 'in' : 'er', sm.f ? 'MULTIPLE: se arma con su pieza suelta' : 'MULTIPLE sin pieza suelta') : (m.f.p.n || 1) > 1 ? ' ' + badge('in', 'Completo') : ''}
 ${m.iguales ? ' ' + `<span title="${esc(m.cand.map(x => x.path.split('/').slice(1, -2).join('/')).join('\n'))}">${badge('in', m.iguales + ' copias iguales')}</span>` : ''}
-      <div class="mut sm">${esc(m.f.path.split('/').slice(1).join('/'))}</div>
+      <span class="sub" title="${esc(m.f.path)}">${esc(m.f.path.split('/').slice(2).join(' \\ '))}</span>${difP}
       ${sm ? `<label class="sm" style="display:flex;gap:6px;align-items:center;margin-top:4px;flex-wrap:wrap">Pieza suelta <select data-suelta="${esc(sm.k)}" style="max-width:320px"><option value="">Elige la pieza suelta…</option>${sm.cand.map(x => `<option value="${esc(x.id)}" ${sm.f && sm.f.id === x.id ? 'selected' : ''}>${esc(x.path.split('/').slice(4).join('/'))}</option>`).join('')}</select>${sm.f && !sm.elegida ? '<span class="mut">automática</span>' : ''}</label>` : ''}      ${fu ? `<div class="sm" style="color:var(--er)">${esc(fu.motivo)}</div>` : ''}`;
     if(m.estado === 'sin') return badge('er', 'No está en la carpeta');
     return `${badge('wa', m.estado === 'anterior' ? 'Solo versión anterior' : m.cand.length + ' con ese nombre')}<div><select data-dsel="${esc('D|' + m.clave + '|' + norm(o.ruta))}" style="max-width:340px;margin-top:4px"><option value="">Elige el IGS…</option>${m.cand.map(f => `<option value="${esc(f.id)}">${esc(f.path.split('/').slice(1).join('/'))}</option>`).join('')}</select></div>`;
@@ -1825,9 +1866,9 @@ ${m.iguales ? ' ' + `<span title="${esc(m.cand.map(x => x.path.split('/').slice(
     <div class="kpi"><span>Por elegir</span><b style="color:${elegir ? 'var(--wa)' : 'inherit'}">${elegir}</b></div><div class="kpi"><span>Sin IGS en la carpeta</span><b style="color:${sin ? 'var(--er)' : 'inherit'}">${sin}</b></div><div class="kpi"><span>Corridas a acomodar</span><b>${f0(S.items.length)}</b></div></div>
     ${S.lib.length ? '' : `<div class="card row"><span style="flex:1">Para ligar los dibujos abre la carpeta central <b>TUBO LASER - DIBUJOS POR MODELO</b>. La primera vez se elige y después se recuerda en este equipo.</span><button class="pri" id="progDir">📂 Abrir carpeta central</button></div>`}
     ${cenProgHtml(O)}
-    <div class="card"><h3>${esc(S.progFile)}</h3><div class="tw"><table><tr><th>Máquina</th><th>OP</th><th>Modelo</th><th>Parte</th><th>Tubular</th><th>Nombre del dibujo</th><th class="n">Cant.</th><th class="n">Progra.</th><th>IGS</th><th>Carpeta central</th></tr>
+    <div class="card"><h3>${esc(S.progFile)}</h3><div class="tw"><table><tr><th>Máquina</th><th>OP</th><th>Modelo</th><th>Parte</th><th>Tubular</th><th>Nombre del dibujo</th><th class="n" title="Piezas a cortar">Piezas</th><th class="n" title="Muebles programados">Muebles</th><th>IGS</th><th>Carpeta central</th></tr>
     ${O.map(o => { const e = o.omitir ? null : estadoCentral(o.dibujo, M[o.idx] && M[o.idx].f);
-      return `<tr><td>${badge('in', o.maquina)}</td><td class="sm">${esc(o.op)}</td><td><b>${esc(o.ruta)}</b></td><td class="sm">${esc(o.parte)}</td><td class="sm">${esc(o.tubular)}</td><td>${esc(o.dibujo)}${o.nota ? `<div class="mut sm">${esc(o.nota)} (en el programa: "${esc(o.dibujoOrig)}")</div>` : ''}</td><td class="n">${f0(o.cant)}</td><td class="n">${f0(o.progra)}</td><td>${celda(o)}</td>
+      return `<tr><td>${badge('in', o.maquina)}</td><td class="sm">${esc(o.op)}</td><td><b>${esc(o.ruta)}</b></td><td class="sm">${esc(o.parte)}</td><td class="sm">${esc(o.tubular)}</td><td>${esc(o.dibujo)}${o.nota ? `<span class="sub">${esc(o.nota)} (en el programa: "${esc(o.dibujoOrig)}")</span>` : ''}</td><td class="n">${u(f0(o.cant), 'pzas')}</td><td class="n">${f0(o.progra)}${o.xMueble > 0 ? `<span class="sub">${f0(o.xMueble)} pza/mueble</span>` : ''}</td><td>${celda(o)}</td>
       <td>${badgeCentral(e)}</td></tr>`; }).join('')}</table></div></div>`;
 }
 /* resumen de la carpeta central para el programa del día: qué dibujos ya tienen .zzx y qué falta */
@@ -1844,7 +1885,8 @@ function cenProgHtml(O){
 function renderLib(){
   const el = $('t-lib'); if(!el) return;
   const {vig, conflictos} = vigentes(), rutas = new Set(S.ops.map(o => norm(o.ruta)));
-  const ligados = new Set(Object.values(S.match || {}).filter(x => x.f).map(x => x.f.id)), planta = S.lib.filter(f => f.p.planta);
+  // ligados al programa: el IGS de cada renglón y, de un MULTIPLE, también la pieza suelta con la que se arma
+  const ligados = new Set(Object.values(S.match || {}).filter(x => x.f).map(x => x.f.id).concat(S.items.map(i => i.fileId).filter(Boolean))), planta = S.lib.filter(f => f.p.planta);
   const enPrograma = f => S.formato === 'laser' ? ligados.has(f.id) : rutas.has(norm(f.p.ruta || ''));
   const filt = S.libFilt || (S.ops.length ? 'programa' : 'todo');
   const lista = S.lib.filter(f => filt === 'todo' || (filt === 'programa' ? enPrograma(f) : filt === 'problemas' ? (f.p.excluir || !f.p.ok || f.estadoVer === 'empate' || evalPieza(f).lv === 'er') : true));
@@ -1863,10 +1905,13 @@ function renderLib(){
   ${S.lib.length ? `${conflictos.length ? `<div class="card"><h3>⚠ Dos dibujos con la misma versión</h3><p class="mut sm">No hay regla segura para elegir; Ingeniería debe borrar el que sobra. Mientras, elige cuál usar:</p>
     ${conflictos.map(c => `<div class="row" style="margin:6px 0"><b>${esc(c.files[0].p.ruta)} · ${esc(c.files[0].p.pieza)}</b>${c.files.map(f => `<button data-elec="${esc(c.k)}" data-id="${esc(f.id)}">${esc(f.p.n)} pz · ${esc(f.p.fecha)}</button>`).join('')}</div>`).join('')}</div>` : ''}
   <div class="card"><div class="row" style="margin-bottom:8px">${[['programa', 'Rutas del programa'], ['problemas', 'Con problema'], ['todo', 'Todo']].map(([k, t]) => `<button data-lf="${k}" class="${k === filt ? 'pri' : ''}">${t}</button>`).join('')}<span class="mut sm">${lista.length} archivos</span></div>
-  <div class="tw"><table><tr><th>Ruta</th><th>Pieza</th><th class="n">Pz/mueble</th><th>Tubular (nombre)</th><th class="n">Largo IGS</th><th>Sección IGS</th><th class="n">Pared</th><th>Extremos</th><th>v</th><th>Estado</th><th></th></tr>
-  ${lista.slice(0, 800).map(f => { const m = MEAS[medKey(f)], e = f.p.excluir ? {lv: 'in', notas: [f.p.excluir]} : f.estadoVer === 'anterior' ? {lv: 'in', notas: ['Versión anterior (no se usa)']} : f.estadoVer === 'descartado' ? {lv: 'in', notas: ['Descartado en el empate']} : f.estadoVer === 'empate' ? {lv: 'er', notas: ['Empate de versión: elige cuál usar']} : evalPieza(f);
+  <div class="tw"><table><tr><th>Modelo</th><th>Pieza</th>${planta.length > S.lib.length/2 ? '' : '<th class="n">Pz/mueble</th><th>Tubular (nombre)</th>'}<th class="n">Largo</th><th class="n">Sección</th><th class="n">Pared</th><th>Extremos y barrenos</th>${planta.length > S.lib.length/2 ? '' : '<th>v</th>'}<th>Estado</th><th></th></tr>
+  ${lista.slice(0, 800).map(f => { const m = MEAS[medKey(f)], e = f.p.excluir ? {lv: 'in', notas: [f.p.excluir]} : f.estadoVer === 'anterior' ? {lv: 'in', notas: ['Versión anterior (no se usa)']} : f.estadoVer === 'descartado' ? {lv: 'in', notas: ['Descartado en el empate']} : f.estadoVer === 'empate' ? {lv: 'er', notas: ['Empate de versión: elige cuál usar']} : esMultipleYa(f) && !m ? {lv: 'in', notas: ['Múltiple: no se usa, se arma con su pieza suelta']} : evalPieza(f);
     const t = f.p.planta ? 'del programa' : f.p.med ? tipoDe(f.p.med, f.p.cal).label : (f.p.cal ? 'cal ' + f.p.cal + ' · sin medida' : '—');
-    return `<tr><td><b>${esc(f.p.ruta || '?')}</b></td><td>${esc(f.p.pieza || f.name)}${f.p.multiple ? ' ' + badge('in', 'MULTIPLE') : ''}<div class="mut sm">${esc(f.p.planta ? f.path : f.name)}</div></td><td class="n">${f.p.n ?? '—'}</td><td>${esc(t)}</td><td class="n">${m && m.ok ? f1(m.len) : '—'}</td><td class="sm">${m && m.ok ? f1(m.secA) + ' × ' + f1(m.secB) : '—'}</td><td class="n">${m && m.ok && m.wall != null ? f2(m.wall) : '—'}</td><td class="sm">${m && m.ok && m.ends ? m.ends.map(endTxt).join(' / ') : '—'}${m && m.nFeat ? `<div class="mut">${m.nFeat} barreno(s)/corte(s)</div>` : ''}</td><td>${f.p.v ?? ''}</td>
+    const soloPlanta = planta.length > S.lib.length/2, ruta = f.p.planta ? f.path.split('/').slice(1).join(' \\ ') : f.name;
+    return `<tr><td><b>${esc(f.p.ruta || '?')}</b></td><td>${esc(f.p.pieza || f.name)}${f.p.multiple ? ' ' + badge('in', 'MULTIPLE') : ''}<span class="sub" title="${esc(f.path || f.name)}">${esc(ruta)}</span></td>${soloPlanta ? '' : `<td class="n">${f.p.n ?? '—'}</td><td>${esc(t)}</td>`}
+      <td class="n">${m && m.ok ? u(f0(m.len), 'mm') : '—'}</td><td class="n">${m && m.ok ? u(f1(m.secA) + ' × ' + f1(m.secB), 'mm') : '—'}</td><td class="n">${m && m.ok && m.wall != null ? u(f2(m.wall), 'mm') : '—'}</td>
+      <td class="sm">${m && m.ok && m.ends ? m.ends.map((e, i) => `<div><span class="u" style="margin:0 6px 0 0">${i ? 'Der.' : 'Izq.'}</span>${esc(endTxt(e))}</div>`).join('') : '—'}${m && m.nFeat ? `<span class="sub">${m.nFeat} ${m.nFeat === 1 ? 'barreno o corte' : 'barrenos y cortes'}</span>` : ''}</td>${soloPlanta ? '' : `<td>${f.p.v ?? ''}</td>`}
     <td>${badge(e.lv, e.lv === 'ok' ? '✓ Listo' : e.lv === 'in' ? (e.notas[0] || 'Info') : e.lv === 'wa' ? 'Revisar' : 'Error')}${e.lv !== 'ok' && e.lv !== 'in' ? `<div class="sm">${esc(e.notas.join(' · '))}</div>` : ''}</td><td>${f.p.excluir ? '' : `<button data-ver="${esc(f.id)}" title="Ver y medir el IGS">📐</button>`}</td></tr>`; }).join('')}</table></div>
   ${lista.length > 800 ? '<p class="mut sm">Se muestran los primeros 800.</p>' : ''}</div>` : ''}`;
   $('libCarpeta').onclick = () => abrirCentral(false); $('libOtra').onclick = () => abrirCentral(true);
@@ -1887,22 +1932,22 @@ function renderMult(){
     <p class="mut sm" style="margin:8px 0 0">Tramo ${f0(CFG.tramo)} mm − chuck ${f0(CFG.chuck)} − refrentado ${CFG.refr} = <b>${f0(CFG.tramo - CFG.chuck - CFG.refr)} mm útiles</b> (si el SKU del catálogo trae otro largo, se usa ese) · separación entre piezas ${CFG.kerf} mm · recorte útil mínimo ${f0(CFG.minRem)} mm. ${S.items.length ? f0(S.items.length) + ' piezas en ' + Object.keys(TIPOS()).filter(k => S.items.some(i => i.tipo === k)).length + ' tipos de tubular.' : 'Carga el programa y la biblioteca.'}</p></div>`;
   if(!R){ el.innerHTML = cfgBar + (S.fuera.length ? fueraHtml() : ''); bindMult(); return; }
   const tot = R.grupos.reduce((s, g) => { s.tr += g.tot.tramos; s.ru += g.tot.recUsados; s.rg += g.tot.recGenerados; s.c += g.tot.consumo; s.l += g.tot.largoPiezas; s.kg += g.kgm ? g.tot.consumo/1000*g.kgm : 0; s.tra += g.tot.consumo/(g.tramo || CFG.tramo); s.p += g.tot.piezas; return s; }, {tr: 0, ru: 0, rg: 0, c: 0, l: 0, kg: 0, tra: 0, p: 0});
-  el.innerHTML = cfgBar + `<div class="kpis"><div class="kpi"><span>Tramos nuevos</span><b>${tot.tr}</b></div><div class="kpi"><span>Recortes reutilizados</span><b style="color:var(--ok)">${tot.ru}</b></div>
-  <div class="kpi"><span>Recortes que se generan</span><b>${tot.rg}</b></div><div class="kpi"><span>Aprovechamiento</span><b>${pct(tot.l/tot.c)}</b></div><div class="kpi"><span>Consumo real</span><b>${f2(tot.kg)} kg</b><span>${f2(tot.tra)} TRA (tramos equivalentes)</span></div></div>
+  el.innerHTML = cfgBar + `<div class="kpis"><div class="kpi"><span>Tramos nuevos</span><b>${tot.tr}</b><span>${f0(tot.p)} piezas</span></div><div class="kpi"><span>Recortes reutilizados</span><b style="color:var(--ok)">${tot.ru}</b></div>
+  <div class="kpi"><span>Recortes que se generan</span><b>${tot.rg}</b></div><div class="kpi"><span>Aprovechamiento</span><b style="color:var(--${lvAprov(tot.l/tot.c)})">${pct(tot.l/tot.c)}</b></div><div class="kpi"><span>Consumo real</span><b>${u(f2(tot.kg), 'kg')}</b><span>${f2(tot.tra)} TRA (tramos equivalentes)</span></div></div>
   <div class="card"><div class="row"><b style="flex:1">${esc(R.id)} ${R.guardado ? badge('ok', 'Guardado') : badge('wa', 'Sin guardar')}</b>
   <button id="mPrint">🖨 Hoja de corte</button><button id="mXls">📊 Consumos (Excel)</button><button class="pri" id="mSave" ${R.guardado ? 'disabled' : ''}>💾 Aprobar y guardar</button></div>
   <p class="mut sm" style="margin:6px 0 0">Al guardar, los recortes usados quedan reservados y los nuevos se registran "Por generar"; pasan a Disponible cuando el tramo se marca cortado en "Corte en piso".</p></div>
-  ${R.grupos.map((g, gi) => `<details class="card" open><summary>${g.maquina ? badge('in', g.maquina) + ' ' : ''}<b>${esc(g.label)}</b>${g.completo ? ' ' + badge('ok', '▣ ' + g.dibujo) : ''} ${g.sku ? badge('in', 'SKU ' + g.sku + (g.nSku > 1 ? ` (hay ${g.nSku}; elige en Configuración)` : '')) : badge('wa', 'Sin SKU en el catálogo')}${g.tramo !== CFG.tramo ? ' ' + badge('in', 'tramo ' + f0(g.tramo) + ' mm') : ''} ${badge('in', g.tot.tramos + ' tramos nuevos')} ${g.tot.recUsados ? badge('ok', '♻ ' + g.tot.recUsados + ' recortes') : ''} ${badge(g.tot.aprov > .9 ? 'ok' : g.tot.aprov > .8 ? 'wa' : 'er', 'Aprovechamiento ' + pct(g.tot.aprov))}
-    <span class="mut sm">${g.tot.piezas} pzas · ${f2(g.tot.consumo/(g.tramo || CFG.tramo))} TRA${g.kgm ? ' · ' + f2(g.tot.consumo/1000*g.kgm) + ' kg' : ''}</span>${g.largas.length ? badge('er', g.largas.length + ' piezas no caben') : ''}</summary>
-    <div class="legend" style="margin-top:10px">${[...new Map(g.bars.flatMap(b => b.piezas).map(p => [p.ruta + '|' + p.pieza, p])).values()].map(p => `<span><i style="background:${col(p)}"></i>${esc(p.pieza)} <span class="mut">${esc(p.ruta)} · ${f0(p.L)}</span></span>`).join('')}</div>
-    ${agrupar(g.bars).map(x => `<div class="bar"><div class="barhd"><b>${esc(x.b.id)}${x.n > 1 ? ` … ×${x.n} iguales` : ''}</b><span class="mut">${esc([...new Set(x.b.piezas.map(p => p.op))].join(', '))}</span><span style="flex:1"></span>
-      <button data-ver="${gi}|${g.bars.indexOf(x.b)}" title="Ver el tramo con el dibujo de cada pieza (barrenos, ranuras y cortes), con zoom">🔍 Ver</button><button data-igs="${gi}|${g.bars.indexOf(x.b)}" title="IGS con las piezas acomodadas a lo largo del tubo">⬇ IGS</button><button data-hoja="${gi}|${g.bars.indexOf(x.b)}">🖨</button></div>${svgBar(x.b, col)}</div>`).join('')}
+  ${R.grupos.map((g, gi) => `<details class="card" open><summary>${g.maquina ? badge('in', g.maquina) + ' ' : ''}<b>${esc(g.label)}</b>${g.completo ? ' ' + badge('ok', '▣ ' + g.dibujo) : ''} ${g.sku ? badge('in', 'SKU ' + g.sku + (g.nSku > 1 ? ` (hay ${g.nSku}; elige en Configuración)` : '')) : badge('wa', 'Sin SKU en el catálogo')}${g.tramo !== CFG.tramo ? ' ' + badge('in', 'tramo ' + f0(g.tramo) + ' mm') : ''} ${g.largas.length ? badge('er', g.largas.length + ' piezas no caben') : ''}
+    ${dts(dt('Tramos nuevos', g.tot.tramos), g.tot.recUsados ? dt('Recortes usados', g.tot.recUsados, '', 'ok') : '', dt('Piezas', g.tot.piezas), dt('Consumo', f2(g.tot.consumo/(g.tramo || CFG.tramo)), 'TRA'), g.kgm ? dt('Peso', f2(g.tot.consumo/1000*g.kgm), 'kg') : '', dt('Aprovechamiento', pct(g.tot.aprov), '', lvAprov(g.tot.aprov)))}</summary>
+    <div class="legend" style="margin-top:12px">${[...new Map(g.bars.flatMap(b => b.piezas).map(p => [p.ruta + '|' + p.pieza, p])).values()].map(p => `<span><i style="background:${col(p)}"></i>${esc(p.pieza)}<span class="u">${f0(p.L)} mm · ${esc(p.ruta)}</span></span>`).join('')}</div>
+    ${agrupar(g.bars).map(x => `<div class="bar"><div class="barhd"><b title="${esc(x.b.id)}">Tramo ${esc(String(x.b.id).replace(R.id + '-', ''))}</b>${x.n > 1 ? badge('in', '×' + x.n + ' iguales') : ''}<span class="op">OP ${esc([...new Set(x.b.piezas.map(p => p.op))].join(', '))}</span><span style="flex:1"></span>
+      <button data-ver="${gi}|${g.bars.indexOf(x.b)}" title="Ver el tramo con el dibujo de cada pieza (barrenos, ranuras y cortes), con zoom">🔍 Ver</button><button data-igs="${gi}|${g.bars.indexOf(x.b)}" title="IGS con las piezas acomodadas a lo largo del tubo">⬇ IGS</button><button data-hoja="${gi}|${g.bars.indexOf(x.b)}" title="Hoja de corte de este tramo">🖨</button></div>${svgBar(x.b, col)}${pieBar(x.b)}</div>`).join('')}
     ${g.largas.length ? `<p style="color:var(--er)" class="sm">No caben en el tramo útil: ${[...new Set(g.largas.map(p => p.pieza + ' (' + f0(p.L) + ' mm)'))].map(esc).join(', ')}</p>` : ''}</details>`).join('')}
   ${S.fuera.length ? fueraHtml() : ''}`;
   bindMult();
 }
 function resumenPiezas(pz){ const m = new Map(); (pz || []).forEach(x => { const k = x.pieza + '|' + f0(x.L); m.set(k, (m.get(k) || 0) + 1); });
-  return [...m.entries()].map(([k, n]) => { const [p, L] = k.split('|'); return `<b>${n}×</b> ${esc(p)} <span class="mut">${L}</span>`; }).join(' · '); }
+  return [...m.entries()].map(([k, n]) => { const [p, L] = k.split('|'); return `<div><b>${n} ×</b> ${esc(p)}<span class="u">${L} mm</span></div>`; }).join(''); }
 function agrupar(bars){ const out = []; bars.forEach(b => { const sig = b.origen + '|' + b.P + '|' + b.piezas.map(p => p.ruta + p.pieza + p.op + Math.round(p.L)).join(','); const e = out.find(x => x.sig === sig); if(e){ e.n++; e.ids.push(b.id); } else out.push({sig, b, n: 1, ids: [b.id]}); }); return out; }
 function fueraHtml(){
   const g = {}; S.fuera.forEach(x => { const k = x.f.id + '|' + x.motivo; (g[k] = g[k] || {f: x.f, motivo: x.motivo, n: 0, ops: new Set()}); g[k].n += x.n; g[k].ops.add(x.o.op); });
@@ -2026,13 +2071,13 @@ function renderCons(){
   const kgmTxt = t => `${t.sku ? 'SKU ' + esc(t.sku) : 'sin SKU'} · ${t.kgm ? f2(t.kgm) + ' kg/m' : '— kg/m'} · tramo ${f0(t.tramo)} mm`;
   el.innerHTML = `<div class="card"><div class="row">${sel}<span class="mut sm" style="flex:1;min-width:240px">El consumo real de cada pieza incluye su parte proporcional del refrentado, la separación entre piezas, el chuck y el sobrante que se desecha. Los recortes que se guardan no cuentan como consumo; los tramos cancelados, tampoco. kg y TRA salen del catálogo de SKU.</span><button class="pri" id="cXls">📊 Exportar a Excel</button></div></div>
   ${bcHtml(C, pid)}
-  <details class="card" open><summary><b>Por tipo de tubular</b></summary><div class="tw" style="margin-top:8px"><table><tr><th>Tubular</th><th class="n">Tramos nuevos</th><th class="n">Recortes usados</th><th class="n">Recortes generados</th><th class="n">Consumo neto</th><th class="n">TRA</th><th class="n">kg</th><th class="n">Piezas</th><th class="n">Aprovechamiento</th><th class="n">Desecho</th></tr>
-  ${C.porTipo.map(t => `<tr><td><b>${esc(t.tipo)}</b><div class="mut sm">${kgmTxt(t)}</div></td><td class="n">${t.tramos}</td><td class="n">${t.recUsados}${t.recUsados ? `<div class="mut sm">${f0(t.mmRecUsados)} mm</div>` : ''}</td><td class="n">${t.recGen}${t.recGen ? `<div class="mut sm">${f0(t.mmRecGen)} mm</div>` : ''}</td>
-  <td class="n">${f0(t.consumo)} mm</td><td class="n">${f2(t.consumo/t.tramo)}</td><td class="n">${t.kgm ? f2(t.consumo/1000*t.kgm) : '—'}</td><td class="n">${t.piezas}</td><td class="n">${pct(t.mmPiezas/t.consumo)}</td><td class="n">${f0(t.desecho)} mm</td></tr>`).join('')}</table></div></details>
+  <details class="card" open><summary><b>Por tipo de tubular</b></summary><div class="tw" style="margin-top:8px"><table><tr><th style="min-width:230px">Tubular</th><th class="n">Tramos nuevos</th><th class="n">Recortes usados</th><th class="n">Recortes generados</th><th class="n">Consumo neto</th><th class="n">TRA</th><th class="n">kg</th><th class="n">Piezas</th><th class="n">Aprovechamiento</th><th class="n">Desecho</th></tr>
+  ${C.porTipo.map(t => `<tr><td><b>${esc(t.tipo)}</b><span class="sub">${kgmTxt(t)}</span></td><td class="n">${t.tramos}</td><td class="n">${t.recUsados}${t.recUsados ? `<span class="sub">${f0(t.mmRecUsados)} mm</span>` : ''}</td><td class="n">${t.recGen}${t.recGen ? `<span class="sub">${f0(t.mmRecGen)} mm</span>` : ''}</td>
+  <td class="n">${u(f0(t.consumo), 'mm')}</td><td class="n">${u(f2(t.consumo/t.tramo), 'TRA')}</td><td class="n">${t.kgm ? u(f2(t.consumo/1000*t.kgm), 'kg') : '—'}</td><td class="n">${u(t.piezas, 'pzas')}</td><td class="n" style="color:var(--${lvAprov(t.mmPiezas/t.consumo)})">${pct(t.mmPiezas/t.consumo)}</td><td class="n">${u(f0(t.desecho), 'mm')}</td></tr>`).join('')}</table></div></details>
   <details class="card" open><summary><b>Por pieza</b> <span class="mut sm">consumo real promedio por pieza</span></summary><div class="tw" style="margin-top:8px"><table><tr><th>Ruta</th><th>Pieza</th><th>Tubular</th><th class="n">Largo</th><th class="n">Piezas</th><th class="n">Consumo real / pz</th><th class="n">TRA / pz</th><th class="n">kg / pz</th><th class="n">Aprovech.</th></tr>
-  ${C.porPieza.map(e => `<tr><td><b>${esc(e.ruta)}</b></td><td>${esc(e.pieza)}</td><td class="sm">${esc(e.tipo)}${e.sku ? `<div class="mut">SKU ${esc(e.sku)}</div>` : ''}</td><td class="n">${f1(e.L)} mm</td><td class="n">${e.n}</td><td class="n">${f1(e.consumo/e.n)} mm</td><td class="n">${f4(e.consumo/e.n/e.tramo)}</td><td class="n">${e.kgm ? (e.consumo/e.n/1000*e.kgm).toFixed(3) : '—'}</td><td class="n">${pct(e.L*e.n/e.consumo)}</td></tr>`).join('')}</table></div></details>
+  ${C.porPieza.map(e => `<tr><td><b>${esc(e.ruta)}</b></td><td>${esc(e.pieza)}</td><td class="sm">${esc(e.tipo)}${e.sku ? `<span class="sub">SKU ${esc(e.sku)}</span>` : ''}</td><td class="n">${u(f1(e.L), 'mm')}</td><td class="n">${u(e.n, 'pzas')}</td><td class="n">${u(f1(e.consumo/e.n), 'mm')}</td><td class="n">${u(f4(e.consumo/e.n/e.tramo), 'TRA')}</td><td class="n">${e.kgm ? u((e.consumo/e.n/1000*e.kgm).toFixed(3), 'kg') : '—'}</td><td class="n">${pct(e.L*e.n/e.consumo)}</td></tr>`).join('')}</table></div></details>
   <details class="card"><summary><b>Por OP</b></summary><div class="tw" style="margin-top:8px"><table><tr><th>OP</th><th>Ruta</th><th>Tubular</th><th class="n">Piezas</th><th class="n">Largo de piezas</th><th class="n">Consumo real</th><th class="n">TRA</th><th class="n">kg</th></tr>
-  ${C.porOP.map(o => `<tr><td>${esc(o.op)}</td><td>${esc(o.ruta)}</td><td class="sm">${esc(o.tipo)}${o.sku ? `<div class="mut">SKU ${esc(o.sku)}</div>` : ''}</td><td class="n">${o.n}</td><td class="n">${f0(o.mm)} mm</td><td class="n">${f0(o.consumo)} mm</td><td class="n">${f4(o.consumo/o.tramo)}</td><td class="n">${o.kgm ? f2(o.consumo/1000*o.kgm) : '—'}</td></tr>`).join('')}</table></div></details>`;
+  ${C.porOP.map(o => `<tr><td>${esc(o.op)}</td><td>${esc(o.ruta)}</td><td class="sm">${esc(o.tipo)}${o.sku ? `<span class="sub">SKU ${esc(o.sku)}</span>` : ''}</td><td class="n">${u(o.n, 'pzas')}</td><td class="n">${u(f0(o.mm), 'mm')}</td><td class="n">${u(f0(o.consumo), 'mm')}</td><td class="n">${u(f4(o.consumo/o.tramo), 'TRA')}</td><td class="n">${o.kgm ? u(f2(o.consumo/1000*o.kgm), 'kg') : '—'}</td></tr>`).join('')}</table></div></details>`;
   $('cXls').onclick = exportarConsumos; bindBC();
   if($('cProg')) $('cProg').onchange = e => { S.consSel = e.target.value; renderCons(); };
 }
@@ -2046,12 +2091,12 @@ function renderPiso(){
     <p class="mut sm" style="margin:8px 0 0">${MAQ ? `Al descargar el IGS de un tramo queda "En proceso" en <b>${esc(MAQ)}</b> con su hora de inicio; al descargar el siguiente en ${esc(MAQ)}, el anterior se cierra como cortado (lo que esté en proceso en otra máquina no se toca). Usa "Terminar corte" para el último del turno.` : '<b style="color:var(--er)">Elige en qué máquina estás antes de descargar un IGS.</b>'}</p></div>
   ${lista.map(p => { const ts = (S.db.tramos || []).filter(t => t.programa === p.id).sort((a, b) => String(a.tipo).localeCompare(String(b.tipo)) || a.orden - b.orden), vivos = ts.filter(t => t.estado !== 'Cancelado'), hechos = vivos.filter(t => t.estado === 'Cortado').length;
     return `<details class="card" ${!['Cortado', 'Cancelado'].includes(p.estado) ? 'open' : ''}><summary><b>${esc(p.id)}</b> ${badge(p.estado === 'Cortado' ? 'ok' : p.estado === 'En proceso' ? 'wa' : 'in', p.estado || 'Pendiente')} <span class="mut sm">${fecha(+p.fecha)} · ${esc(p.archivo || '')}</span>
-    <div class="prog" title="${hechos}/${vivos.length} tramos"><i style="width:${vivos.length ? hechos/vivos.length*100 : 0}%"></i></div><span class="sm">${hechos}/${vivos.length}</span></summary>
+    <div class="prog" title="${hechos} de ${vivos.length} tramos cortados"><i style="width:${vivos.length ? hechos/vivos.length*100 : 0}%"></i></div><span class="sm">${hechos} de ${vivos.length} tramos cortados</span></summary>
     <div class="tw" style="margin-top:8px;max-height:none"><table><tr><th>Tramo</th><th>Tubular</th><th>Material</th><th>Piezas</th><th>Recorte a guardar</th><th>Estado</th><th></th></tr>
-    ${ts.map(t => `<tr><td style="white-space:nowrap"><b>${esc(idCorto(t))}</b></td><td class="sm">${esc(t.tipoLabel)}</td><td class="sm">${t.origen === 'recorte' ? '♻ ' + esc(t.recorteUsado) + ' · ' + f0(t.largo) + ' mm' : 'Nuevo ' + f0(t.largo) + ' mm'}</td>
-      <td class="sm">${resumenPiezas(t.piezas)}<div class="mut">${esc([...new Set((t.piezas || []).map(x => x.op))].join(', '))}</div></td>
-      <td class="sm">${t.recorteNuevo ? '♻ ' + esc(t.recorteNuevo) + ' · ' + f0(t.largoRecorte) + ' mm' : '—'}</td>
-      <td>${badge(t.estado === 'Cortado' ? 'ok' : t.estado === 'En proceso' ? 'wa' : 'in', t.estado)}${t.maquina ? ' ' + badge('in', t.maquina) : ''}<div class="mut sm">${t.inicio ? '▶ ' + fecha(+t.inicio) : ''}${t.fin ? '<br>■ ' + fecha(+t.fin) : ''}</div></td>
+    ${ts.map(t => `<tr><td style="white-space:nowrap"><b>${esc(idCorto(t))}</b></td><td class="sm">${esc(t.tipoLabel)}</td><td class="sm">${t.origen === 'recorte' ? `♻ Recorte ${u(f0(t.largo), 'mm')}<span class="sub">${esc(t.recorteUsado)}</span>` : `Tramo nuevo ${u(f0(t.largo), 'mm')}`}</td>
+      <td class="sm">${resumenPiezas(t.piezas)}<span class="sub">OP ${esc([...new Set((t.piezas || []).map(x => x.op))].join(', '))}</span></td>
+      <td class="sm">${t.recorteNuevo ? `♻ ${u(f0(t.largoRecorte), 'mm')}<span class="sub">${esc(t.recorteNuevo)}</span>` : '—'}</td>
+      <td>${badge(t.estado === 'Cortado' ? 'ok' : t.estado === 'En proceso' ? 'wa' : 'in', t.estado)}${t.maquina ? ' ' + badge('in', t.maquina) : ''}<span class="sub">${t.inicio ? 'Inicio ' + fecha(+t.inicio) : ''}${t.fin ? '<br>Fin ' + fecha(+t.fin) : ''}</span></td>
       <td style="white-space:nowrap">${t.estado === 'Cancelado' ? '' : `<button data-pd="${esc(t.id)}" title="Descargar IGS del múltiple">⬇ IGS</button> <button data-ph="${esc(t.id)}" title="Hoja de corte">🖨</button>`}${t.estado === 'En proceso' ? ` <button class="pri" data-pt="${esc(t.id)}">■ Terminar corte</button>` : ''}</td></tr>`).join('')}</table></div>
     ${!['Cortado', 'Cancelado'].includes(p.estado) && ts.some(t => t.estado === 'Pendiente') ? `<div class="row" style="margin-top:8px"><span style="flex:1"></span><button data-pc="${esc(p.id)}" title="Cancela los tramos pendientes y libera sus recortes reservados">✖ Cancelar tramos pendientes</button></div>` : ''}</details>`; }).join('') || '<div class="card empty">No hay programas pendientes.</div>'}`;
   el.querySelectorAll('[data-pv]').forEach(b => b.onclick = () => { S.pisoVer = b.dataset.pv; renderPiso(); });
@@ -2192,29 +2237,31 @@ function dibujarVisor(){
 function cerrarVisor(){ const m = $('visor'); if(m) m.remove(); S.visor = null; }
 document.addEventListener('keydown', e => { if(e.key === 'Escape' && S.visor) cerrarVisor(); });
 function setVB(svg, v){ svg._vb = v; svg.setAttribute('viewBox', `${v.x} ${v.y} ${v.w} ${v.h}`); }
-function dibujarVista(svg, r, V){
+function dibujarVista(svg, r, V, pal){
+  // pal: colores del dibujo; por omisión los del tema (visor de un IGS); el visor del tramo usa colores de plano sobre fondo claro
+  pal = Object.assign({tx: 'var(--tx)', feat: '#d85a30', end: 'var(--ac)', dim: 'var(--ac)', mut: 'var(--mut)', w: 1.2, wf: 1.2}, pal || {});
   const ia = V === 'YZ' ? 1 : 0, ib = V === 'XY' ? 1 : 2, P = q => [q[ia], -q[ib]];
   const L = r.len, W = r.secA, H = r.secB;
   const ext = V === 'YZ' ? {x0: -W/2, x1: W/2, y0: -H/2, y1: H/2} : {x0: 0, x1: L, y0: -(V === 'XY' ? W : H)/2, y1: (V === 'XY' ? W : H)/2};
   const big = Math.max(ext.x1 - ext.x0, ext.y1 - ext.y0), fs = V === 'YZ' ? Math.max(W, H)/14 : Math.min(Math.max(L/55, 6), Math.max(W, H)*1.2);
   let g = '', ann = '';
-  const lines = r.polys.map(pl => ({d: pl.p.map((q, i) => (i ? 'L' : 'M') + P(q).map(v => +v.toFixed(3)).join(',')).join(''), c: pl.feat ? '#d85a30' : pl.end ? 'var(--ac)' : 'var(--tx)'}));
-  lines.forEach(l => g += `<path d="${l.d}" fill="none" stroke="${l.c}" stroke-width="1.2" vector-effect="non-scaling-stroke"/>`);
+  const lines = r.polys.map(pl => ({d: pl.p.map((q, i) => (i ? 'L' : 'M') + P(q).map(v => +v.toFixed(3)).join(',')).join(''), c: pl.feat ? pal.feat : pl.end ? pal.end : pal.tx, w: pl.feat ? pal.wf : pal.w}));
+  lines.forEach(l => g += `<path d="${l.d}" fill="none" stroke="${l.c}" stroke-width="${l.w}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`);
   const dimH = (x0, x1, y, txt, col) => `<line x1="${x0}" y1="${y}" x2="${x1}" y2="${y}" stroke="${col}" stroke-width="1" vector-effect="non-scaling-stroke"/><line x1="${x0}" y1="${y - fs*.4}" x2="${x0}" y2="${y + fs*.4}" stroke="${col}" vector-effect="non-scaling-stroke"/><line x1="${x1}" y1="${y - fs*.4}" x2="${x1}" y2="${y + fs*.4}" stroke="${col}" vector-effect="non-scaling-stroke"/><text x="${(x0 + x1)/2}" y="${y - fs*.35}" font-size="${fs}" text-anchor="middle" fill="${col}">${txt}</text>`;
   const dimV = (y0, y1, x, txt, col) => `<line x1="${x}" y1="${y0}" x2="${x}" y2="${y1}" stroke="${col}" vector-effect="non-scaling-stroke"/><text x="${x + fs*.4}" y="${(y0 + y1)/2 + fs*.35}" font-size="${fs}" fill="${col}">${txt}</text>`;
   let top = ext.y0, extraTop = 0;
   if(V === 'YZ'){
-    ann += dimH(-W/2, W/2, H/2 + fs*1.8, f1(W) + ' mm', 'var(--ac)') + dimV(-H/2, H/2, W/2 + fs*.8, f1(H) + ' mm', 'var(--ac)');
-    if(r.wall != null) ann += `<text x="${-W/2}" y="${-H/2 - fs*.6}" font-size="${fs*.9}" fill="var(--mut)">Pared ${f2(r.wall)} mm</text>`;
+    ann += dimH(-W/2, W/2, H/2 + fs*1.8, f1(W) + ' mm', pal.dim) + dimV(-H/2, H/2, W/2 + fs*.8, f1(H) + ' mm', pal.dim);
+    if(r.wall != null) ann += `<text x="${-W/2}" y="${-H/2 - fs*.6}" font-size="${fs*.9}" fill="${pal.mut}">Pared ${f2(r.wall)} mm</text>`;
   } else {
     const hh = (ext.y1 - ext.y0);
-    ann += dimH(0, L, ext.y1 + fs*1.8, f1(L) + ' mm', 'var(--ac)') + dimV(ext.y0, ext.y1, L + fs*.8, f1(hh) + ' mm', 'var(--ac)');
+    ann += dimH(0, L, ext.y1 + fs*1.8, f1(L) + ' mm', pal.dim) + dimV(ext.y0, ext.y1, L + fs*.8, f1(hh) + ' mm', pal.dim);
     const fe = r.feats.filter(x => V === 'XY' ? x.caras.some(c => c[0] === 'Z' || c[0] === 'R') || !x.caras.length : x.caras.some(c => c[0] === 'Y' || c[0] === 'R') || !x.caras.length);
     const ofs = fs*.85;
     fe.forEach((x, i) => { const row = i % 3, yt = ext.y0 - fs*(1.4 + row*1.6);
-      ann += `<line x1="${x.x}" y1="${ext.y0}" x2="${x.x}" y2="${yt + ofs*.3}" stroke="#d85a30" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/><text x="${x.x}" y="${yt}" font-size="${ofs}" text-anchor="middle" fill="#d85a30">${f1(x.x)}${x.diam ? ' · Ø' + f1(x.diam) : ''}</text>`; });
-    if(fe.length){ extraTop = fs*(1.4 + Math.min(fe.length, 3)*1.6 + 1.5); ann += `<text x="0" y="${ext.y0 - extraTop + fs*.6}" font-size="${ofs}" fill="#d85a30">Cotas desde el extremo izquierdo (mm)</text>`; }
-    ann += `<text x="0" y="${ext.y1 + fs*3.8}" font-size="${fs*.85}" fill="var(--mut)">Izq.: ${esc(endTxt(r.ends[0]))}</text><text x="${L}" y="${ext.y1 + fs*3.8}" font-size="${fs*.85}" text-anchor="end" fill="var(--mut)">Der.: ${esc(endTxt(r.ends[1]))}</text>`;
+      ann += `<line x1="${x.x}" y1="${ext.y0}" x2="${x.x}" y2="${yt + ofs*.3}" stroke="${pal.feat}" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/><text x="${x.x}" y="${yt}" font-size="${ofs}" text-anchor="middle" fill="${pal.feat}">${f1(x.x)}${x.diam ? ' · Ø' + f1(x.diam) : ''}</text>`; });
+    if(fe.length){ extraTop = fs*(1.4 + Math.min(fe.length, 3)*1.6 + 1.5); ann += `<text x="0" y="${ext.y0 - extraTop + fs*.6}" font-size="${ofs}" fill="${pal.feat}">Cotas desde el extremo izquierdo (mm)</text>`; }
+    ann += `<text x="0" y="${ext.y1 + fs*3.8}" font-size="${fs*.85}" fill="${pal.mut}">Izq.: ${esc(endTxt(r.ends[0]))}</text><text x="${L}" y="${ext.y1 + fs*3.8}" font-size="${fs*.85}" text-anchor="end" fill="${pal.mut}">Der.: ${esc(endTxt(r.ends[1]))}</text>`;
   }
   svg.innerHTML = `<g>${g}</g><g>${ann}</g>`;
   const pad = big*0.06 + fs*2;
