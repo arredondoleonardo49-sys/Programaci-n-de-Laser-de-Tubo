@@ -996,7 +996,8 @@ function leerProgramaLaser(wb, hojas){
   return arreglarOps(ops);
 }
 /* renglones de una máquina (del Excel o del programa que se subió al OEE): encabezado con "Observaciones" y una fila por dibujo */
-function leerHojaPrograma(rows, maq, sn, ocultas, ops){
+function leerHojaPrograma(rows, maq, sn, ocultas, ops, hechas){
+  // hechas: {fila: piezas ya cortadas} (avance parcial del OEE); se programa solo lo que falta
   const num = v => parseFloat(String(v == null ? '' : v).replace(/,/g, '')) || 0; let idx = ops.length;
   {
     const hi = rows.findIndex(r => r.some(c => /OBSERVACIONES/i.test(c)));
@@ -1011,8 +1012,11 @@ function leerHojaPrograma(rows, maq, sn, ocultas, ops){
       const v = c => c >= 0 ? String(r[c] == null ? '' : r[c]).trim() : '';
       const o = {maquina: maq, hoja: sn, fila: fila + 1, op: v(cO) || sn + ' fila ' + (fila + 1), ruta: v(cM), familia: v(cF), parte: v(cP), desc: v(cP), tubular: v(cT),
         cant: num(r[cQ]), xMueble: num(r[cX]), progra: num(r[cG]), dibujo: dib, obs: v(cB), inicio: null, idx: idx++};
+      const ya = hechas && hechas[i] > 0 ? Math.min(hechas[i], o.cant) : 0;
+      if(ya){ o.avance = ya; o.cant = o.cant - ya; }
       if(/NO CORTAR/i.test(dib)) o.omitir = dib;
       else if(/^(SI|SÍ|X|✓|TRUE|VERDADERO|1)$/i.test(v(cC))) o.omitir = 'Ya marcado como cortado';
+      else if(ya && o.cant <= 0) o.omitir = 'Ya cortado (avance en el OEE)';
       else if(/DIBUJO EN (LA )?MAQUINA/.test(norm(dib))) o.omitir = 'Dibujo en la máquina (no se acomoda)';
       ops.push(o);
     });
@@ -1043,9 +1047,16 @@ function programasOEE(){
     if(!r || !['GW1', 'GW2'].includes(r.machine) || !/^\d{4}-\d{2}-\d{2}$/.test(String(r.fecha || ''))) return;
     let rows = r.rows; if(typeof rows === 'string'){ try{ rows = JSON.parse(rows); }catch(e){ rows = null; } }
     if(!Array.isArray(rows) || rows.length < 2) return;
-    (out[r.fecha] = out[r.fecha] || {})[r.machine] = {rows, n: rows.length - 1, subido: r.uploadedAt || r.updatedAt || '', por: r.uploadedByName || r.uploadedBy || ''};
+    (out[r.fecha] = out[r.fecha] || {})[r.machine] = {rows, n: rows.length - 1, subido: r.uploadedAt || r.updatedAt || '', por: r.uploadedByName || r.uploadedBy || '', hechas: avancesOEE(r.avances)};
   });
   return out;
+}
+/* avance parcial de OPs grandes (OEE, campo avances): "fila,pzas,AAAAMMDD,turno,franja,ts36[,x]" separados por ";".
+   fila = índice desde 0 de las filas sin encabezado; las entradas que terminan en ",x" están deshechas */
+function avancesOEE(s){
+  const m = {}; String(s || '').split(';').forEach(e => { const p = e.split(','); if(p.length < 2 || p[p.length - 1].trim() === 'x') return;
+    const f = parseInt(p[0], 10), n = parseFloat(p[1]); if(f >= 0 && n > 0) m[f] = (m[f] || 0) + n; });
+  return m;
 }
 const fechaOEE = f => { const [y, m, d] = f.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('es-MX', {weekday: 'short', day: 'numeric', month: 'short'}); };
 /* fecha que se ofrece: la de hoy si hay; si no, la siguiente que viene; si no, la más reciente */
@@ -1055,7 +1066,7 @@ function fechaOEEPorOmision(P){
 }
 function leerProgramaOEE(fecha){
   const P = programasOEE()[fecha]; if(!P) throw new Error('El OEE de este navegador no tiene programa de GW1 / GW2 del ' + fecha);
-  const ops = []; ['GW1', 'GW2'].forEach(m => { if(P[m]) leerHojaPrograma(P[m].rows, m, 'OEE ' + m, [], ops); });
+  const ops = []; ['GW1', 'GW2'].forEach(m => { if(P[m]) leerHojaPrograma(P[m].rows, m, 'OEE ' + m, [], ops, P[m].hechas); });
   if(!ops.length) throw new Error('El programa del OEE del ' + fecha + ' no trae renglones');
   return arreglarOps(ops);
 }
@@ -1079,7 +1090,7 @@ function cardOEE(){
     <span class="sub">El programa se sube una sola vez, en el OEE; aquí se toma de ese mismo navegador. Cada plataforma guarda sus propios datos.</span></span>
     <select id="oeeFecha">${fs.map(f => `<option value="${f}" ${f === sel ? 'selected' : ''}>${fechaOEE(f)}</option>`).join('')}</select>
     <button class="${enUso ? '' : 'pri'}" id="oeeUsar">${enUso ? '↻ Volver a cargar' : '⇩ Usar este programa'}</button><a href="${OEE_URL}" target="_blank" rel="noopener"><button title="Abre la plataforma OEE en otra pestaña">Abrir OEE ↗</button></a></div>
-    ${dts(dt('GW1', nM('GW1'), 'renglones'), dt('GW2', nM('GW2'), 'renglones'), ops.some(o => o.omitir === 'Ya marcado como cortado') ? dt('Ya cortados en el OEE', ops.filter(o => o.omitir === 'Ya marcado como cortado').length, 'renglones') : '', sub ? dt('Subido', new Date(sub).toLocaleString('es-MX', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'})) : '', (p.GW1 || p.GW2).por ? dt('Por', esc((p.GW1 || p.GW2).por)) : '')}</div>`;
+    ${dts(dt('GW1', nM('GW1'), 'renglones'), dt('GW2', nM('GW2'), 'renglones'), ops.some(o => o.omitir === 'Ya marcado como cortado') ? dt('Ya cortados en el OEE', ops.filter(o => o.omitir === 'Ya marcado como cortado').length, 'renglones') : '', ops.some(o => o.avance) ? dt('Avance parcial', f0(ops.reduce((s, o) => s + (o.avance || 0), 0)), 'pzas ya cortadas') : '', sub ? dt('Subido', new Date(sub).toLocaleString('es-MX', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'})) : '', (p.GW1 || p.GW2).por ? dt('Por', esc((p.GW1 || p.GW2).por)) : '')}</div>`;
 }
 /* Excel de órdenes planificadas de Business Central (Nº ruta + Cantidad) */
 function leerProgramaBC(wb){
@@ -1934,7 +1945,7 @@ ${m.iguales ? ' ' + `<span title="${esc(m.cand.map(x => x.path.split('/').slice(
     ${cenProgHtml(O)}
     <div class="card"><h3>${esc(S.progFile)}</h3><div class="tw"><table><tr><th>Máquina</th><th>OP</th><th>Modelo</th><th>Parte</th><th>Tubular</th><th>Nombre del dibujo</th><th class="n" title="Piezas a cortar">Piezas</th><th class="n" title="Muebles programados">Muebles</th><th>IGS</th><th>Carpeta central</th></tr>
     ${O.map(o => { const e = o.omitir ? null : estadoCentral(o.dibujo, M[o.idx] && M[o.idx].f);
-      return `<tr><td>${badge('in', o.maquina)}</td><td class="sm">${esc(o.op)}</td><td><b>${esc(o.ruta)}</b></td><td class="sm">${esc(o.parte)}</td><td class="sm">${esc(o.tubular)}</td><td>${esc(o.dibujo)}${o.nota ? `<span class="sub">${esc(o.nota)} (en el programa: "${esc(o.dibujoOrig)}")</span>` : ''}</td><td class="n">${u(f0(o.cant), 'pzas')}</td><td class="n">${f0(o.progra)}${o.xMueble > 0 ? `<span class="sub">${f0(o.xMueble)} pza/mueble</span>` : ''}</td><td>${celda(o)}</td>
+      return `<tr><td>${badge('in', o.maquina)}</td><td class="sm">${esc(o.op)}</td><td><b>${esc(o.ruta)}</b></td><td class="sm">${esc(o.parte)}</td><td class="sm">${esc(o.tubular)}</td><td>${esc(o.dibujo)}${o.nota ? `<span class="sub">${esc(o.nota)} (en el programa: "${esc(o.dibujoOrig)}")</span>` : ''}</td><td class="n">${u(f0(o.cant), 'pzas')}${o.avance ? `<span class="sub" title="Avance parcial registrado en el OEE: se programa solo lo que falta">${f0(o.avance)} ya cortadas (OEE)</span>` : ''}</td><td class="n">${f0(o.progra)}${o.xMueble > 0 ? `<span class="sub">${f0(o.xMueble)} pza/mueble</span>` : ''}</td><td>${celda(o)}</td>
       <td>${badgeCentral(e)}</td></tr>`; }).join('')}</table></div></div>`;
 }
 /* resumen de la carpeta central para el programa del día: qué dibujos ya tienen .zzx y qué falta */
