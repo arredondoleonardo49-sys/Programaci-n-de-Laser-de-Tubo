@@ -990,9 +990,15 @@ function leerPrograma(buf, name){
 }
 /* programa por máquina: "PROGRAMA LASER #2" = GW1 y "#3" = GW2; cada hoja oculta los renglones de la otra máquina */
 function leerProgramaLaser(wb, hojas){
-  const ops = [], num = v => parseFloat(String(v == null ? '' : v).replace(/,/g, '')) || 0; let idx = 0;
-  hojas.forEach(([sn, maq]) => {
-    const ws = wb.Sheets[sn], ocultas = ws['!rows'] || [], rows = XLSX.utils.sheet_to_json(ws, {header: 1, defval: '', raw: false, blankrows: true});
+  const ops = [];
+  hojas.forEach(([sn, maq]) => { const ws = wb.Sheets[sn]; leerHojaPrograma(XLSX.utils.sheet_to_json(ws, {header: 1, defval: '', raw: false, blankrows: true}), maq, sn, ws['!rows'] || [], ops); });
+  if(!ops.length) throw new Error('Las hojas PROGRAMA LASER #2 y #3 no traen renglones visibles');
+  return arreglarOps(ops);
+}
+/* renglones de una máquina (del Excel o del programa que se subió al OEE): encabezado con "Observaciones" y una fila por dibujo */
+function leerHojaPrograma(rows, maq, sn, ocultas, ops){
+  const num = v => parseFloat(String(v == null ? '' : v).replace(/,/g, '')) || 0; let idx = ops.length;
+  {
     const hi = rows.findIndex(r => r.some(c => /OBSERVACIONES/i.test(c)));
     if(hi < 0) throw new Error(`En "${sn}" no encontré el encabezado (la fila con "Observaciones")`);
     const H = rows[hi].map(c => norm(c).replace(/\s+/g, ' ').trim()), col = re => H.findIndex(h => re.test(h));
@@ -1010,7 +1016,11 @@ function leerProgramaLaser(wb, hojas){
       else if(/DIBUJO EN (LA )?MAQUINA/.test(norm(dib))) o.omitir = 'Dibujo en la máquina (no se acomoda)';
       ops.push(o);
     });
-  });
+  }
+  return ops;
+}
+/* ajustes del programa completo: "IGUAL A <OP>" y dibujo "0" */
+function arreglarOps(ops){
   // "IGUAL A FA-6530": toma el dibujo del renglón de esa OP con la misma parte (o la misma letra final)
   ops.forEach(o => { const m = norm(o.dibujo).match(/^IGUAL (?:A|QUE)\s+(.+)$/); if(!m) return;
     const ref = m[1].trim(), suf = (norm(o.ruta).match(/-([A-Z])$/) || [])[1];
@@ -1019,8 +1029,57 @@ function leerProgramaLaser(wb, hojas){
     if(x) Object.assign(o, {dibujoOrig: o.dibujo, dibujo: x.dibujo, nota: 'Igual a ' + x.ruta}); });
   // sin nombre de dibujo ("0"): se busca por la parte
   ops.forEach(o => { if(o.dibujo === '0' && o.parte) Object.assign(o, {dibujoOrig: o.dibujo, dibujo: o.parte, nota: 'Sin nombre de dibujo: se buscó por la parte'}); });
-  if(!ops.length) throw new Error('Las hojas PROGRAMA LASER #2 y #3 no traen renglones visibles');
   return ops;
+}
+/* ======================= Programa del OEE =======================
+   Las dos plataformas viven en la misma página de GitHub (arredondoleonardo49-sys.github.io), así que comparten el
+   almacenamiento del navegador: el programa que se sube una vez al OEE (Registrar turno › Programa del día) se lee de ahí.
+   Solo se lee; cada plataforma conserva su propia base de datos (Sheet). Leonardo, 2026-11-11 */
+const OEE_URL = 'https://arredondoleonardo49-sys.github.io/OEE-Mantto-MAQUINARIA-CT.-Aceros/', OEE_KEY = 'oee_programa_dia_v1';
+function programasOEE(){
+  let L = []; try{ L = JSON.parse(localStorage.getItem(OEE_KEY) || '[]'); }catch(e){}
+  const out = {};
+  (Array.isArray(L) ? L : []).forEach(r => {
+    if(!r || !['GW1', 'GW2'].includes(r.machine) || !/^\d{4}-\d{2}-\d{2}$/.test(String(r.fecha || ''))) return;
+    let rows = r.rows; if(typeof rows === 'string'){ try{ rows = JSON.parse(rows); }catch(e){ rows = null; } }
+    if(!Array.isArray(rows) || rows.length < 2) return;
+    (out[r.fecha] = out[r.fecha] || {})[r.machine] = {rows, n: rows.length - 1, subido: r.uploadedAt || r.updatedAt || '', por: r.uploadedByName || r.uploadedBy || ''};
+  });
+  return out;
+}
+const fechaOEE = f => { const [y, m, d] = f.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('es-MX', {weekday: 'short', day: 'numeric', month: 'short'}); };
+/* fecha que se ofrece: la de hoy si hay; si no, la siguiente que viene; si no, la más reciente */
+function fechaOEEPorOmision(P){
+  const fs = Object.keys(P).sort(), hoy = fechaArchivo();
+  return fs.includes(hoy) ? hoy : fs.find(f => f > hoy) || fs[fs.length - 1] || '';
+}
+function leerProgramaOEE(fecha){
+  const P = programasOEE()[fecha]; if(!P) throw new Error('El OEE de este navegador no tiene programa de GW1 / GW2 del ' + fecha);
+  const ops = []; ['GW1', 'GW2'].forEach(m => { if(P[m]) leerHojaPrograma(P[m].rows, m, 'OEE ' + m, [], ops); });
+  if(!ops.length) throw new Error('El programa del OEE del ' + fecha + ' no trae renglones');
+  return arreglarOps(ops);
+}
+/* firma del programa de una fecha sin la columna "Cortado" (las palomitas del OEE cambian a cada rato; el programa no) */
+const firmaOEE = fecha => { const P = programasOEE()[fecha] || {}; return ['GW1', 'GW2'].map(m => P[m] ? P[m].rows.map(r => r.slice(1).join('|')).join('\n') : '').join('\n#\n'); };
+async function abrirProgramaOEE(fecha, callado){
+  try{ S.ops = leerProgramaOEE(fecha); S.formato = 'laser'; S.match = null; S.res = null; S.progOEE = fecha; S.oeeFirma = firmaOEE(fecha);
+    S.progFile = 'Programa del OEE · ' + fechaOEE(fecha);
+    if(!callado) toast(`Programa del OEE (${fechaOEE(fecha)}): ${S.ops.length} renglones · GW1 ${S.ops.filter(o => o.maquina === 'GW1').length} · GW2 ${S.ops.filter(o => o.maquina === 'GW2').length}`);
+    if(S.lib.length) await medirNecesarios(); else { explotar(); renderAll(); } }
+  catch(e){ toast(e.message, 'er'); }
+}
+function cardOEE(){
+  const P = programasOEE(), fs = Object.keys(P).sort().reverse();
+  if(!fs.length) return `<div class="card row"><span style="flex:1"><b>Programa del OEE</b><span class="sub">En este navegador no hay programa de GW1 / GW2 subido al OEE. Súbelo una sola vez en el OEE (Registrar turno › Programa del día) y aquí aparece; o arrastra el Excel abajo.</span></span><a href="${OEE_URL}" target="_blank" rel="noopener"><button>Abrir OEE ↗</button></a></div>`;
+  const sel = S.oeeSel && P[S.oeeSel] ? S.oeeSel : (S.progOEE && P[S.progOEE] ? S.progOEE : fechaOEEPorOmision(P)), p = P[sel];
+  const enUso = S.progOEE === sel, sub = [p.GW1, p.GW2].filter(Boolean).map(x => x.subido).sort().pop();
+  let ops = []; try{ ops = leerProgramaOEE(sel); }catch(e){}
+  const nM = m => ops.filter(o => o.maquina === m).length;
+  return `<div class="card"><div class="row"><span style="flex:1;min-width:260px"><b>Programa del OEE</b> ${enUso ? badge('ok', '✓ En uso') : ''}
+    <span class="sub">El programa se sube una sola vez, en el OEE; aquí se toma de ese mismo navegador. Cada plataforma guarda sus propios datos.</span></span>
+    <select id="oeeFecha">${fs.map(f => `<option value="${f}" ${f === sel ? 'selected' : ''}>${fechaOEE(f)}</option>`).join('')}</select>
+    <button class="${enUso ? '' : 'pri'}" id="oeeUsar">${enUso ? '↻ Volver a cargar' : '⇩ Usar este programa'}</button><a href="${OEE_URL}" target="_blank" rel="noopener"><button title="Abre la plataforma OEE en otra pestaña">Abrir OEE ↗</button></a></div>
+    ${dts(dt('GW1', nM('GW1'), 'renglones'), dt('GW2', nM('GW2'), 'renglones'), ops.some(o => o.omitir === 'Ya marcado como cortado') ? dt('Ya cortados en el OEE', ops.filter(o => o.omitir === 'Ya marcado como cortado').length, 'renglones') : '', sub ? dt('Subido', new Date(sub).toLocaleString('es-MX', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'})) : '', (p.GW1 || p.GW2).por ? dt('Por', esc((p.GW1 || p.GW2).por)) : '')}</div>`;
 }
 /* Excel de órdenes planificadas de Business Central (Nº ruta + Cantidad) */
 function leerProgramaBC(wb){
@@ -1822,7 +1881,7 @@ function exportarConsumos(){
 function renderProg(){
   const el = $('t-prog'), O = S.ops;
   const rutasLib = new Set(vigentes().vig.map(f => norm(f.p.ruta)));
-  el.innerHTML = `<div class="drop" id="dropProg">📥 Arrastra aquí el Excel <b>PROGRAMA LASER</b> del día (hojas #2 = GW1 y #3 = GW2) o el de <b>órdenes planificadas</b> de Business Central<br><button id="pickProg" style="margin-top:8px">Elegir archivo</button><input type="file" id="inProg" hidden accept=".xlsx,.xls,.xlsm"></div>
+  el.innerHTML = `${cardOEE()}<div class="drop" id="dropProg">📥 Si el programa no está en el OEE, arrastra aquí el Excel <b>PROGRAMA LASER</b> (hojas #2 = GW1 y #3 = GW2) o el de <b>órdenes planificadas</b> de Business Central<br><button id="pickProg" style="margin-top:8px">Elegir archivo</button><input type="file" id="inProg" hidden accept=".xlsx,.xls,.xlsm"></div>
   ${O.length && S.formato === 'laser' ? progLaserHtml() : ''}
   ${O.length && S.formato !== 'laser' ? `<div class="kpis" style="margin-top:14px"><div class="kpi"><span>OPs</span><b>${O.length}</b></div><div class="kpi"><span>Rutas</span><b>${new Set(O.map(o => o.ruta)).size}</b></div><div class="kpi"><span>Muebles</span><b>${f0(O.reduce((s, o) => s + o.cant, 0))}</b></div>
   <div class="kpi"><span>Rutas con tubular</span><b>${new Set(O.filter(o => rutasLib.has(norm(o.ruta))).map(o => o.ruta)).size}</b></div><div class="kpi"><span>Piezas de tubular</span><b>${f0(S.items.length)}</b></div></div>
@@ -1834,6 +1893,8 @@ function renderProg(){
   ['dragleave', 'drop'].forEach(ev => z.addEventListener(ev, e => { e.preventDefault(); z.classList.remove('over'); }));
   z.addEventListener('drop', e => e.dataTransfer.files[0] && abrirPrograma(e.dataTransfer.files[0]));
   $('pickProg').onclick = () => $('inProg').click(); $('inProg').onchange = e => e.target.files[0] && abrirPrograma(e.target.files[0]);
+  if($('oeeFecha')) $('oeeFecha').onchange = e => { S.oeeSel = e.target.value; renderProg(); };
+  if($('oeeUsar')) $('oeeUsar').onclick = () => abrirProgramaOEE($('oeeFecha').value);
   if($('progDir')) $('progDir').onclick = () => abrirCentral(false);
   if($('progZzx')) $('progZzx').onclick = () => abrirCentral(false);
   if($('progFalt')) $('progFalt').onclick = exportarFaltantes;
@@ -1842,7 +1903,7 @@ function renderProg(){
   el.querySelectorAll('[data-pzm]').forEach(i => i.onchange = () => { const v = Math.round(+i.value); if(v > 1) PZM[i.dataset.pzm] = v; else delete PZM[i.dataset.pzm]; savePzm(); S.res = null; explotar(); renderAll(); });
 }
 async function abrirPrograma(file){
-  try{ const r = leerPrograma(await file.arrayBuffer(), file.name); S.ops = r.ops; S.formato = r.formato; S.match = null; S.progFile = file.name; S.res = null;
+  try{ const r = leerPrograma(await file.arrayBuffer(), file.name); S.ops = r.ops; S.formato = r.formato; S.match = null; S.progFile = file.name; S.res = null; S.progOEE = null;
     toast(r.formato === 'laser' ? `${S.ops.length} renglones · GW1 ${S.ops.filter(o => o.maquina === 'GW1').length} · GW2 ${S.ops.filter(o => o.maquina === 'GW2').length}` : S.ops.length + ' OPs leídas');
     if(S.lib.length) await medirNecesarios(); else { explotar(); renderAll(); if(API.on() && r.formato !== 'laser') cargarBibliotecaDrive(false); } }
   catch(e){ toast(e.message, 'er'); }
@@ -2310,17 +2371,20 @@ const ICO = {
   piso: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/>',
   rec: '<polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5" rx="1"/><line x1="10" y1="12" x2="14" y2="12"/>',
   cons: '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>',
+  oee: '<path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>',
   cfg: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>'
 };
 const MENU = [
-  {g: 'Programar', items: [{k: 'prog', c: '#4a9eff', t: 'Programa de producción', d: 'Excel PROGRAMA LASER del día (GW1 / GW2) o de órdenes planificadas de BC: dibujos ligados y su alta en TubesT.'},
+  {g: 'Programar', items: [{k: 'prog', c: '#4a9eff', t: 'Programa de producción', d: 'Programa del día que se subió al OEE (GW1 / GW2), o el Excel: dibujos ligados y su alta en TubesT.'},
     {k: 'lib', c: '#3ecf8e', t: 'Biblioteca de IGS', d: 'Carpeta central TUBO LASER - DIBUJOS POR MODELO: IGS de cada modelo, MULTIPLE, .zzx y lo que se mide en cada IGS.'},
     {k: 'modelo', c: '#2dd4bf', t: 'Múltiples por modelo', d: 'Diseña múltiples reutilizables por modelo con sus piezas sueltas; se validan y se dan de alta una sola vez.'},
     {k: 'mult', c: '#f5a623', t: 'Múltiples de corte', d: 'Piezas del mismo tubular acomodadas a lo largo de cada tramo para el máximo aprovechamiento.'}]},
   {g: 'Producción', items: [{k: 'piso', c: '#c084fc', t: 'Corte en piso', d: 'Descarga de IGS por tramo y seguimiento: pendiente, en proceso, cortado.'},
     {k: 'rec', c: '#fb7185', t: 'Inventario de recortes', d: 'Sobrantes que vale la pena guardar, listos para usarse en los siguientes programas.'}]},
   {g: 'Análisis', items: [{k: 'cons', c: '#38bdf8', t: 'Consumos reales', d: 'Consumo por pieza, por tipo de tubular y por OP, incluyendo chuck, separación y desecho.'}]},
-  {g: 'Ajustes', items: [{k: 'cfg', c: '#8b8fa8', t: 'Configuración', d: 'Tramo, chuck, separación, recorte mínimo, calibres y conexión con Apps Script.'}]}
+  {g: 'Ajustes', items: [{k: 'cfg', c: '#8b8fa8', t: 'Configuración', d: 'Tramo, chuck, separación, recorte mínimo, calibres y conexión con Apps Script.'}]},
+  // la otra plataforma: el programa se sube una vez al OEE y aquí se toma de ahí (cada una con su propia base de datos)
+  {g: 'Otras plataformas', items: [{k: 'oee', c: '#4a9eff', t: 'OEE Planta ↗', url: OEE_URL, d: 'Abre la plataforma OEE (programa del día, horas por hora y control de material) en otra pestaña.'}]}
 ];
 let CUR = 'prog';
 function badgeOf(k){
@@ -2334,8 +2398,9 @@ function badgeOf(k){
   return null;
 }
 function renderSide(){
-  $('nav').innerHTML = MENU.map(g => `<div class="nav-section"><div class="nav-label">${esc(g.g)}</div>${g.items.map(i => { const b = badgeOf(i.k);
-    return `<div class="nav-item ${i.k === CUR ? 'active' : ''}" data-k="${i.k}" data-label="${esc(i.t)}" role="button" tabindex="0" style="--ic:${i.c}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICO[i.k]}</svg><span>${esc(i.t)}</span>${b ? `<span class="nav-cnt b ${b[0]}">${b[1]}</span>` : ''}</div>`; }).join('')}</div>`).join('');
+  $('nav').innerHTML = MENU.map(g => `<div class="nav-section"><div class="nav-label">${esc(g.g)}</div>${g.items.map(i => { const b = badgeOf(i.k), ico = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICO[i.k]}</svg>`;
+    if(i.url) return `<a class="nav-item" href="${esc(i.url)}" target="_blank" rel="noopener" data-label="${esc(i.t)}" title="${esc(i.d)}" style="--ic:${i.c};text-decoration:none">${ico}<span>${esc(i.t)}</span></a>`;
+    return `<div class="nav-item ${i.k === CUR ? 'active' : ''}" data-k="${i.k}" data-label="${esc(i.t)}" role="button" tabindex="0" style="--ic:${i.c}">${ico}<span>${esc(i.t)}</span>${b ? `<span class="nav-cnt b ${b[0]}">${b[1]}</span>` : ''}</div>`; }).join('')}</div>`).join('');
   $('nav').querySelectorAll('[data-k]').forEach(b => { b.onclick = () => { showTab(b.dataset.k); $('side').classList.remove('open'); };
     b.onkeydown = e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); b.click(); } }; });
   $('progName').textContent = S.progFile || '';
@@ -2356,9 +2421,17 @@ $('menuBtn').onclick = () => $('side').classList.toggle('open');
 window.addEventListener('unhandledrejection', e => { const m = (e.reason && e.reason.message) || String(e.reason || ''); if(m) toast(m.startsWith('No se') || e.reason.auth ? m : 'No se guardó: ' + m, 'er'); });
 try{ if(localStorage.getItem('mt-sb') === '1') $('side').classList.add('collapsed'); }catch(e){}
 $('sbToggle').onclick = () => { const c = $('side').classList.toggle('collapsed'); try{ localStorage.setItem('mt-sb', c ? '1' : '0'); }catch(e){} };
+// si el OEE (otra pestaña de este navegador) sube o cambia el programa, la tarjeta se actualiza y se avisa si es el que está en uso
+window.addEventListener('storage', e => { if(e.key !== OEE_KEY) return;
+  if(S.progOEE && programasOEE()[S.progOEE]){ const fm = firmaOEE(S.progOEE);
+    if(fm !== S.oeeFirma && fm !== S.oeeAvisada){ S.oeeAvisada = fm; toast('El OEE cambió el programa del ' + fechaOEE(S.progOEE) + ': en Programa usa "Volver a cargar"', 'wa'); } }
+  if(CUR === 'prog') renderProg(); });
 (async () => {
   setConn(); let t = 'prog'; try{ t = localStorage.getItem('mt-tab') || 'prog'; }catch(e){}
+  if(t === 'oee') t = 'prog';
   showTab(t);
+  // el programa se sube una sola vez, al OEE: al abrir, se toma el de hoy (o el siguiente que viene) si no hay otro cargado
+  if(!S.ops.length){ const P = programasOEE(), f = fechaOEEPorOmision(P); if(f) abrirProgramaOEE(f); }
   try{ await API.cargar(); renderAll(); }catch(e){ if(e.auth === 'clave'){ showTab('cfg'); toast(MSG_CLAVE, 'er'); } else toast('No se pudo leer el servidor: ' + e.message, 'er'); }
 })();
 window.MT = {S, CFG: () => CFG, explotar, generar, cargarLocal, abrirPrograma, igsTramo};
