@@ -805,12 +805,12 @@ const DEF = {version: 1, tramo: 6100, chuck: 400, refr: 5, kerf: 3, minRem: 500,
   skuPref: {}};
 let CFG = (() => { let c; try{ c = Object.assign({}, DEF, JSON.parse(localStorage.getItem('mt-cfg') || '{}')); }catch(e){ c = Object.assign({}, DEF); } if(!c.apiUrl) c.apiUrl = API_URL;
   c.catalogo = JSON.parse(JSON.stringify(c.catalogo || [])); c.skuPref = Object.assign({}, c.skuPref); return c; })();
-const saveCfg = () => { CAT = null; try{ localStorage.setItem('mt-cfg', JSON.stringify(CFG)); }catch(e){} };
+const saveCfg = () => { CAT = null; try{ localStorage.setItem('mt-cfg', JSON.stringify(CFG)); }catch(e){} programarCompartir(); };
 let ELEC = (() => { try{ return JSON.parse(localStorage.getItem('mt-elec') || '{}'); }catch(e){ return {}; } })();
-const saveElec = () => { try{ localStorage.setItem('mt-elec', JSON.stringify(ELEC)); }catch(e){} };
+const saveElec = () => { try{ localStorage.setItem('mt-elec', JSON.stringify(ELEC)); }catch(e){} programarCompartir(); };
 /* piezas por MULTIPLE cuando el nombre del dibujo no trae "(NPZ)" (por clave del dibujo; se recuerda en este equipo) */
 let PZM = (() => { try{ return JSON.parse(localStorage.getItem('mt-pzmult') || '{}'); }catch(e){ return {}; } })();
-const savePzm = () => { try{ localStorage.setItem('mt-pzmult', JSON.stringify(PZM)); }catch(e){} };
+const savePzm = () => { try{ localStorage.setItem('mt-pzmult', JSON.stringify(PZM)); }catch(e){} programarCompartir(); };
 /* máquina de este equipo (GW1 / GW2): cada pantalla de piso corta en una sola */
 let MAQ = (() => { try{ return localStorage.getItem('mt-maq') || ''; }catch(e){ return ''; } })();
 const saveMaq = () => { try{ localStorage.setItem('mt-maq', MAQ); }catch(e){} };
@@ -851,7 +851,8 @@ const POT2 = new Set(['2', '4', '8', '16', '32', '64']);
 function parseMedida(s){
   // en un nombre de archivo no cabe "/": 1-1/2 se escribe "1 1-2" o "1-1-2" y 3/4 se escribe "3-4"
   const fr = (n, d) => POT2.has(d) && +n < +d;
-  const u = norm(s).replace(/"/g, ' IN ').replace(/_/g, ' ')
+  // errata del programa: "3/A" por "3/4" (BARRA REFUERZO FRONTAL: "1 3/4 X 3/A CAL 20"); la A no puede ser otra cosa que un 4
+  const u = norm(s).replace(/(\d)\/A\b/g, '$1/4').replace(/"/g, ' IN ').replace(/_/g, ' ')
     .replace(/(\d+)[ -](\d+)-(\d+)(?![\d\/.])/g, (m, w, n, d) => fr(n, d) ? `${w}-${n}/${d}` : m)
     .replace(/(^|[^\d\/.-])(\d+)-(\d+)(?![\d\/.])/g, (m, pre, n, d) => fr(n, d) ? `${pre}${n}/${d}` : m);
   // redondo: REDONDO / DIA / Ø o "TUBO 1 1/4 IN" (como lo escribe el programa), siempre que no traiga "A X B"
@@ -962,6 +963,7 @@ const API = {
     const d = await this.jsonp({action: 'estado'});
     S.db = {programas: d.programas || [], tramos: (d.tramos || []).map(t => Object.assign(t, {piezas: typeof t.piezas === 'string' ? JSON.parse(t.piezas || '[]') : t.piezas})), recortes: d.recortes || []};
     S.db.recortes.forEach(r => r.largo = +r.largo);
+    aplicarCfgCompartida();
   },
   /* upsert de filas por id; ts '__NOW__' lo pone el servidor. Con Apps Script, cada bloque se aplica aquí solo si el servidor lo confirmó */
   async upsert(tabla, filas){
@@ -980,6 +982,35 @@ const API = {
   async archivo(id){ return (await this.archivoInfo(id)).txt; }
 };
 function setConn(){ const c = $('conn'); if(API.on()){ c.className = 'conn ok'; c.textContent = '● Apps Script'; } else { c.className = 'conn wa'; c.textContent = '● Solo este navegador'; } }
+
+/* ======================= Configuración compartida (2026-11-18) =======================
+   Todos los equipos deben generar los mismos múltiples: tramo, chuck, refrentado, separación, criterio, catálogo y las
+   piezas sueltas / IGS elegidos a mano se guardan en el servidor y cada equipo los toma al conectarse. Se guardan como un
+   renglón especial de la hoja de programas (id CFG-COMPARTIDA) para no cambiar el Apps Script; ese renglón no es un programa. */
+const CFG_COMP_ID = 'CFG-COMPARTIDA', CFG_COMP_CAMPOS = ['tramo', 'chuck', 'refr', 'kerf', 'minRem', 'modo', 'ventana', 'usarRecortes', 'tolSeccion', 'densidad', 'calibres', 'catalogo', 'skuPref'];
+const paqueteComp = () => { const cfg = {}; CFG_COMP_CAMPOS.forEach(k => { if(k in CFG) cfg[k] = CFG[k]; }); return JSON.stringify({cfg, suelta: SUELTA, pzm: PZM, elec: ELEC}); };
+let compT = null;
+function programarCompartir(){
+  try{ if(!API.on() || S.cfgCompAplicando || !S.cfgCompActiva) return; }catch(e){ return; }   // al arrancar todavía no existen S ni API
+  clearTimeout(compT); compT = setTimeout(() => compartirCfg(false), 1200); }
+/* sube la configuración de este equipo para todos; la primera vez se hace con el botón de Configuración */
+async function compartirCfg(primera){
+  const j = paqueteComp(); if(j === S.cfgCompJSON && !primera) return;
+  try{ await API.upsert('programas', [{id: CFG_COMP_ID, fecha: '__NOW__', archivo: 'No borrar: configuración compartida de Láser Tubo', estado: 'Configuración', resumen: j}]);
+    S.cfgCompJSON = j; S.cfgCompTs = Date.now(); S.cfgCompActiva = true; quitarCfgDeProgramas(); if(primera) toast('Configuración compartida: todos los equipos la usan desde ahora'); }
+  catch(e){ toast('No se pudo compartir la configuración: ' + e.message, 'er'); }
+}
+const quitarCfgDeProgramas = () => { S.db.programas = (S.db.programas || []).filter(p => p.id !== CFG_COMP_ID); };
+/* al leer el servidor: si hay configuración compartida, este equipo la adopta (gana sobre la suya) */
+function aplicarCfgCompartida(){
+  const row = (S.db.programas || []).find(p => p.id === CFG_COMP_ID); quitarCfgDeProgramas(); if(!row) return;
+  S.cfgCompActiva = true; S.cfgCompTs = +row.fecha || S.cfgCompTs || 0; if(row.resumen === S.cfgCompJSON) return;
+  let d; try{ d = JSON.parse(row.resumen); }catch(e){ return; }
+  S.cfgCompAplicando = true;
+  CFG_COMP_CAMPOS.forEach(k => { if(d.cfg && k in d.cfg) CFG[k] = JSON.parse(JSON.stringify(d.cfg[k])); });
+  SUELTA = Object.assign({}, d.suelta || {}); PZM = Object.assign({}, d.pzm || {}); ELEC = Object.assign({}, d.elec || {});
+  saveCfg(); saveSuelta(); savePzm(); saveElec(); S.cfgCompAplicando = false; S.cfgCompJSON = paqueteComp(); S.match = null;
+}
 
 /* ======================= Programa de producción ======================= */
 function leerPrograma(buf, name){
@@ -1075,6 +1106,8 @@ const firmaOEE = fecha => { const P = programasOEE()[fecha] || {}; return ['GW1'
 async function abrirProgramaOEE(fecha, callado){
   try{ S.ops = leerProgramaOEE(fecha); S.formato = 'laser'; S.match = null; S.res = null; S.progOEE = fecha; S.oeeFirma = firmaOEE(fecha);
     S.progFile = 'Programa del OEE · ' + fechaOEE(fecha);
+    try{ localStorage.setItem('mt-prog', JSON.stringify({tipo: 'oee', fecha})); }catch(e){}
+    elegirResPorOmision();
     if(!callado) toast(`Programa del OEE (${fechaOEE(fecha)}): ${S.ops.length} renglones · GW1 ${S.ops.filter(o => o.maquina === 'GW1').length} · GW2 ${S.ops.filter(o => o.maquina === 'GW2').length}`);
     if(S.lib.length) await medirNecesarios(); else { explotar(); renderAll(); } }
   catch(e){ toast(e.message, 'er'); }
@@ -1262,6 +1295,24 @@ function lugarCentral(f){
   if(d.length < 3 || !/^IGE?S$/i.test(d[2].trim())) return null;
   return {linea: d[0], modelo: d[1], sub: d.slice(3).join('/'), key: d[0] + '/' + d[1]};
 }
+/* al recargar la página: si el navegador ya tiene el permiso de la carpeta central, se vuelve a leer sola;
+   si no, un aviso arriba la reconecta con un clic (sin volver a elegirla) */
+async function reconectarCentral(){
+  if(!window.showDirectoryPicker || S.cenDir) return;
+  const h = await DIRDB.leer('zzx'); if(!h) return;
+  let p = 'prompt'; try{ p = await h.queryPermission({mode: 'readwrite'}); }catch(e){}
+  if(p !== 'granted'){ S.cenPend = h.name; renderAviso(); return; }
+  S.cenDir = h; S.cenPend = ''; renderAviso(); S.libMsg = 'Leyendo la carpeta ' + h.name + '…'; renderAll();
+  if(await leerCentral()) await medirNecesarios(); else renderAll();
+}
+function renderAviso(){
+  let a = $('recon');
+  if(!a){ a = document.createElement('div'); a.id = 'recon'; a.className = 'card row'; a.style.cssText = 'margin:12px 1.5rem 0;border-color:var(--amber)'; $('content').before(a); }
+  if(!S.cenPend || S.cenDir){ a.style.display = 'none'; return; }
+  a.style.display = 'flex';
+  a.innerHTML = `<span style="flex:1;min-width:240px">🔌 <b>La carpeta central ${esc(S.cenPend)} está desconectada</b> desde que se recargó la página.<span class="sub">Reconéctala con un clic; no hay que volver a elegirla. En el aviso del navegador elige «Permitir en cada visita» y ya no lo volverá a pedir.</span></span><button class="pri" id="reconBtn">Reconectar carpeta central</button>`;
+  $('reconBtn').onclick = () => abrirCentral(false);
+}
 async function abrirCentral(otra){
   if(!window.showDirectoryPicker) return $('inDir').click();   // navegador sin acceso a carpetas: selector clásico (solo lectura)
   let h = otra ? null : await DIRDB.leer('zzx');
@@ -1269,7 +1320,7 @@ async function abrirCentral(otra){
     if(h && (await h.queryPermission({mode: 'readwrite'})) !== 'granted' && (await h.requestPermission({mode: 'readwrite'})) !== 'granted') h = null;
     if(!h){ h = await window.showDirectoryPicker({id: 'central', mode: 'readwrite'}); await DIRDB.guardar(h, 'zzx'); }
   }catch(e){ if(e.name !== 'AbortError') toast('No se pudo abrir la carpeta: ' + e.message, 'er'); return; }
-  S.cenDir = h; S.libMsg = 'Leyendo la carpeta ' + h.name + '…'; renderLib();
+  S.cenDir = h; S.cenPend = ''; renderAviso(); S.libMsg = 'Leyendo la carpeta ' + h.name + '…'; renderLib();
   if(!(await leerCentral())) return;
   const t = cuentaCentral();
   if(!t.igs) toast(`No encontré IGS en ${h.name}. Elige la carpeta TUBO LASER - DIBUJOS POR MODELO (con las carpetas LÍNEA \\ MODELO \\ IGS).`, 'er');
@@ -1376,7 +1427,7 @@ const piezasModelo = k => archivosModelo(k).filter(f => !esMultipleYa(f));
    se cambia por su pieza suelta (Cant. = piezas). Se busca en la carpeta del modelo (fuera de IGS/MULTIPLES) por la Parte del
    renglón y el nombre del múltiple antes de "CON"; lo que se elige a mano en Programa manda (mt-suelta). Leonardo, 2026-11-10 */
 let SUELTA = (() => { try{ return JSON.parse(localStorage.getItem('mt-suelta') || '{}'); }catch(e){ return {}; } })();
-const saveSuelta = () => { try{ localStorage.setItem('mt-suelta', JSON.stringify(SUELTA)); }catch(e){} };
+const saveSuelta = () => { try{ localStorage.setItem('mt-suelta', JSON.stringify(SUELTA)); }catch(e){} programarCompartir(); };
 const tokSuelta = s => new Set(norm(s).replace(/\.(IGS|IGES)$/, '').replace(/\b\d+\s*PZ[AS]*\b/g, ' ').replace(/(\d)\s*CM\b/g, '$1').replace(/[^A-Z0-9]+/g, ' ').trim().split(' ')
   .filter(t => t && !/^(MULTIPLES?|MULTIPL|MULTIPE|MULTUIPLE|MULT|MUL|PZ|PZA|PZAS|PZS|DE|LA|EL|Y)$/.test(t))
   .map(t => /^[A-Z]{4,}$/.test(t) ? t.replace(/(ES|S|E)$/, '') : t));   // LATERALES = LATERAL, BARRAS = BARRA
@@ -1595,6 +1646,9 @@ const TIPOS = () => { const t = {}; S.items.forEach(i => t[i.tipo] = t[i.tipo] |
 /* ======================= Optimización ======================= */
 function generar(){
   if(!S.items.length) return toast('No hay piezas de tubular para el programa', 'er');
+  // si este programa ya tiene múltiples aprobados, se usan esos; generar otros puede dar un acomodo distinto
+  const ap = aprobadoPara(S.progFile);
+  if(ap && !confirm(`Este programa ya tiene múltiples aprobados (${ap.id}) y son los que se ven en todos los equipos.\n\nSi generas otros, el acomodo puede salir distinto. ¿Generar de todos modos?`)) return;
   const recDisp = (S.db.recortes || []).filter(r => r.estado === 'Disponible').map(r => ({id: r.id, tipo: r.tipo, largo: +r.largo}));
   const c = {tramo: CFG.tramo, tramoDe, chuck: CFG.chuck, refr: CFG.refr, kerf: CFG.kerf, minRem: CFG.minRem, modo: CFG.modo, ventana: CFG.ventana};
   const res = OPT.run(S.items, CFG.usarRecortes === false ? [] : recDisp, c);
@@ -1608,7 +1662,7 @@ function generar(){
     g.bars.forEach(b => { const n = cons[t.corto] = (cons[t.corto] || 0) + 1, nn = String(n).padStart(2, '0');
       b.id = `${pid}-${t.corto}-${nn}`; b.tipoLabel = t.label; b.maquina = g.maquina; b.completo = g.completo;
       if(b.recorte) b.recorteNuevo = 'R' + t.corto + '-' + sello + nn; }); });
-  S.res = {id: pid, fecha: Date.now(), cfg: c, grupos: res, archivo: S.progFile, guardado: false}; S.consSel = null;
+  S.res = {id: pid, fecha: Date.now(), cfg: c, grupos: res, archivo: S.progFile, guardado: false}; S.consSel = null; guardarBorrador();
   showTab('mult'); toast('Múltiples generados');
 }
 async function guardarPrograma(){
@@ -1630,7 +1684,8 @@ async function guardarPrograma(){
     await API.upsert('tramos', tramos);
     if(recUsados.length) await API.upsert('recortes', recUsados);
     if(recNuevos.length) await API.upsert('recortes', recNuevos);
-    R.guardado = true; toast('Programa ' + R.id + ' guardado'); if(API.on()) setTimeout(() => API.cargar().then(renderAll), 2500); renderAll();
+    R.guardado = true; try{ localStorage.removeItem('mt-res'); }catch(e){}
+    toast('Programa ' + R.id + ' aprobado: es el que se ve en todos los equipos'); if(API.on()) setTimeout(() => API.cargar().then(renderAll), 2500); renderAll();
   }catch(e){ toast('No se pudo guardar: ' + e.message, 'er'); }
 }
 
@@ -1837,6 +1892,34 @@ function barDe(t){
     usado: (t.piezas || []).reduce((m, p) => Math.max(m, p.x + p.L), 0), aprov: +t.aprov || 0, consumo: +t.consumo || 0};
 }
 const idCorto = t => t.programa && String(t.id).startsWith(t.programa + '-') ? String(t.id).slice(t.programa.length + 1) : String(t.id);
+/* ======================= Programa aprobado: el mismo en todos los equipos (2026-11-18) =======================
+   Lo que se aprueba y guarda queda en el servidor; Múltiples de corte lo muestra tal cual en cualquier equipo, en vez de
+   volver a generarlo (con otra configuración o en otro momento podría salir distinto y confundir al cortar). */
+function resDeGuardado(pid){
+  const p = (S.db.programas || []).find(x => x.id === pid); if(!p) return null;
+  const ts = (S.db.tramos || []).filter(t => t.programa === pid && t.estado !== 'Cancelado')
+    .sort((a, b) => String(a.maquina).localeCompare(String(b.maquina)) || String(a.tipo).localeCompare(String(b.tipo)) || (+a.orden || 0) - (+b.orden || 0));
+  const G = {};
+  ts.forEach(t => { const k = (t.maquina || '') + '|' + t.tipo, b = Object.assign(barDe(t), {estado: t.estado});
+    (G[k] = G[k] || {tipo: t.tipo, grupo: k, maquina: t.maquina || '', label: t.tipoLabel || t.tipo, bars: [], largas: [], completo: false}).bars.push(b); });
+  const grupos = Object.values(G).map(g => { const s = skuDe(g.tipo), B = g.bars, L = b => b.piezas.reduce((x, q) => x + (+q.L || 0), 0);
+    const tot = {tramos: B.filter(b => b.origen !== 'recorte').length, recUsados: B.filter(b => b.origen === 'recorte').length, recGenerados: B.filter(b => b.recorte).length,
+      consumo: B.reduce((a, b) => a + b.consumo, 0), largoPiezas: B.reduce((a, b) => a + L(b), 0), piezas: B.reduce((a, b) => a + b.piezas.length, 0)};
+    tot.aprov = tot.consumo ? tot.largoPiezas/tot.consumo : 0;
+    return Object.assign(g, {tot, sku: s ? s.sku : '', nSku: skusDe(g.tipo).length, kgm: kgmDe(g.tipo), tramo: tramoDe(g.tipo)}); });
+  return {id: pid, fecha: +p.fecha, grupos, archivo: p.archivo || '', guardado: true, aprobado: true, estado: p.estado || 'Pendiente'};
+}
+const programasAprobados = () => (S.db.programas || []).filter(p => p.id !== CFG_COMP_ID && p.estado !== 'Cancelado').sort((a, b) => (+b.fecha || 0) - (+a.fecha || 0));
+const aprobadoPara = archivo => archivo ? programasAprobados().find(p => p.archivo === archivo) : null;
+/* lo que se generó en este equipo y no se ha aprobado sobrevive a recargar la página */
+function guardarBorrador(){ try{ if(S.res && !S.res.aprobado) localStorage.setItem('mt-res', JSON.stringify(S.res)); }catch(e){} }
+function leerBorrador(){ try{ return JSON.parse(localStorage.getItem('mt-res') || 'null'); }catch(e){ return null; } }
+/* qué se ve en Múltiples de corte al abrir: el programa aprobado para el programa cargado; si no hay, el último generado aquí */
+function elegirResPorOmision(){
+  if(S.res) return;
+  const ap = aprobadoPara(S.progFile); if(ap){ S.res = resDeGuardado(ap.id); return; }
+  const bo = leerBorrador(); if(bo && bo.archivo && bo.archivo === S.progFile) S.res = bo;
+}
 
 /* ======================= Consumos ======================= */
 /* kg/m desde la clave del tipo (FORMA-AxB-Ccal), para tramos guardados */
@@ -1915,6 +1998,9 @@ function renderProg(){
 }
 async function abrirPrograma(file){
   try{ const r = leerPrograma(await file.arrayBuffer(), file.name); S.ops = r.ops; S.formato = r.formato; S.match = null; S.progFile = file.name; S.res = null; S.progOEE = null;
+    // se recuerda para que no se pierda al recargar la página
+    try{ localStorage.setItem('mt-prog', JSON.stringify({tipo: 'excel', progFile: S.progFile, formato: S.formato, ops: S.ops})); }catch(e){}
+    elegirResPorOmision();
     toast(r.formato === 'laser' ? `${S.ops.length} renglones · GW1 ${S.ops.filter(o => o.maquina === 'GW1').length} · GW2 ${S.ops.filter(o => o.maquina === 'GW2').length}` : S.ops.length + ' OPs leídas');
     if(S.lib.length) await medirNecesarios(); else { explotar(); renderAll(); if(API.on() && r.formato !== 'laser') cargarBibliotecaDrive(false); } }
   catch(e){ toast(e.message, 'er'); }
@@ -2000,7 +2086,13 @@ function renderLib(){
 }
 function renderMult(){
   const el = $('t-mult'), R = S.res, col = colorMap();
-  const cfgBar = `<div class="card"><div class="row">
+  // qué programa se ve: uno aprobado (igual en todos los equipos) o el que se generó aquí y no se ha aprobado
+  const aps = programasAprobados(), bo = leerBorrador(), hayLocal = (R && !R.aprobado) || (bo && bo.archivo === S.progFile);
+  const verSel = aps.length || hayLocal ? `<div class="card"><div class="row"><span style="flex:1;min-width:240px"><b>Programa que se muestra</b>
+    <span class="sub">${R && R.aprobado ? '✓ Aprobado: es el mismo en todos los equipos (GW1, GW2 y oficina). Córtalo tal cual.' : 'Generado en este equipo y sin aprobar: otros equipos no lo ven hasta que se aprueba.'}</span></span>
+    <select id="mVer" style="max-width:520px">${hayLocal ? `<option value="" ${R && !R.aprobado ? 'selected' : ''}>Generado en este equipo · sin aprobar</option>` : ''}
+    ${aps.map(p => `<option value="${esc(p.id)}" ${R && R.aprobado && R.id === p.id ? 'selected' : ''}>${esc(p.id)} · ${esc(p.archivo || '')} · ${esc(p.estado || 'Pendiente')}${p.archivo && p.archivo === S.progFile ? ' · programa cargado' : ''}</option>`).join('')}</select></div></div>` : '';
+  const cfgBar = verSel + `<div class="card"><div class="row">
     <label class="cfl" style="flex-direction:row;align-items:center;gap:6px">Criterio <select id="mMode"><option value="prio" ${CFG.modo === 'prio' ? 'selected' : ''}>Prioridad por hora de inicio de OP</option><option value="max" ${CFG.modo === 'max' ? 'selected' : ''}>Máximo aprovechamiento (todo junto)</option></select></label>
     ${CFG.modo === 'prio' ? `<label class="cfl" style="flex-direction:row;align-items:center;gap:6px" title="Cuántos tramos de piezas siguientes se consideran para llenar cada tramo">Ventana <input type="number" id="mWin" min="1" max="20" step="1" value="${CFG.ventana}" style="width:60px"> tramos</label>` : ''}
     <label class="row sm" style="gap:4px"><input type="checkbox" id="mRec" ${CFG.usarRecortes === false ? '' : 'checked'}> Usar recortes del inventario (${(S.db.recortes || []).filter(r => r.estado === 'Disponible').length} disponibles)</label>
@@ -2020,7 +2112,7 @@ function renderMult(){
     <span style="flex:1"></span><button id="mAbrir" title="Abrir todas las tarjetas de ${esc(MQ)}">⊞ Abrir todo</button><button id="mCerrar" title="Contraer todas las tarjetas">⊟ Contraer todo</button></div>` : '';
   el.innerHTML = cfgBar + tabs + `<div class="kpis"><div class="kpi"><span>Tramos nuevos${MQ ? ' · ' + esc(MQ) : ''}</span><b>${tot.tr}</b><span>${f0(tot.p)} piezas</span></div><div class="kpi"><span>Recortes reutilizados</span><b style="color:var(--ok)">${tot.ru}</b></div>
   <div class="kpi"><span>Recortes que se generan</span><b>${tot.rg}</b></div><div class="kpi"><span>Aprovechamiento</span><b style="color:var(--${lvAprov(tot.l/tot.c)})">${pct(tot.l/tot.c)}</b></div><div class="kpi"><span>Consumo real</span><b>${u(f2(tot.kg), 'kg')}</b><span>${f2(tot.tra)} TRA (tramos equivalentes)</span></div></div>
-  <div class="card"><div class="row"><b style="flex:1">${esc(R.id)} ${R.guardado ? badge('ok', 'Guardado') : badge('wa', 'Sin guardar')}</b>
+  <div class="card"><div class="row"><b style="flex:1">${esc(R.id)} ${R.aprobado ? badge('ok', '✓ Aprobado · ' + (R.estado || 'Pendiente')) : R.guardado ? badge('ok', 'Aprobado') : badge('wa', 'Sin aprobar')}</b>
   <button id="mPrint" title="Hoja de corte de ${esc(MQ || 'todo el programa')}">🖨 Hoja de corte${MQ ? ' ' + esc(MQ) : ''}</button><button id="mXls">📊 Consumos (Excel)</button><button class="pri" id="mSave" ${R.guardado ? 'disabled' : ''}>💾 Aprobar y guardar</button></div>
   <p class="mut sm" style="margin:6px 0 0">Al guardar, los recortes usados quedan reservados y los nuevos se registran "Por generar"; pasan a Disponible cuando el tramo se marca cortado en "Corte en piso". Se guarda el programa completo (GW1 y GW2).</p></div>
   ${vis.map(({g, gi}) => `<details class="card" data-gk="${esc(gk(g))}" ${abiertos.has(gk(g)) ? 'open' : ''}><summary>${!maqs.length && g.maquina ? badge('in', g.maquina) + ' ' : ''}<b>${esc(g.label)}</b>${g.completo ? ' ' + badge('ok', '▣ ' + g.dibujo) : ''} ${g.sku ? badge('in', 'SKU ' + g.sku + (g.nSku > 1 ? ` (hay ${g.nSku}; elige en Configuración)` : '')) : badge('wa', 'Sin SKU en el catálogo')}${g.tramo !== CFG.tramo ? ' ' + badge('in', 'tramo ' + f0(g.tramo) + ' mm') : ''} ${g.largas.length ? badge('er', g.largas.length + ' piezas no caben') : ''}
@@ -2047,11 +2139,12 @@ function bindMult(){
   $('mRec').onchange = e => { CFG.usarRecortes = e.target.checked; saveCfg(); };
   $('mGeo').onchange = e => { CFG.verGeo = e.target.checked; saveCfg(); renderMult(); };
   $('mGen').onclick = generar;
+  if($('mVer')) $('mVer').onchange = e => { const v = e.target.value; S.res = v ? resDeGuardado(v) : leerBorrador(); renderMult(); };
   if(!S.res) return;
   $('mSave').onclick = guardarPrograma; $('mXls').onclick = () => { S.consSel = ''; exportarConsumos(); };
   const MQ = S.multMaq;
   $('mPrint').onclick = () => hojaCorte('Programa de corte de tubular ' + S.res.id + (MQ ? ' · ' + MQ : ''), S.res.grupos.filter(g => !MQ || g.maquina === MQ).flatMap(g => g.bars));
-  el.querySelectorAll('[data-mq]').forEach(b => b.onclick = () => { S.multMaq = b.dataset.mq; renderMult(); });
+  el.querySelectorAll('[data-mq]').forEach(b => b.onclick = () => { S.multMaq = b.dataset.mq; try{ localStorage.setItem('mt-multmaq', S.multMaq); }catch(e){} renderMult(); });
   el.querySelectorAll('details[data-gk]').forEach(d => d.addEventListener('toggle', () => { d.open ? S.multAbiertos.add(d.dataset.gk) : S.multAbiertos.delete(d.dataset.gk); }));
   if($('mAbrir')) $('mAbrir').onclick = () => el.querySelectorAll('details[data-gk]').forEach(d => d.open = true);
   if($('mCerrar')) $('mCerrar').onclick = () => el.querySelectorAll('details[data-gk]').forEach(d => d.open = false);
@@ -2250,7 +2343,11 @@ function catHtml(){
 function renderCfg(){
   const el = $('t-cfg');
   const num = (k, t, step) => `<label class="cfl"><span>${t}</span><input type="number" step="${step || 1}" data-k="${k}" value="${CFG[k]}"></label>`;
-  el.innerHTML = `<details class="card" open><summary><b>📏 Tramo y corte</b></summary><div class="grid2" style="margin-top:10px">
+  // configuración compartida: con ella todos los equipos generan los mismos múltiples
+  const comp = API.on() ? `<div class="card"><div class="row"><span style="flex:1;min-width:260px"><b>🔗 Configuración compartida</b> ${S.cfgCompActiva ? badge('ok', 'Todos los equipos usan la misma') : badge('wa', 'Cada equipo usa la suya')}
+    <span class="sub">${S.cfgCompActiva ? `Tramo, chuck, refrentado, separación, criterio, catálogo y las piezas o IGS elegidos a mano se guardan en el servidor: lo que cambies aquí cambia en todos los equipos (GW1, GW2 y oficina)${S.cfgCompTs ? ' · última actualización ' + fecha(S.cfgCompTs) : ''}.` : 'Ahora cada equipo tiene su propia configuración y por eso pueden salir múltiples distintos. Revisa el tramo y el chuck, y compártela para que todos usen la misma.'}</span></span>
+    ${S.cfgCompActiva ? '' : '<button class="pri" id="cComp">Usar esta configuración en todos los equipos</button>'}</div></div>` : '';
+  el.innerHTML = `${comp}<details class="card" open><summary><b>📏 Tramo y corte</b></summary><div class="grid2" style="margin-top:10px">
     ${num('tramo', 'Largo del tramo nuevo (mm)')}${num('chuck', 'Desperdicio del chuck (mm)')}${num('refr', 'Refrentado del extremo (mm)', 0.1)}${num('kerf', 'Separación entre piezas (mm)', 0.1)}
     ${num('minRem', 'Recorte útil mínimo para guardar (mm)')}${num('tolSeccion', 'Tolerancia sección nombre vs IGS (mm)', 0.1)}${num('densidad', 'Densidad del acero (g/cm³)', 0.01)}</div>
     <p class="mut sm">Un sobrante se guarda como recorte si, al restarle el chuck y el refrentado, quedan al menos ${f0(CFG.minRem)} mm aprovechables.</p></details>
@@ -2263,7 +2360,10 @@ function renderCfg(){
     <div class="row" style="margin-top:8px"><button class="pri" id="cSave">Guardar</button><button id="cTest" ${CFG.apiUrl ? '' : 'disabled'}>Probar conexión</button><span id="cMsg" class="mut sm"></span></div>
     <p class="mut sm">La URL de Línea Italia ya viene integrada; si la borras y guardas, se vuelve a usar la integrada. Sin conexión, la plataforma funciona solo en este navegador (los IGS se cargan desde tu equipo y los programas y recortes se guardan aquí). Con la URL, lee la biblioteca de Drive de Ingeniería y comparte programas, seguimiento y recortes entre equipos.</p></div></details>
   <div class="card"><div class="row"><button id="cExp">⬇ Respaldo (JSON)</button><button id="cImp">⬆ Importar respaldo</button><span style="flex:1"></span><button id="cDef">Valores de fábrica</button></div></div>`;
-  el.querySelectorAll('[data-k]').forEach(i => i.onchange = () => { CFG[i.dataset.k] = +i.value; saveCfg(); explotar(); renderSide(); toast('Guardado'); });
+  if($('cComp')) $('cComp').onclick = async () => {
+    if(!confirm(`¿Usar esta configuración en todos los equipos?\n\nTramo ${f0(CFG.tramo)} mm · chuck ${f0(CFG.chuck)} mm · refrentado ${CFG.refr} mm · separación ${CFG.kerf} mm · recorte mínimo ${f0(CFG.minRem)} mm\n\nDesde ahora los cambios de Configuración aplican en GW1, GW2 y en cualquier otro equipo.`)) return;
+    await compartirCfg(true); renderCfg(); };
+  el.querySelectorAll('[data-k]').forEach(i => i.onchange = () => { CFG[i.dataset.k] = +i.value; saveCfg(); explotar(); renderSide(); toast(S.cfgCompActiva ? 'Guardado para todos los equipos' : 'Guardado en este equipo'); });
   el.querySelectorAll('[data-cal]').forEach(i => i.onchange = () => { CFG.calibres[i.dataset.cal] = +i.value; saveCfg(); });
   $('catBox').ontoggle = e => { S.catOpen = e.target.open; };
   el.querySelectorAll('[data-cat]').forEach(i => i.onchange = () => { const c = CFG.catalogo[+i.dataset.cat], f = i.dataset.f;
@@ -2440,10 +2540,20 @@ window.addEventListener('storage', e => { if(e.key !== OEE_KEY) return;
 (async () => {
   setConn(); let t = 'prog'; try{ t = localStorage.getItem('mt-tab') || 'prog'; }catch(e){}
   if(t === 'oee') t = 'prog';
+  try{ S.multMaq = localStorage.getItem('mt-multmaq') || ''; }catch(e){}
   showTab(t);
-  // el programa se sube una sola vez, al OEE: al abrir, se toma el de hoy (o el siguiente que viene) si no hay otro cargado
-  if(!S.ops.length){ const P = programasOEE(), f = fechaOEEPorOmision(P); if(f) abrirProgramaOEE(f); }
-  try{ await API.cargar(); renderAll(); }catch(e){ if(e.auth === 'clave'){ showTab('cfg'); toast(MSG_CLAVE, 'er'); } else toast('No se pudo leer el servidor: ' + e.message, 'er'); }
+  // 1) configuración compartida y programas aprobados (servidor), antes de leer el programa
+  try{ await API.cargar(); }catch(e){ if(e.auth === 'clave'){ showTab('cfg'); toast(MSG_CLAVE, 'er'); } else toast('No se pudo leer el servidor: ' + e.message, 'er'); }
+  // 2) programa: el último que se usó en este equipo (Excel o el del OEE de esa fecha); si no, el del OEE de hoy o el siguiente
+  if(!S.ops.length){ let u = null; try{ u = JSON.parse(localStorage.getItem('mt-prog') || 'null'); }catch(e){}
+    const P = programasOEE();
+    if(u && u.tipo === 'excel' && Array.isArray(u.ops) && u.ops.length){ S.ops = u.ops; S.formato = u.formato || 'laser'; S.progFile = u.progFile || ''; S.match = null; explotar(); elegirResPorOmision(); }
+    else if(u && u.tipo === 'oee' && P[u.fecha]) await abrirProgramaOEE(u.fecha, true);
+    else { const f = fechaOEEPorOmision(P); if(f) await abrirProgramaOEE(f); } }
+  // 3) múltiples: los aprobados para ese programa (iguales en todos los equipos) o los que se generaron aquí
+  elegirResPorOmision(); renderAll();
+  // 4) carpeta central: se vuelve a leer sola si el navegador conserva el permiso; si no, aviso para reconectarla con un clic
+  reconectarCentral();
 })();
 window.MT = {S, CFG: () => CFG, explotar, generar, cargarLocal, abrirPrograma, igsTramo};
 </script>
