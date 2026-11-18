@@ -709,7 +709,8 @@ const OPT = (() => {
     bar.piezas.sort((a, b) => b.L - a.L || a.prio - b.prio);
     let x = c.refr; bar.piezas.forEach((p, i) => { if(i) x += c.kerf; p.x = x; x += p.L; });
     bar.usado = x; bar.sobra = bar.P - x;            // incluye la zona del chuck
-    const util = bar.sobra - c.chuck - c.refr;        // lo que se podría aprovechar al reutilizarlo
+    bar.ch = bar.solo && c.chVal != null ? c.chVal : c.chuck; bar.chExt = bar.solo || !!c.chExt;   // zona sin cortar con que se armó
+    const util = bar.sobra - bar.ch - c.refr;        // lo que se podría aprovechar al reutilizarlo
     bar.recorte = util >= c.minRem ? Math.floor(bar.sobra) : 0;
     bar.desecho = bar.P - bar.usado - bar.recorte;
     bar.consumo = bar.P - bar.recorte;
@@ -724,7 +725,8 @@ const OPT = (() => {
     for(const [grupo, list] of Object.entries(tipos)){
       const tipo = list[0].tipo;
       // cada tubular usa el largo de tramo de su SKU (c0.tramoDe); sin catálogo, el general
-      const c = c0.tramoDe ? Object.assign({}, c0, {tramo: c0.tramoDe(tipo) || c0.tramo}) : c0;
+      // y los parámetros de su máquina (c0.porGrupo: chuck o extensión, refrentado y separación)
+      const T = c0.tramoDe ? c0.tramoDe(tipo) || c0.tramo : c0.tramo, c = Object.assign({}, c0, {tramo: T}, c0.porGrupo ? c0.porGrupo(list[0], T) : {});
       const pend = list.slice().sort((a, b) => a.prio - b.prio || b.L - a.L);
       const largas0 = pend.filter(p => p.L + c.refr + c.chuck > c.tramo + 1e-6);
       // IGS validados de la carpeta central más largos que el tramo útil pero no que el tramo: cada uno va solo en su tramo nuevo
@@ -814,15 +816,46 @@ const DEF = {version: 1, tramo: 6100, chuck: 400, refr: 5, kerf: 3, minRem: 500,
 let CFG = (() => { let c; try{ c = Object.assign({}, DEF, JSON.parse(localStorage.getItem('mt-cfg') || '{}')); }catch(e){ c = Object.assign({}, DEF); } if(!c.apiUrl) c.apiUrl = API_URL;
   c.catalogo = JSON.parse(JSON.stringify(c.catalogo || [])); c.skuPref = Object.assign({}, c.skuPref); return c; })();
 const saveCfg = () => { CAT = null; try{ localStorage.setItem('mt-cfg', JSON.stringify(CFG)); }catch(e){} programarCompartir(); };
-/* zona del final del tramo que no se corta. Con la extensión (Leonardo, 2026-11-18) se aprovecha el 98 % del tramo pese al chuck:
-   en 6,000 mm quedan 5,880 útiles (6,000 × 2 % = 120 mm: 5 de refrentado y 115 de extensión). Sin extensión, el chuck. */
-const chuckEf = () => CFG.extension === false ? +CFG.chuck || 0 : Math.max(0, Math.round(CFG.tramo*(1 - (+CFG.extPct || 98)/100) - CFG.refr));
-const nomChuck = () => CFG.extension === false ? 'chuck' : 'extensión';
-const utilDe = T => T - chuckEf() - CFG.refr;
-/* ¿cabe la pieza en el tramo? 'ok' = entra en el tramo útil. 'solo' = IGS de la carpeta central más largo que el útil pero no que
-   el tramo: los IGS de la carpeta central ya están validados para corte (Leonardo, 2026-11-18), así que se corta solo en su tramo.
-   'largo' = más largo que el tramo mismo: no se puede cortar */
-const cabeEn = (len, T, f) => len + CFG.refr + chuckEf() <= T + 1e-6 ? 'ok' : f && f.p && f.p.planta && len + CFG.refr <= T + 1e-6 ? 'solo' : 'largo';
+/* ======================= Parámetros por máquina (Leonardo, 2026-11-18) =======================
+   Cada GW tiene su chuck, refrentado y separación (CFG.maq). La extensión aprovecha el 98 % del tramo pese al chuck
+   (6,000 mm → 5,880 útiles), pero no existe para todos los tubulares: se marca por máquina y tubular.
+   - Los múltiples que arma la plataforma usan los parámetros de la máquina (con extensión solo en los tubulares marcados).
+   - Los IGS de la carpeta central ya validados (múltiples completos y piezas largas) se toman como si tuvieran extensión.
+   Sin valores por máquina, se usan los generales (chuck, refrentado y separación). */
+const maqsCfg = () => (CFG.maquinas && CFG.maquinas.length) ? CFG.maquinas : ['GW1', 'GW2'];
+const pmDe = maq => { const m = (CFG.maq || {})[maq] || {}, n = (v, d) => v != null && v !== '' && !isNaN(+v) ? +v : d;
+  return {chuck: n(m.chuck, +CFG.chuck || 0), refr: n(m.refr, +CFG.refr || 0), kerf: n(m.kerf, +CFG.kerf || 0), extPct: n(m.extPct, +CFG.extPct || 98), ext: m.ext || {}}; };
+const conExt = (maq, tipo) => !!(maq && tipo && pmDe(maq).ext[tipo]);
+const zonaExt = (maq, T) => { const pm = pmDe(maq || maqsCfg()[0]); return Math.max(0, Math.round((T || CFG.tramo)*(1 - pm.extPct/100) - pm.refr)); };
+/* zona del final del tramo que no se corta: la extensión si ese tubular la tiene en esa máquina; si no, el chuck de esa máquina.
+   Sin máquina (biblioteca, recortes): la más favorable */
+function chuckDe(maq, tipo, T){ if(!maq) return Math.min(...maqsCfg().map(m => chuckDe(m, tipo, T))); return conExt(maq, tipo) ? zonaExt(maq, T) : pmDe(maq).chuck; }
+const refrDe = maq => maq ? pmDe(maq).refr : Math.min(...maqsCfg().map(m => pmDe(m).refr));
+const kerfDe = maq => maq ? pmDe(maq).kerf : Math.min(...maqsCfg().map(m => pmDe(m).kerf));
+const utilDe = (T, maq, tipo) => T - chuckDe(maq, tipo, T) - refrDe(maq);
+/* ¿cabe la pieza? 'ok' = entra en el tramo útil de esa máquina. 'solo' = IGS de la carpeta central (validado para corte) que no
+   cabe en el útil pero sí en el tramo: se corta solo en su tramo, como con extensión. 'largo' = más largo que el tramo mismo */
+const cabeEn = (len, T, f, maq, tipo) => len + refrDe(maq) + chuckDe(maq, tipo, T) <= T + 1e-6 ? 'ok' : f && f.p && f.p.planta && len + refrDe(maq) <= T + 1e-6 ? 'solo' : 'largo';
+/* zona sin cortar de un tramo ya armado y si lleva extensión: la que se usó al armarlo; los validados (completos o solos) con extensión */
+function zonaBar(b){
+  if(b.ch != null && b.ch !== '') return {ch: +b.ch, ext: !!b.chExt};
+  if(b.solo || esCompleto(b)) return {ch: zonaExt(b.maquina, b.P), ext: true};
+  const ch = chuckDe(b.maquina || '', b.tipo, b.P);
+  if(b.usado > b.P - ch + 1) return {ch: zonaExt(b.maquina, b.P), ext: true};   // pieza validada más larga que el útil de la máquina
+  return {ch, ext: b.maquina ? conExt(b.maquina, b.tipo) : maqsCfg().some(m => conExt(m, b.tipo))};
+}
+const nomZona = z => z.ext ? 'extensión' : 'chuck';
+/* parámetros de cada grupo para el optimizador: los de su máquina; un MULTIPLE validado de la carpeta central, con extensión */
+const paramsGrupo = maqFija => (it, T) => { const m = maqFija || it.maquina || maqsCfg()[0], val = !!it.validado, ext = val || conExt(m, it.tipo);
+  return {chuck: val ? zonaExt(m, T) : chuckDe(m, it.tipo, T), chExt: ext, chVal: zonaExt(m, T), refr: refrDe(m), kerf: kerfDe(m)}; };
+/* máquina con que se arman los múltiples por modelo: la de esta pantalla; si no hay, la primera */
+const maqModelo = () => maqsCfg().includes(MAQ) ? MAQ : maqsCfg()[0];
+/* "Útil por tramo: GW1 5,645 · GW2 5,595 mm" sin extensión y, si hay tubulares marcados, cuánto dan con extensión */
+const nExtTub = () => new Set(maqsCfg().flatMap(m => Object.keys(pmDe(m).ext).filter(k => pmDe(m).ext[k]))).size;
+const utilTxt = () => { const T = CFG.tramo, n = nExtTub();
+  return `Útil por tramo: <b>${maqsCfg().map(m => m + ' ' + f0(utilDe(T, m, null))).join(' · ')} mm</b>${n ? ` · con extensión ${f0(T - zonaExt(maqsCfg()[0], T) - refrDe(maqsCfg()[0]))} mm en ${n} ${n === 1 ? 'tubular' : 'tubulares'}` : ' · sin extensión'}`; };
+const utilTip = () => maqsCfg().map(m => { const p = pmDe(m); return `${m}: chuck ${f0(p.chuck)} mm · refrentado ${p.refr} mm · separación ${p.kerf} mm · con extensión aprovecha ${p.extPct} %`; }).join('\n')
+  + `\nTramo ${f0(CFG.tramo)} mm (si el SKU del catálogo trae otro largo, se usa ese) · recorte útil mínimo ${f0(CFG.minRem)} mm\nLos múltiples validados de la carpeta central se toman con extensión.`;
 let ELEC = (() => { try{ return JSON.parse(localStorage.getItem('mt-elec') || '{}'); }catch(e){ return {}; } })();
 const saveElec = () => { try{ localStorage.setItem('mt-elec', JSON.stringify(ELEC)); }catch(e){} programarCompartir(); };
 /* piezas por MULTIPLE cuando el nombre del dibujo no trae "(NPZ)" (por clave del dibujo; se recuerda en este equipo) */
@@ -1004,7 +1037,7 @@ function setConn(){ const c = $('conn'); if(API.on()){ c.className = 'conn ok'; 
    Todos los equipos deben generar los mismos múltiples: tramo, chuck, refrentado, separación, criterio, catálogo y las
    piezas sueltas / IGS elegidos a mano se guardan en el servidor y cada equipo los toma al conectarse. Se guardan como un
    renglón especial de la hoja de programas (id CFG-COMPARTIDA) para no cambiar el Apps Script; ese renglón no es un programa. */
-const CFG_COMP_ID = 'CFG-COMPARTIDA', CFG_COMP_CAMPOS = ['programadores', 'tramo', 'chuck', 'extension', 'extPct', 'refr', 'kerf', 'minRem', 'modo', 'ventana', 'usarRecortes', 'tolSeccion', 'densidad', 'calibres', 'catalogo', 'skuPref'];
+const CFG_COMP_ID = 'CFG-COMPARTIDA', CFG_COMP_CAMPOS = ['programadores', 'maq', 'tramo', 'chuck', 'extension', 'extPct', 'refr', 'kerf', 'minRem', 'modo', 'ventana', 'usarRecortes', 'tolSeccion', 'densidad', 'calibres', 'catalogo', 'skuPref'];
 const paqueteComp = () => { const cfg = {}; CFG_COMP_CAMPOS.forEach(k => { if(k in CFG) cfg[k] = CFG[k]; }); return JSON.stringify({cfg, suelta: SUELTA, pzm: PZM, elec: ELEC}); };
 let compT = null;
 function programarCompartir(){
@@ -1047,14 +1080,14 @@ function paqueteBorrador(R){
   const D = [], ix = new Map(), s = v => { v = v == null ? '' : String(v); if(!ix.has(v)){ ix.set(v, D.length); D.push(v); } return ix.get(v); }, r1 = n => Math.round((+n || 0)*10)/10;
   const grupos = R.grupos.map(g => ({tipo: g.tipo, grupo: g.grupo, maquina: g.maquina || '', completo: !!g.completo, dibujo: g.dibujo || '', label: g.label, corto: g.corto, kgm: g.kgm, sku: g.sku || '', nSku: g.nSku || 0, tramo: g.tramo, tot: g.tot,
     largas: (g.largas || []).map(p => [s(p.pieza), s(p.ruta), r1(p.L)]),
-    bars: g.bars.map(b => ({id: b.id, P: b.P, o: b.origen, ri: b.recorteId || '', rn: b.recorteNuevo || '', r: b.recorte || 0, c: r1(b.consumo), a: +(+b.aprov || 0).toFixed(4), u: r1(b.usado), so: b.solo ? 1 : 0,
+    bars: g.bars.map(b => ({id: b.id, P: b.P, o: b.origen, ri: b.recorteId || '', rn: b.recorteNuevo || '', r: b.recorte || 0, c: r1(b.consumo), a: +(+b.aprov || 0).toFixed(4), u: r1(b.usado), so: b.solo ? 1 : 0, ch: b.ch, ce: b.chExt ? 1 : 0,
       p: b.piezas.map(p => [r1(p.x), r1(p.L), s(p.op), s(p.ruta), s(p.pieza), s(p.fileId), r1(p.consumo), p.pzs > 1 ? p.pzs : 0, p.completo ? 1 : 0, p.prio || 0])}))}));
   return JSON.stringify({v: 1, id: R.id, fecha: R.fecha, archivo: R.archivo || '', autor: (S.cuenta && S.cuenta.nombre) || '', D, grupos});
 }
 function resDePaquete(txt){
   const d = JSON.parse(txt), D = d.D;
   const grupos = d.grupos.map(g => Object.assign({}, g, {largas: g.largas.map(a => ({pieza: D[a[0]], ruta: D[a[1]], L: a[2]})),
-    bars: g.bars.map(b => ({id: b.id, P: b.P, origen: b.o, recorteId: b.ri, recorteNuevo: b.rn, recorte: b.r, consumo: b.c, aprov: b.a, usado: b.u, solo: !!b.so, maquina: g.maquina, completo: g.completo, tipoLabel: g.label,
+    bars: g.bars.map(b => ({id: b.id, tipo: g.tipo, P: b.P, origen: b.o, recorteId: b.ri, recorteNuevo: b.rn, recorte: b.r, consumo: b.c, aprov: b.a, usado: b.u, solo: !!b.so, ch: b.ch, chExt: !!b.ce, maquina: g.maquina, completo: g.completo, tipoLabel: g.label,
       piezas: b.p.map(a => Object.assign({x: a[0], L: a[1], op: D[a[2]], ruta: D[a[3]], pieza: D[a[4]], fileId: D[a[5]], consumo: a[6], prio: a[9]}, a[7] ? {pzs: a[7]} : {}, a[8] ? {completo: true} : {}))}))}));
   return {id: d.id, fecha: d.fecha, archivo: d.archivo, autor: d.autor, grupos, guardado: false, aprobado: false, compartido: true};
 }
@@ -1279,9 +1312,9 @@ function evalPieza(f){
   if(!m.combinable){ if(p.planta) r.notas.push('Se corta con su IGS original (trae entidades que no se combinan con otras piezas)'); else { r.lv = r.lv === 'er' ? 'er' : 'wa'; r.notas.push('Entidades no soportadas para el IGS combinado: ' + Object.keys(m.unsup).join(', ')); } }
   if(m.wall != null && f.p.cal && CFG.calibres[f.p.cal] && Math.abs(m.wall - CFG.calibres[f.p.cal]) > 0.15){ r.lv = r.lv === 'er' ? 'er' : 'wa'; r.notas.push(`Pared medida ${f2(m.wall)} mm; el calibre ${f.p.cal} es ${f2(CFG.calibres[f.p.cal])} mm`); }
   const med = medidaEfectiva(f), Tt = med && f.p.cal ? tramoDe(tipoDe(med, f.p.cal).key) : CFG.tramo;
-  const cb = cabeEn(m.len, Tt, f);
+  const cb = cabeEn(m.len, Tt, f, '', med && f.p.cal ? tipoDe(med, f.p.cal).key : null);
   if(cb === 'largo'){ r.lv = 'er'; r.notas.push(`Mide ${f0(m.len)} mm: es más largo que el tramo de ${f0(Tt)} mm`); }
-  else if(cb === 'solo') r.notas.push(`Mide ${f0(m.len)} mm: validado para corte, va solo en su tramo`);
+  else if(cb === 'solo') r.notas.push(`Mide ${f0(m.len)} mm: validado para corte, va solo en su tramo (como con extensión)`);
   return r;
 }
 function medidaEfectiva(f){ const m = MEAS[medKey(f)]; if(f.p.med) return f.p.med; if(m && m.ok) return {forma: Math.abs(m.secA - m.secB) < 0.3 ? 'CUAD' : 'RECT', a: m.secB, b: m.secA, pulg: false, geo: true}; return null; }
@@ -1624,7 +1657,7 @@ function armarModelo(lote){
     for(let i = 0; i < n; i++) items.push({uid: uid++, tipo: tg.key, tipoLabel: tg.label, tipoCorto: tg.corto, L: m.len, prio: 0, op: mod, ruta: mod, pieza: f.p.pieza, fileId: f.id, med: tg.med, cal: tg.cal});
   });
   if(!items.length) return null;
-  const res = OPT.run(items, [], {tramo: CFG.tramo, tramoDe, chuck: chuckEf(), refr: CFG.refr, kerf: CFG.kerf, minRem: CFG.minRem, modo: 'max', ventana: CFG.ventana});
+  const res = OPT.run(items, [], {tramo: CFG.tramo, tramoDe, porGrupo: paramsGrupo(maqModelo()), chuck: 0, refr: CFG.refr, kerf: CFG.kerf, minRem: CFG.minRem, modo: 'max', ventana: CFG.ventana});
   res.forEach(g => { const it = items.find(i => i.tipo === g.tipo), s = skuDe(g.tipo); g.label = it.tipoLabel; g.corto = it.tipoCorto; g.sku = s ? s.sku : ''; g.kgm = kgmDe(g.tipo);
     const pats = [];
     g.bars.forEach(b => { const sig = b.piezas.map(p => p.fileId + '@' + Math.round(p.L)).sort().join('|'); let pt = pats.find(x => x.sig === sig); if(!pt) pats.push(pt = {sig, bar: b, n: 0}); pt.n++; });
@@ -1662,7 +1695,7 @@ function renderModelo(){
 function modeloHtml(M){
   const fs = archivosModelo(M.key), sueltas = fs.filter(f => !esMultipleYa(f)), mults = fs.filter(esMultipleYa), mod = nombreModelo(M.key), man = manifModelo(M.key);
   const fila = f => { const m = MEAS[medKey(f)], tg = m && m.ok ? tipoPieza(f, m) : null, s = tg ? skuDe(tg.key) : null, Tt = tg ? tramoDe(tg.key) : CFG.tramo;
-    const est = !m ? badge('in', 'Midiendo…') : m.error ? badge('er', m.error) : tg.bad ? badge('er', tg.bad) : cabeEn(m.len, Tt, f) === 'largo' ? badge('er', 'Más largo que el tramo') : !tg.cal ? badge('wa', 'Calibre no reconocido por la pared') : tg.aviso ? badge('wa', tg.aviso) : badge('ok', '✓');
+    const est = !m ? badge('in', 'Midiendo…') : m.error ? badge('er', m.error) : tg.bad ? badge('er', tg.bad) : cabeEn(m.len, Tt, f, maqModelo(), tg.key) === 'largo' ? badge('er', 'Más largo que el tramo') : !tg.cal ? badge('wa', 'Calibre no reconocido por la pared') : tg.aviso ? badge('wa', tg.aviso) : badge('ok', '✓');
     return {m, tg, s, est}; };
   const tot = man.length ? `<div class="card"><h3>Múltiples guardados en la carpeta central</h3><div class="tw"><table><tr><th>Múltiple</th><th>Tubular</th><th class="n">Piezas</th><th class="n">Aprovech.</th><th>Guardado</th><th>Estado</th></tr>
     ${man.map(x => `<tr><td><b>${esc(x.nombre)}</b></td><td class="sm">${esc(x.tubular)}</td><td class="n">${x.pzs}</td><td class="n">${pct(x.aprov)}</td><td class="sm">${fecha(x.fecha)}</td><td>${x.st === 'cambio' ? badge('er', 'Cambió: ' + x.cambios.join(', ') + ' · armar y dar de alta otra vez') : x.st === 'copiar' ? badge('er', 'Falta el IGS en la carpeta') : badge(EST_CEN[x.st][0], EST_CEN[x.st][1])}</td></tr>`).join('')}</table></div></div>` : '';
@@ -1673,7 +1706,7 @@ function modeloHtml(M){
       <p class="mut sm" style="margin:8px 0 0">Al dar de alta en TubesT, el operador guarda el .zzx en la carpeta ZZX del mismo modelo (el de un múltiple, en ZZX\\MULTIPLES), con el mismo nombre del IGS. Si Ingeniería reemplaza un IGS, la pieza sale "Dar de alta otra vez".</p></div>`; })();
   const R = M.res, C = M.comp;
   return `<div class="card"><h3>${esc(M.key)} <span class="mut sm">${sueltas.length} piezas sueltas · ${mults.length} múltiples ya hechos (no se usan para armar)</span></h3>
-    <p class="mut sm" style="margin:0 0 10px" title="El tubular de cada pieza sale del programa cargado si trae ese dibujo; si no, de la sección y la pared medidas en el IGS. Tramo ${f0(CFG.tramo)} − ${nomChuck()} ${f0(chuckEf())} − refrentado ${CFG.refr}; si el SKU trae otro largo, se usa ese.">Tramo útil: <b>${f0(utilDe(CFG.tramo))} mm</b>${CFG.extension === false ? '' : ' (con extensión)'}</p>
+    <p class="mut sm" style="margin:0 0 10px" title="El tubular de cada pieza sale del programa cargado si trae ese dibujo; si no, de la sección y la pared medidas en el IGS. ${esc(utilTip())}">Parámetros de <b>${maqModelo()}</b> · ${utilTxt()}</p>
     <div class="tw"><table><tr><th></th><th>Pieza</th><th>Tubular (medido)</th><th class="n">Largo</th><th class="n">Pared</th><th class="n">Por mueble</th><th>Estado</th>${ec ? '<th>Carpeta central</th>' : ''}</tr>
     ${sueltas.map(f => { const r = fila(f); return `<tr><td><input type="checkbox" data-minc="${esc(f.id)}" ${M.off[f.id] ? '' : 'checked'} aria-label="Incluir"></td><td>${esc(f.p.pieza)}<span class="sub">${esc(f.name)}</span></td>
       <td class="sm">${r.tg ? esc(r.tg.label) + `<span class="sub">${r.s ? 'SKU ' + esc(r.s.sku) + ' · ' : ''}según ${r.tg.fuente}</span>` : '—'}</td><td class="n">${r.m && r.m.ok ? u(f0(r.m.len), 'mm') : '—'}</td><td class="n">${r.m && r.m.ok && r.m.wall != null ? u(f2(r.m.wall), 'mm') : '—'}</td>
@@ -1771,7 +1804,7 @@ function explotarLaser(){
     const secMal = Math.abs(m.secA - med.b) > CFG.tolSeccion || Math.abs(m.secB - med.a) > CFG.tolSeccion;
     if(secMal){ const av = {o, f, n: piezas, seccion: {a: m.secA, b: m.secB}, igsMal: f, motivo: `La sección del IGS (${f1(m.secA)} × ${f1(m.secB)} mm) no coincide con el tubular del programa (${o.tubular})`};
       if(!f.p.planta) return fuera(av.motivo, {seccion: av.seccion, igsMal: f}); av.motivo += ': se corta con su propio IGS y se avisa a Ingeniería'; S.secAviso.push(av); }
-    const t = tipoDe(med, cal), Tt = tramoDe(t.key), cb = cabeEn(m.len, Tt, f);
+    const t = tipoDe(med, cal), Tt = tramoDe(t.key), cb = cabeEn(m.len, Tt, f, o.maquina, t.key);
     if(cb === 'largo') return fuera(`Mide ${f0(m.len)} mm: es más largo que el tramo de ${f0(Tt)} mm`);
     if(!piezas) return fuera('Sin cantidad programada');
     // un MULTIPLE completo trae varias piezas: se corre Cant. ÷ piezas por dibujo ("(3PZ)" en el nombre o lo que se escriba en Programa).
@@ -1780,7 +1813,7 @@ function explotarLaser(){
     if(esMult && !pzs) return fuera('MULTIPLE sin pieza suelta: escribe en Programa cuántas piezas trae el dibujo');
     corridas = Math.ceil(piezas / pzs);
     for(let i = 0; i < corridas; i++) S.items.push({uid: uid++, tipo: t.key, tipoLabel: t.label, tipoCorto: t.corto, L: m.len, prio: o.idx, op: o.op, ruta: o.ruta, pieza: sm ? f.p.pieza : o.dibujo, fileId: f.id,
-      med, cal, pzs, completo, solo: cb === 'solo', maquina: o.maquina, grupo: o.maquina + '|' + t.key + (completo ? '|' + f.id : ''), ...(sm ? {deMultiple: o.dibujo} : {})});
+      med, cal, pzs, completo, validado: esMult, solo: cb === 'solo', maquina: o.maquina, grupo: o.maquina + '|' + t.key + (completo ? '|' + f.id : ''), ...(sm ? {deMultiple: o.dibujo} : {})});
   });
 }
 const TIPOS = () => { const t = {}; S.items.forEach(i => t[i.tipo] = t[i.tipo] || {key: i.tipo, label: i.tipoLabel, corto: i.tipoCorto, med: i.med, cal: i.cal}); (S.db.recortes || []).forEach(r => { if(!t[r.tipo]) t[r.tipo] = {key: r.tipo, label: r.tipoLabel || r.tipo, corto: r.tipoCorto || r.tipo}; }); return t; };
@@ -1796,7 +1829,7 @@ async function generar(){
   const bc = S.borrComp;
   if(!ap && bc && !confirm(`Ya hay un borrador compartido${bc.autor ? ' de ' + bc.autor : ''} (${esc(bc.archivo || bc.id)}${bc.ts ? ', ' + fecha(bc.ts) : ''}).\n\nSi generas otro, se reemplaza también en el equipo del otro programador. ¿Generar de todos modos?`)) return;
   const recDisp = (S.db.recortes || []).filter(r => r.estado === 'Disponible').map(r => ({id: r.id, tipo: r.tipo, largo: +r.largo}));
-  const c = {tramo: CFG.tramo, tramoDe, chuck: chuckEf(), refr: CFG.refr, kerf: CFG.kerf, minRem: CFG.minRem, modo: CFG.modo, ventana: CFG.ventana};
+  const c = {tramo: CFG.tramo, tramoDe, porGrupo: paramsGrupo(), chuck: 0, refr: CFG.refr, kerf: CFG.kerf, minRem: CFG.minRem, modo: CFG.modo, ventana: CFG.ventana};
   const res = OPT.run(S.items, CFG.usarRecortes === false ? [] : recDisp, c);
   // el ID es por minuto: si ya hay un programa con ese ID se agrega b, c… para no sobrescribirlo al guardar
   const base = 'MT-' + hoyId(), T = TIPOS(); let pid = base;
@@ -1937,13 +1970,13 @@ function dibujarVisorTramo(){
     W = Math.max(W, g.r.secA*k); Hs = Math.max(Hs, g.r.secB*k); });
   const g0 = geos.find(Boolean), gN = [...geos].reverse().find(Boolean);
   const r = {len: bar.P, secA: W || 25, secB: Hs || 25, polys, feats: [], ends: [g0.r.ends[0], gN.r.ends[1]], wall: g0.r.wall};
-  const usado = bar.usado, ch = chuckEf();
+  const usado = bar.usado, zb = zonaBar(bar), ch = zb.ch;
   mo.innerHTML = `<div class="card" role="dialog" aria-label="Visor del tramo"><div class="row" style="margin-bottom:6px;align-items:flex-start"><div style="flex:1;min-width:240px"><b style="font-size:15px">📐 Tramo ${esc(bar.id)}</b> <span class="mut">${esc(label || bar.tipoLabel || '')}${bar.maquina ? ' · ' + esc(bar.maquina) : ''}</span>
     ${pieBar(bar)}</div>
     <span class="tabs row" style="gap:4px">${[['XY', 'Planta'], ['XZ', 'Frente'], ['YZ', 'Sección']].map(([k, tx]) => `<button data-vv="${k}" class="${k === V ? 'pri' : ''}">${tx}</button>`).join('')}</span>
     <button id="vFit" title="Ver todo el tramo (doble clic en el dibujo)">⤢</button><button id="vClose" aria-label="Cerrar">✕</button></div>
   <svg id="vSvg" class="vlight" style="width:100%;height:36vh"></svg>
-  <div class="row sm" style="margin:8px 0 0;gap:6px 16px;color:var(--text2)"><span><b style="color:#d0341c">━</b> barrenos y cortes</span><span><b style="color:#1a5fb4">━</b> corte de los extremos</span><span><b style="color:#5f5e5a">▨</b> ${nomChuck()}</span><span><b style="color:#7aa83f">▨</b> recorte</span>
+  <div class="row sm" style="margin:8px 0 0;gap:6px 16px;color:var(--text2)"><span><b style="color:#d0341c">━</b> barrenos y cortes</span><span><b style="color:#1a5fb4">━</b> corte de los extremos</span><span><b style="color:#5f5e5a">▨</b> ${nomZona(zb)}</span><span><b style="color:#7aa83f">▨</b> recorte</span>
     <span style="flex:1"></span><span class="mut">Clic en una pieza de la tabla para acercarte · rueda = zoom · arrastrar = mover · ⤢ = todo el tramo</span></div>
   <div class="tw" style="margin-top:10px;max-height:none"><table><tr><th>#</th><th>Pieza</th><th>Modelo</th><th>OP</th></tr>
   ${bar.piezas.map((p, i) => `<tr data-zp="${i}" style="cursor:zoom-in" title="Acercar a esta pieza · ${esc(geos[i] ? geos[i].name : '')} · desde ${f1(p.x)} mm · largo ${f1(p.L)} mm"><td style="white-space:nowrap"><i style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${col(p)};vertical-align:-1px"></i> ${i + 1} 🔍</td><td><b>${esc(p.pieza)}</b>${geos[i] ? '' : ' ' + badge('er', 'No se pudo leer')}</td><td class="sm">${esc(p.ruta)}</td><td class="sm">${esc(p.op)}</td></tr>`).join('')}</table></div></div>`;
@@ -1960,7 +1993,7 @@ function dibujarVisorTramo(){
       <text x="${p.x + p.L/2}" y="${h/2 + fs*1.25}" font-size="${fs*.9}" text-anchor="middle" fill="#2c2c2a">${esc(p.ruta)}</text>
       <line x1="${p.x}" y1="${-h/2 - tag}" x2="${p.x}" y2="${h/2 + fs*.4}" stroke="#2c2c2a" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/><line x1="${p.x + p.L}" y1="${-h/2 - tag}" x2="${p.x + p.L}" y2="${h/2 + fs*.4}" stroke="#2c2c2a" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>`).join('');
     if(bar.recorte) ov += `<rect x="${usado}" y="${-h/2}" width="${Math.max(0, bar.P - usado - ch)}" height="${h}" fill="#c0dd97" fill-opacity=".6"/><text x="${(usado + bar.P - ch)/2}" y="${h/2 + fs*1.25}" font-size="${fs*.9}" text-anchor="middle" fill="#3b6d11">♻ recorte ${f0(bar.recorte)} mm</text>`;
-    ov += `<rect x="${bar.P - ch}" y="${-h/2}" width="${ch}" height="${h}" fill="#888780" fill-opacity=".45"/><text x="${bar.P - ch/2}" y="${-h/2 - fs*.3 - tag*.3}" font-size="${fs}" text-anchor="middle" fill="#5f5e5a">${nomChuck()}</text>`;
+    ov += `<rect x="${bar.P - ch}" y="${-h/2}" width="${ch}" height="${h}" fill="#888780" fill-opacity=".45"/><text x="${bar.P - ch/2}" y="${-h/2 - fs*.3 - tag*.3}" font-size="${fs}" text-anchor="middle" fill="#5f5e5a">${nomZona(zb)}</text>`;
     svg.insertAdjacentHTML('afterbegin', `<g>${ov}</g>`);
   }
   // acercar a una pieza: su largo llena el ancho del dibujo, como verla sola en SolidWorks
@@ -1972,46 +2005,46 @@ function svgBar(b, colorOf, opts){
   // dentro de la barra va el nombre de la pieza y su modelo, sin el largo (Leonardo, 2026-11-18). Las piezas iguales seguidas se
   // rotulan juntas ("6× PATA"); si el rótulo no cabe completo, va en la leyenda de abajo. El largo se ve al pasar el mouse.
   // opts.op: también la OP; opts.ops(i): OPs de la pieza i en todos los tramos iguales (cuando se muestran agrupados)
-  opts = opts || {}; const W = 1000, H = 58, T = b.P, sc = W/Math.max(T, CFG.tramo), ch = chuckEf(), geo = CFG.verGeo !== false;
-  const opsDe = i => opts.ops ? opts.ops(i) : [b.piezas[i].op].filter(Boolean);
+  opts = opts || {}; const W = 1000, H = 58, T = b.P, sc = W/Math.max(T, CFG.tramo), zb = zonaBar(b), ch = zb.ch, geo = CFG.verGeo !== false;
+  const opsDe = i => opts.ops ? opts.ops(i) : [b.piezas[i].op].filter(Boolean), rutasDe = i => opts.rutas ? opts.rutas(i) : [b.piezas[i].ruta];
   let s = `<svg viewBox="-2 -2 ${W + 4} ${H + 4}" role="img" aria-label="Tramo ${esc(b.id)}" style="font-family:'IBM Plex Sans',system-ui,sans-serif"><rect x="0" y="0" width="${T*sc}" height="${H}" rx="3" fill="var(--tube)" stroke="var(--mut)" stroke-width="1"/>`;
   s += `<defs><pattern id="hR" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="#c0dd97"/><line x1="0" y1="0" x2="0" y2="7" stroke="#97c459" stroke-width="2"/></pattern>
     <pattern id="hD" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="var(--hd1)"/><line x1="0" y1="0" x2="0" y2="7" stroke="var(--hd2)" stroke-width="2"/></pattern></defs>`;
   const halo = 'paint-order="stroke" stroke="rgba(255,255,255,.88)" stroke-width="3.5" stroke-linejoin="round"';
   const runs = [];
-  b.piezas.forEach((p, i) => { const x = p.x*sc, w = p.L*sc, c = colorOf(p), gs = geo ? GEO_SYM.get(p.fileId) : null, ops = opsDe(i);
+  b.piezas.forEach((p, i) => { const x = p.x*sc, w = p.L*sc, c = colorOf(p), gs = geo ? GEO_SYM.get(p.fileId) : null, ops = opsDe(i), rutas = rutasDe(i);
     if(geo && gs === undefined && p.fileId) GEO_PEND.add(p.fileId);
-    s += `<rect x="${x}" y="2" width="${Math.max(w, 1)}" height="${H - 4}" fill="${c}" stroke="#2c2c2a" stroke-width=".8"><title>${esc(p.pieza)} · modelo ${esc(p.ruta)}${ops.length ? ' · OP ' + esc(ops.join(', ')) : ''} · ${f1(p.L)} mm</title></rect>`;
+    s += `<rect x="${x}" y="2" width="${Math.max(w, 1)}" height="${H - 4}" fill="${c}" stroke="#2c2c2a" stroke-width=".8"><title>${esc(p.pieza)} · modelo ${esc(rutas.join(', '))}${ops.length ? ' · OP ' + esc(ops.join(', ')) : ''} · ${f1(p.L)} mm</title></rect>`;
     // barrenos, ranuras y extremos de la pieza (su IGS en planta, estirado a la barra)
     if(gs) s += `<use href="#gs-${gs.n}" x="${x}" y="2" width="${Math.max(w, 1)}" height="${H - 4}" opacity=".5" pointer-events="none"/>`;
-    const k = p.ruta + '|' + p.pieza + '|' + ops.join(','), r = runs[runs.length - 1];
-    if(r && r.k === k){ r.n++; r.x1 = p.x + p.L; } else runs.push({k, p, n: 1, x0: p.x, x1: p.x + p.L, ops}); });
+    const k = rutas.join(',') + '|' + p.pieza + '|' + ops.join(','), r = runs[runs.length - 1], rt = rutas.length > 1 ? rutas[0] + ' +' + (rutas.length - 1) : rutas[0] || '';
+    if(r && r.k === k){ r.n++; r.x1 = p.x + p.L; } else runs.push({k, p, n: 1, x0: p.x, x1: p.x + p.L, ops, rt}); });
   // rótulo de cada grupo de piezas iguales: arriba el nombre (con cuántas son), abajo el modelo y la OP
   const cw = (fs, t) => t.length*fs*.6, corta = (t, w, fs) => { if(cw(fs, t) <= w) return t; const n = Math.floor(w/(fs*.6)) - 1; return n >= 3 ? t.slice(0, n).trimEnd() + '…' : ''; };
   const leg = new Map();
   runs.forEach(r => { const w = (r.x1 - r.x0)*sc - 8, xm = (r.x0 + r.x1)/2*sc, pre = r.n > 1 ? r.n + '× ' : '';
     const opT = opts.op && r.ops.length ? (r.ops.length === 1 ? r.ops[0] : r.ops.length + ' OPs') : '';
-    const l1f = pre + r.p.pieza, l2f = r.p.ruta + (opT ? ' · ' + opT : '');
+    const l1f = pre + r.p.pieza, l2f = r.rt + (opT ? ' · ' + opT : '');
     let l1 = l1f; if(cw(12.5, l1f) > w){ const c = corta(r.p.pieza, w - cw(12.5, pre), 12.5); l1 = c ? pre + c : cw(12.5, pre.trim()) <= w + 4 ? pre.trim() : ''; }
-    const l2 = cw(10, l2f) <= w ? l2f : corta(r.p.ruta, w, 10);
-    if(l1 !== l1f || l2 !== l2f){ const e = leg.get(r.k); if(e) e.n += r.n; else leg.set(r.k, {p: r.p, n: r.n, opT, ops: r.ops}); }
+    const l2 = cw(10, l2f) <= w ? l2f : corta(r.rt, w, 10);
+    if(l1 !== l1f || l2 !== l2f){ const e = leg.get(r.k); if(e) e.n += r.n; else leg.set(r.k, {p: r.p, n: r.n, opT, ops: r.ops, rt: r.rt}); }
     const y1 = l2 ? H/2 - 1 : H/2 + 5, y2 = H/2 + 15;
     if(l1) s += `<text x="${xm}" y="${y1}" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1f1f1d" pointer-events="none" ${halo}>${esc(l1)}</text>`;
-    if(l2) s += `<text x="${xm}" y="${y2}" font-size="10" text-anchor="middle" fill="#3d3d3a" pointer-events="none" ${halo}>${l2 === l2f && opT ? `${esc(r.p.ruta)} · <tspan fill="#185fa5" font-family="'IBM Plex Mono',ui-monospace,monospace">${esc(opT)}</tspan>` : esc(l2)}</text>`; });
+    if(l2) s += `<text x="${xm}" y="${y2}" font-size="10" text-anchor="middle" fill="#3d3d3a" pointer-events="none" ${halo}>${l2 === l2f && opT ? `${esc(r.rt)} · <tspan fill="#185fa5" font-family="'IBM Plex Mono',ui-monospace,monospace">${esc(opT)}</tspan>` : esc(l2)}</text>`; });
   const used = b.usado, rec = b.recorte || 0;
   // el recorte es todo lo que queda después del último corte, incluida la parte que sujeta el chuck o la extensión: esa zona se marca encima
   if(rec){ const x0 = used*sc, w = (T - used - ch)*sc; s += `<rect x="${x0}" y="2" width="${(T - used)*sc}" height="${H - 4}" fill="url(#hR)"><title>Recorte que se guarda${b.recorteNuevo ? ' ' + esc(b.recorteNuevo) : ''}: ${f0(rec)} mm</title></rect>`;
     if(w > 44) s += `<text x="${x0 + w/2}" y="${H/2 + 5}" font-size="12" font-weight="600" text-anchor="middle" fill="#27500a" pointer-events="none" ${halo}>♻ ${f0(rec)}${w > 90 ? '<tspan font-size="9.5" font-weight="400"> mm</tspan>' : ''}</text>`; }
   else { const x0 = used*sc, w = Math.max(0, (T - ch - used)*sc); if(w > 0) s += `<rect x="${x0}" y="2" width="${w}" height="${H - 4}" fill="url(#hD)"><title>Sobra a desecho: ${f0(T - ch - used)} mm</title></rect>`; }
-  s += `<rect x="${(T - ch)*sc}" y="2" width="${Math.max(ch*sc, 2)}" height="${H - 4}" fill="var(--chuck)" fill-opacity="${rec ? .85 : 1}"><title>Zona ${CFG.extension === false ? 'del chuck' : 'de la extensión'}: ${f0(ch)} mm (no se corta)</title></rect>`;
-  if(ch*sc > 50) s += `<text x="${(T - ch/2)*sc}" y="${H/2 + 4}" font-size="10.5" text-anchor="middle" fill="#fff" pointer-events="none">${nomChuck()}</text>`;
+  s += `<rect x="${(T - ch)*sc}" y="2" width="${Math.max(ch*sc, 2)}" height="${H - 4}" fill="var(--chuck)" fill-opacity="${rec ? .85 : 1}"><title>Zona ${zb.ext ? 'de la extensión' : 'del chuck'}: ${f0(ch)} mm (no se corta)</title></rect>`;
+  if(ch*sc > 50) s += `<text x="${(T - ch/2)*sc}" y="${H/2 + 4}" font-size="10.5" text-anchor="middle" fill="#fff" pointer-events="none">${nomZona(zb)}</text>`;
   if(geo && GEO_PEND.size) setTimeout(cargarGeoPendientes, 0);
-  return s + '</svg>' + (leg.size ? `<div class="bleg">${[...leg.values()].map(e => `<span><i style="background:${colorOf(e.p)}"></i><b>${e.n > 1 ? e.n + '× ' : ''}${esc(e.p.pieza)}</b> · ${esc(e.p.ruta)}${e.opT ? ` · <span class="op" title="${esc(e.ops.join(', '))}">${esc(e.opT)}</span>` : ''}</span>`).join('')}</div>` : '');
+  return s + '</svg>' + (leg.size ? `<div class="bleg">${[...leg.values()].map(e => `<span><i style="background:${colorOf(e.p)}"></i><b>${e.n > 1 ? e.n + '× ' : ''}${esc(e.p.pieza)}</b> · ${esc(e.rt)}${e.opT ? ` · <span class="op" title="${esc(e.ops.join(', '))}">${esc(e.opT)}</span>` : ''}</span>`).join('')}</div>` : '');
 }
 /* datos del tramo (Leonardo, 2026-11-18: solo lo importante): piezas y aprovechamiento; el resto, al pasar el mouse */
 function pieBar(b){
-  const ch = chuckEf(), sobra = Math.max(0, b.P - b.usado - ch);
-  const tip = `${b.origen === 'recorte' ? 'Recorte ' + (b.recorteId || '') : 'Tramo nuevo'} ${f0(b.P)} mm · usado ${f0(b.usado)} mm · ${b.recorte ? 'recorte a guardar ' + f0(b.recorte) : 'sobra ' + f0(sobra)} mm · ${nomChuck()} ${f0(ch)} mm`;
+  const zb = zonaBar(b), ch = zb.ch, sobra = Math.max(0, b.P - b.usado - ch);
+  const tip = `${b.origen === 'recorte' ? 'Recorte ' + (b.recorteId || '') : 'Tramo nuevo'} ${f0(b.P)} mm · usado ${f0(b.usado)} mm · ${b.recorte ? 'recorte a guardar ' + f0(b.recorte) : 'sobra ' + f0(sobra)} mm · ${nomZona(zb)} ${f0(ch)} mm`;
   return `<span class="bmini" title="${esc(tip)}">${b.piezas.length} ${b.piezas.length === 1 ? 'pieza' : 'piezas'} · <b class="${lvAprov(b.aprov)}">${pct(b.aprov)}</b> aprovechado${b.origen === 'recorte' ? ` · <span class="rec">♻ usa el recorte ${esc(b.recorteId || '')}</span>` : ''}</span>`;
 }
 /* cuántas veces se corta el mismo múltiple (tramos iguales): grande y en palabras, para no confundirlo con las piezas del tramo */
@@ -2020,9 +2053,9 @@ const vecesChip = (n, extra) => n > 1 ? `<span class="veces" title="${n} tramos 
 /* tramos iguales (mismas piezas en el mismo lugar, sin importar la OP) = el mismo múltiple que se corta varias veces.
    Los que salen de un recorte del inventario no se juntan: cada uno usa un recorte distinto */
 function agrupar(bars){ const out = [];
-  bars.forEach(b => { const sig = (b._k || '') + '|' + b.origen + '|' + (b.origen === 'recorte' ? b.recorteId || b.id : '') + '|' + Math.round(b.P) + '|' + b.piezas.map(p => p.ruta + '§' + p.pieza + '§' + Math.round(p.L) + '§' + Math.round(p.x)).join(',');
+  bars.forEach(b => { const sig = (b._k || '') + '|' + b.origen + '|' + (b.origen === 'recorte' ? b.recorteId || b.id : '') + '|' + Math.round(b.P) + '|' + b.piezas.map(p => (p.fileId || p.ruta + '§' + p.pieza) + '§' + Math.round(p.L) + '§' + Math.round(p.x)).join(',');   // mismo IGS en el mismo lugar, aunque sea de otro modelo
     const e = out.find(x => x.sig === sig); if(e){ e.n++; e.ids.push(b.id); e.bars.push(b); } else out.push({sig, b, n: 1, ids: [b.id], bars: [b]}); });
-  out.forEach(x => { x.ops = i => [...new Set(x.bars.map(bb => bb.piezas[i] && bb.piezas[i].op).filter(Boolean))]; });
+  out.forEach(x => { x.ops = i => [...new Set(x.bars.map(bb => bb.piezas[i] && bb.piezas[i].op).filter(Boolean))]; x.rutas = i => [...new Set(x.bars.map(bb => bb.piezas[i] && bb.piezas[i].ruta).filter(Boolean))]; });
   return out; }
 /* "Tramo 01", "Tramos 01, 02 y 03" o "Tramos 01 … 12": solo el consecutivo (el tubular ya va en la tarjeta); el ID completo, al pasar el mouse */
 const tramosTxt = ids => { const c = ids.map(id => { const s = String(id), m = s.match(/-(\d+)$/); return m ? m[1] : s; });
@@ -2033,15 +2066,15 @@ function colorMap(){ const keys = [...new Set(S.items.map(i => i.ruta + '|' + i.
 /* hoja de corte: cada múltiple una vez, con cuántas veces se corta, sus piezas por modelo y OP y los recortes que se guardan */
 function hojaCorte(titulo, bars){
   const col = colorMap(), td = 'style="padding:2px 6px;border-bottom:1px solid #ddd"', th = h => `<th style="border-bottom:1px solid #999;text-align:left;padding:2px 6px">${h}</th>`;
-  const html = `<div style="font:12px system-ui;color:#000;padding:10px"><h2 style="margin:0 0 4px">${esc(titulo)}</h2><div style="color:#555;margin-bottom:10px">Tramo nuevo ${[...new Set(bars.filter(b => b.origen !== 'recorte').map(b => f0(b.P)))].join(' / ') || f0(CFG.tramo)} mm${CFG.extension === false ? '' : ' · con extensión'} · impreso ${new Date().toLocaleString('es-MX')}</div>
-  ${agrupar(bars).map(x => { const b = x.b, pz = new Map(); b.piezas.forEach((p, i) => { const k = p.pieza + '|' + p.ruta; const e = pz.get(k) || {p, n: 0, ops: new Set()}; e.n++; x.ops(i).forEach(o => e.ops.add(o)); pz.set(k, e); });
+  const html = `<div style="font:12px system-ui;color:#000;padding:10px"><h2 style="margin:0 0 4px">${esc(titulo)}</h2><div style="color:#555;margin-bottom:10px">Tramo nuevo ${[...new Set(bars.filter(b => b.origen !== 'recorte').map(b => f0(b.P)))].join(' / ') || f0(CFG.tramo)} mm · impreso ${new Date().toLocaleString('es-MX')}</div>
+  ${agrupar(bars).map(x => { const b = x.b, pz = new Map(); b.piezas.forEach((p, i) => { const k = p.fileId || p.pieza + '|' + p.ruta; const e = pz.get(k) || {p, n: 0, ops: new Set(), rutas: new Set()}; e.n++; x.ops(i).forEach(o => e.ops.add(o)); x.rutas(i).forEach(r => e.rutas.add(r)); pz.set(k, e); });
     const recs = x.bars.filter(bb => bb.recorte);
     return `<div style="page-break-inside:avoid;border:1px solid #999;border-radius:6px;padding:8px;margin-bottom:10px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
     <span style="font-size:14px">${tramosTxt(x.ids)}</span><span style="border:2px solid #000;border-radius:999px;padding:1px 12px;font-weight:700;font-size:14px">✂ CORTAR ${x.n} ${x.n === 1 ? 'VEZ' : 'VECES'}</span>
-    <span>${esc(b.tipoLabel || '')}${b.maquina ? ' · <b>' + esc(b.maquina) + '</b>' : ''}</span>${esCompleto(b) ? '<b>DIBUJO COMPLETO (usar su alta de TubesT)</b>' : ''}${b.origen === 'recorte' ? '<b>USAR RECORTE ' + esc(b.recorteId) + '</b>' : ''}</div>
-  <div style="margin:6px 0">${svgBar(b, col, {op: true, ops: x.ops})}</div>
+    <span>${esc(b.tipoLabel || '')}${b.maquina ? ' · <b>' + esc(b.maquina) + '</b>' : ''}</span>${zonaBar(b).ext ? '<b>USAR EXTENSIÓN</b>' : ''}${esCompleto(b) ? '<b>DIBUJO COMPLETO (usar su alta de TubesT)</b>' : ''}${b.origen === 'recorte' ? '<b>USAR RECORTE ' + esc(b.recorteId) + '</b>' : ''}</div>
+  <div style="margin:6px 0">${svgBar(b, col, {op: true, ops: x.ops, rutas: x.rutas})}</div>
   <table style="width:100%;border-collapse:collapse;font-size:12px"><tr>${th('Piezas por tramo')}${th('Pieza')}${th('Modelo')}${th('OP')}</tr>
-  ${[...pz.values()].map(e => `<tr><td ${td}><b>${e.n}</b></td><td ${td}>${esc(e.p.pieza)}</td><td ${td}>${esc(e.p.ruta)}</td><td ${td}>${esc([...e.ops].join(', '))}</td></tr>`).join('')}</table>
+  ${[...pz.values()].map(e => `<tr><td ${td}><b>${e.n}</b></td><td ${td}>${esc(e.p.pieza)}</td><td ${td}>${esc([...e.rutas].join(", "))}</td><td ${td}>${esc([...e.ops].join(', '))}</td></tr>`).join('')}</table>
   ${recs.length ? `<div style="margin-top:6px">♻ <b>Guardar ${recs.length === 1 ? 'el recorte' : recs.length + ' recortes'}</b> de ${f0(recs[0].recorte)} mm (marcar el ID en el tubo): ${esc(recs.map(bb => bb.recorteNuevo || '').filter(Boolean).join(', '))}</div>` : ''}</div>`; }).join('')}</div>`;
   const pa = $('printArea'); pa.innerHTML = html; pa.style.display = 'block'; setTimeout(() => { window.print(); pa.style.display = 'none'; }, 50);
 }
@@ -2091,7 +2124,7 @@ async function cancelarPrograma(pid){
 }
 /* tramo guardado → barra para hoja de corte, IGS y consumos */
 function barDe(t){
-  return {id: t.id, P: +t.largo, origen: t.origen, recorteId: t.recorteUsado, recorteNuevo: t.recorteNuevo, recorte: +t.largoRecorte || 0, tipoLabel: t.tipoLabel, maquina: t.maquina || '', piezas: t.piezas || [], completo: false,
+  return {id: t.id, tipo: t.tipo, P: +t.largo, origen: t.origen, recorteId: t.recorteUsado, recorteNuevo: t.recorteNuevo, recorte: +t.largoRecorte || 0, tipoLabel: t.tipoLabel, maquina: t.maquina || '', piezas: t.piezas || [], completo: false,
     usado: (t.piezas || []).reduce((m, p) => Math.max(m, p.x + p.L), 0), aprov: +t.aprov || 0, consumo: +t.consumo || 0};
 }
 const idCorto = t => t.programa && String(t.id).startsWith(t.programa + '-') ? String(t.id).slice(t.programa.length + 1) : String(t.id);
@@ -2322,8 +2355,8 @@ function renderMultOperador(){
     ${dts(dt('Cortados', `${g.bars.filter(b => b.estado === 'Cortado').length} de ${g.bars.length}`, 'tramos', 'ok'), dt('Aprovechamiento', pct(g.tot.aprov), '', lvAprov(g.tot.aprov)))}</summary>
     ${GA[k].map((x, xi) => { const E = s => x.bars.filter(b => (b.estado || 'Pendiente') === s).length, hechos = E('Cortado'), enP = E('En proceso'), pend = E('Pendiente');
       const e = hechos === x.n ? 'Cortado' : enP ? 'En proceso' : 'Pendiente', ref = gi + '|' + xi;
-      return `<div class="bar" style="${e === 'Cortado' ? 'opacity:.6' : ''}"><div class="barhd">${tramosTxt(x.ids, R.id)} ${vecesChip(x.n)} ${badge(e === 'Cortado' ? 'ok' : e === 'En proceso' ? 'wa' : 'in', e === 'Cortado' && x.n > 1 ? 'Cortados' : e)}${x.n > 1 && hechos && hechos < x.n ? ` <span class="bmini">${hechos} de ${x.n} cortados</span>` : ''} ${pieBar(x.b)}<span style="flex:1"></span>
-      <button data-ver="${ref}" title="Ver el tramo con el dibujo de cada pieza, con zoom">🔍 Ver</button>${pend ? `<button data-opigs="${ref}" class="${enP ? '' : 'pri'}" title="Baja el IGS y marca En proceso en ${esc(maq)} ${x.n > 1 ? 'los ' + pend + ' tramos iguales que faltan' : 'el tramo'}">⬇ IGS</button>` : ''}${enP ? `<button class="pri" data-opfin="${ref}" title="Marca como cortado${x.n > 1 ? 's los tramos en proceso' : ''}">■ Terminar</button>` : ''}<button data-hoja="${ref}" title="Hoja de corte de este múltiple">🖨</button></div>${svgBar(x.b, col, {op: true, ops: x.ops})}</div>`; }).join('')}</details>`).join('')}`;
+      return `<div class="bar" style="${e === 'Cortado' ? 'opacity:.6' : ''}"><div class="barhd">${tramosTxt(x.ids, R.id)} ${vecesChip(x.n)}${zonaBar(x.b).ext ? ' ' + badge('in', 'Con extensión') : ''} ${badge(e === 'Cortado' ? 'ok' : e === 'En proceso' ? 'wa' : 'in', e === 'Cortado' && x.n > 1 ? 'Cortados' : e)}${x.n > 1 && hechos && hechos < x.n ? ` <span class="bmini">${hechos} de ${x.n} cortados</span>` : ''} ${pieBar(x.b)}<span style="flex:1"></span>
+      <button data-ver="${ref}" title="Ver el tramo con el dibujo de cada pieza, con zoom">🔍 Ver</button>${pend ? `<button data-opigs="${ref}" class="${enP ? '' : 'pri'}" title="Baja el IGS y marca En proceso en ${esc(maq)} ${x.n > 1 ? 'los ' + pend + ' tramos iguales que faltan' : 'el tramo'}">⬇ IGS</button>` : ''}${enP ? `<button class="pri" data-opfin="${ref}" title="Marca como cortado${x.n > 1 ? 's los tramos en proceso' : ''}">■ Terminar</button>` : ''}<button data-hoja="${ref}" title="Hoja de corte de este múltiple">🖨</button></div>${svgBar(x.b, col, {op: true, ops: x.ops, rutas: x.rutas})}</div>`; }).join('')}</details>`).join('')}`;
   const res = S.res;
   $('mPrint').onclick = () => hojaCorte('Programa de corte de tubular ' + res.id + ' · ' + maq, bars);
   $('opRef').onclick = async () => { try{ await API.cargar(); }catch(e){ toast(e.message, 'er'); } S.res = null; renderAll(); };
@@ -2358,7 +2391,7 @@ function renderMult(){
     <label class="row sm" style="gap:4px"><input type="checkbox" id="mRec" ${CFG.usarRecortes === false ? '' : 'checked'} ${dis}> Usar recortes del inventario (${(S.db.recortes || []).filter(r => r.estado === 'Disponible').length} disponibles)</label>
     <label class="row sm" style="gap:4px" title="Dibuja dentro de cada pieza sus barrenos, ranuras y cortes (de su IGS)"><input type="checkbox" id="mGeo" ${CFG.verGeo === false ? '' : 'checked'}> Ver el dibujo de cada pieza</label>
     <span style="flex:1"></span><button class="pri" id="mGen" ${!prog ? dis : S.items.length ? '' : 'disabled'}>⚙ Generar múltiples</button></div>
-    <p class="mut sm" style="margin:8px 0 0" title="Tramo ${f0(CFG.tramo)} mm − ${nomChuck()} ${f0(chuckEf())} − refrentado ${CFG.refr} (si el SKU del catálogo trae otro largo, se usa ese) · separación entre piezas ${CFG.kerf} mm · recorte útil mínimo ${f0(CFG.minRem)} mm">Útil por tramo: <b>${f0(utilDe(CFG.tramo))} mm</b>${CFG.extension === false ? '' : ` (con extensión, ${CFG.extPct} %)`} · ${S.items.length ? f0(S.items.length) + ' piezas en ' + Object.keys(TIPOS()).filter(k => S.items.some(i => i.tipo === k)).length + ' tubulares' : 'Carga el programa y la biblioteca'}</p></div>`;
+    <p class="mut sm" style="margin:8px 0 0" title="${esc(utilTip())}">${utilTxt()} · ${S.items.length ? f0(S.items.length) + ' piezas en ' + Object.keys(TIPOS()).filter(k => S.items.some(i => i.tipo === k)).length + ' tubulares' : 'Carga el programa y la biblioteca'}</p></div>`;
   if(!R){ el.innerHTML = cfgBar + (S.fuera.length ? fueraHtml() : ''); bindMult(); return; }
   // pestañas por máquina: cada pantalla ve solo lo que corta su máquina (GW1 o GW2); por omisión, la de esta pantalla
   const maqs = [...new Set(R.grupos.map(g => g.maquina).filter(Boolean))].sort();
@@ -2377,8 +2410,8 @@ function renderMult(){
   <button id="mPrint" title="Hoja de corte de ${esc(MQ || 'todo el programa')}">🖨 Hoja de corte${MQ ? ' ' + esc(MQ) : ''}</button><button id="mXls">📊 Consumos (Excel)</button><button class="pri" id="mSave" ${R.guardado ? 'disabled' : prog ? '' : 'disabled'} title="${prog ? '' : esc(msgSoloProg()) + '. '}Se guarda el programa completo (GW1 y GW2) y se ve igual en todos los equipos. Los recortes usados quedan reservados y los nuevos se registran Por generar; pasan a Disponible cuando el tramo se marca cortado.">💾 Aprobar y guardar</button></div></div>
   ${vis.map(({g, gi}) => `<details class="card" data-gk="${esc(gk(g))}" ${abiertos.has(gk(g)) ? 'open' : ''}><summary>${!maqs.length && g.maquina ? badge('in', g.maquina) + ' ' : ''}<b>${esc(g.label)}</b>${g.completo ? ' ' + badge('ok', '▣ ' + g.dibujo) : ''} ${g.sku ? '' : badge('wa', 'Sin SKU en el catálogo')}${g.nSku > 1 ? badge('wa', `Hay ${g.nSku} SKU: elige en Configuración`) : ''} ${g.largas.length ? badge('er', g.largas.length + ' piezas no caben') : ''}
     ${dts(dt('Tramos', g.tot.tramos + g.tot.recUsados), dt('Piezas', g.tot.piezas), dt('Aprovechamiento', pct(g.tot.aprov), '', lvAprov(g.tot.aprov)))}</summary>
-    ${agrupar(g.bars).map(x => { const ref = gi + '|' + g.bars.indexOf(x.b); return `<div class="bar"><div class="barhd">${tramosTxt(x.ids, R.id)} ${vecesChip(x.n)} ${pieBar(x.b)}<span style="flex:1"></span>
-      <button data-ver="${ref}" title="Ver el tramo con el dibujo de cada pieza (barrenos, ranuras y cortes), con zoom">🔍 Ver</button><button data-igs="${ref}" title="IGS con las piezas acomodadas a lo largo del tubo">⬇ IGS</button><button data-hoja="${ref}" title="Hoja de corte de este múltiple">🖨</button></div>${svgBar(x.b, col, {op: true, ops: x.ops})}</div>`; }).join('')}
+    ${agrupar(g.bars).map(x => { const ref = gi + '|' + g.bars.indexOf(x.b); return `<div class="bar"><div class="barhd">${tramosTxt(x.ids, R.id)} ${vecesChip(x.n)}${zonaBar(x.b).ext ? ' ' + badge('in', 'Con extensión') : ''} ${pieBar(x.b)}<span style="flex:1"></span>
+      <button data-ver="${ref}" title="Ver el tramo con el dibujo de cada pieza (barrenos, ranuras y cortes), con zoom">🔍 Ver</button><button data-igs="${ref}" title="IGS con las piezas acomodadas a lo largo del tubo">⬇ IGS</button><button data-hoja="${ref}" title="Hoja de corte de este múltiple">🖨</button></div>${svgBar(x.b, col, {op: true, ops: x.ops, rutas: x.rutas})}</div>`; }).join('')}
     ${g.largas.length ? `<p style="color:var(--er)" class="sm">Más largas que el tramo: ${[...new Set(g.largas.map(p => p.pieza + ' (' + p.ruta + ')'))].map(esc).join(', ')}</p>` : ''}</details>`).join('') || `<div class="card empty">${esc(MQ)} no tiene tramos en este programa.</div>`}
   ${S.fuera.length ? fueraHtml(MQ) : ''}`;
   bindMult();
@@ -2544,8 +2577,8 @@ function renderPiso(){
     ${G.map(x => { const T = x.bars.map(b => b._t), t = T[0], E = s => T.filter(y => y.estado === s), ids = T.map(y => y.id).join(','), enP = E('En proceso'), cort = E('Cortado').length;
       const e = t.estado === 'Cancelado' ? 'Cancelado' : cort === T.length ? 'Cortado' : enP.length ? 'En proceso' : 'Pendiente', recs = T.filter(y => y.recorteNuevo);
       const horas = T.map(y => `${idCorto(y)}: ${y.inicio ? 'inicio ' + fecha(+y.inicio) : 'sin iniciar'}${y.fin ? ' · fin ' + fecha(+y.fin) : ''}`).join('\n');
-      return `<tr><td style="white-space:nowrap">${tramosTxt(T.map(y => y.id))}<span class="sub">${esc(t.tipoLabel)}</span><div style="margin-top:4px">${vecesChip(x.n)}</div>${t.origen === 'recorte' ? `<span class="sub">♻ usa el recorte ${esc(t.recorteUsado)}</span>` : ''}</td>
-      <td class="sm" style="min-width:220px">${resumenPiezas(t.piezas)}<span class="sub">OP ${esc([...new Set(x.bars.flatMap(b => b.piezas.map(q => q.op)))].join(', '))}</span></td>
+      return `<tr><td style="white-space:nowrap">${tramosTxt(T.map(y => y.id))}<span class="sub">${esc(t.tipoLabel)}</span><div style="margin-top:4px">${vecesChip(x.n)}</div>${zonaBar(x.b).ext ? '<span class="sub">con extensión</span>' : ''}${t.origen === 'recorte' ? `<span class="sub">♻ usa el recorte ${esc(t.recorteUsado)}</span>` : ''}</td>
+      <td class="sm" style="min-width:220px">${resumenPiezas(t.piezas)}<span class="sub">${(rs => rs.length > 1 ? 'Modelos ' + esc(rs.join(', ')) + ' · ' : '')([...new Set(x.bars.flatMap(b => b.piezas.map(q => q.ruta)))])}OP ${esc([...new Set(x.bars.flatMap(b => b.piezas.map(q => q.op)))].join(', '))}</span></td>
       <td class="sm" title="${esc(recs.map(y => y.recorteNuevo).join(', '))}">${recs.length ? `<span style="white-space:nowrap">♻ ${u(f0(recs[0].largoRecorte), 'mm')}${recs.length > 1 ? ` <b>×${recs.length}</b>` : ''}</span><span class="sub">${recs.length > 1 ? 'marca el ID en cada uno' : esc(recs[0].recorteNuevo)}</span>` : '—'}</td>
       <td title="${esc(horas)}">${badge(e === 'Cortado' ? 'ok' : e === 'En proceso' ? 'wa' : 'in', e)}${t.maquina ? ' ' + badge('in', t.maquina) : ''}${x.n > 1 && cort && cort < x.n ? `<span class="sub">${cort} de ${x.n} cortados</span>` : ''}</td>
       <td style="white-space:nowrap">${e === 'Cancelado' ? '' : `${e === 'Cortado' ? '' : `<button data-pd="${esc(ids)}" title="Descargar el IGS del múltiple${x.n > 1 ? ' (se corta ' + x.n + ' veces)' : ''}">⬇ IGS</button> `}<button data-ph="${esc(ids)}" title="Hoja de corte">🖨</button>`}${enP.length ? ` <button class="pri" data-pt="${esc(enP.map(y => y.id).join(','))}">■ Terminar</button>` : ''}</td></tr>`; }).join('')}</table></div>
@@ -2564,13 +2597,13 @@ function renderRec(){
   const el = $('t-rec'), R = (S.db.recortes || []), fl = S.recF || (S.recF = {estado: 'vigentes', tipo: ''});
   const T = TIPOS(), tipos = [...new Set(R.map(r => r.tipo))];
   const lista = R.filter(r => (fl.estado === 'todos' || (fl.estado === 'vigentes' ? ['Disponible', 'Por generar', 'Reservado'].includes(r.estado) : r.estado === fl.estado)) && (!fl.tipo || r.tipo === fl.tipo)).sort((a, b) => String(a.tipo).localeCompare(String(b.tipo)) || b.largo - a.largo);
-  const disp = R.filter(r => r.estado === 'Disponible'), util = r => r.largo - chuckEf() - CFG.refr;
+  const disp = R.filter(r => r.estado === 'Disponible'), util = r => r.largo - chuckDe('', r.tipo) - refrDe('');
   const resumen = {}; disp.forEach(r => { const e = resumen[r.tipo] = resumen[r.tipo] || {label: r.tipoLabel || r.tipo, n: 0, mm: 0, util: 0}; e.n++; e.mm += r.largo; e.util += util(r); });
   el.innerHTML = `<div class="kpis"><div class="kpi"><span>Disponibles</span><b style="color:var(--ok)">${disp.length}</b><span>${f2(disp.reduce((s, r) => s + r.largo, 0)/1000)} m</span></div>
   <div class="kpi"><span>Por generar</span><b>${R.filter(r => r.estado === 'Por generar').length}</b></div><div class="kpi"><span>Reservados</span><b style="color:var(--wa)">${R.filter(r => r.estado === 'Reservado').length}</b></div>
   <div class="kpi"><span>Usados</span><b>${R.filter(r => r.estado === 'Usado').length}</b></div></div>
   ${Object.keys(resumen).length ? `<div class="card"><h3>Disponibles por tubular</h3><table><tr><th>Tubular</th><th class="n">Recortes</th><th class="n">Largo total</th><th class="n">Largo aprovechable</th></tr>${Object.values(resumen).map(e => `<tr><td>${esc(e.label)}</td><td class="n">${e.n}</td><td class="n">${f0(e.mm)} mm</td><td class="n">${f0(e.util)} mm</td></tr>`).join('')}</table>
-  <p class="mut sm">Aprovechable = largo − ${nomChuck()} (${chuckEf()}) − refrentado (${CFG.refr}): al montarlo de nuevo se vuelve a sujetar su parte trasera.</p></div>` : ''}
+  <p class="mut sm">Aprovechable = largo − chuck o extensión (la máquina más favorable para ese tubular) − refrentado: al montarlo de nuevo se vuelve a sujetar su parte trasera.</p></div>` : ''}
   <details class="card"><summary><b>➕ Registrar recorte a mano</b> <span class="mut sm">recortes que ya existen en el rack</span></summary><div class="row" style="margin-top:10px">
     <select id="rTipo"><option value="">Tubular…</option>${Object.values(T).map(t => `<option value="${esc(t.key)}">${esc(t.label)}</option>`).join('')}</select>
     <input id="rMed" placeholder="o escribe: 2X1 CAL20" size="16"><input type="number" id="rLargo" placeholder="Largo mm" min="1"><input id="rUbi" placeholder="Ubicación (opcional)" size="14"><button class="pri" id="rAdd">Agregar</button></div></details>
@@ -2587,7 +2620,7 @@ function renderRec(){
     if(!key){ const med = parseMedida($('rMed').value), cal = ($('rMed').value.match(/CAL\.?\s*(\d+)/i) || [])[1]; if(!med || !cal) return toast('Elige el tubular o escribe la medida y el calibre (ej. 1X2 CAL18)', 'er'); const t = tipoDe(med, cal); key = t.key; label = t.label; corto = t.corto; }
     else { label = T[key].label; corto = T[key].corto; }
     if(!(L > 0)) return toast('Captura el largo', 'er');
-    if(L - chuckEf() - CFG.refr < CFG.minRem && !confirm(`Aprovechable: ${f0(L - chuckEf() - CFG.refr)} mm, menor al mínimo (${CFG.minRem}). ¿Registrarlo de todas formas?`)) return;
+    if(L - chuckDe('', key) - refrDe('') < CFG.minRem && !confirm(`Aprovechable: ${f0(L - chuckDe('', key) - refrDe(''))} mm, menor al mínimo (${CFG.minRem}). ¿Registrarlo de todas formas?`)) return;
     const id = 'R' + corto + '-M' + Date.now().toString(36).slice(-5).toUpperCase();
     await API.upsert('recortes', [{id, tipo: key, tipoLabel: label, tipoCorto: corto, largo: Math.round(L), estado: 'Disponible', origen: 'Manual', ubicacion: $('rUbi').value.trim(), alta: '__NOW__'}]);
     toast('Recorte ' + id + ' registrado'); renderAll(); };
@@ -2651,6 +2684,31 @@ function bindProgramadores(){
     if(esLaCuenta(p, yo) && resto.length && !confirm('¿Quitarte el rango Programador? Ya no podrás generar ni aprobar múltiples.')) return;
     guardarProgramadores(resto, `${p.nombre} ya no tiene el rango Programador`); });
 }
+/* ---- Parámetros por máquina en Configuración: chuck, refrentado, separación y en qué tubulares hay extensión ---- */
+/* tubulares para marcar la extensión: los del catálogo, los del programa y los ya marcados */
+function tubularesConocidos(){ const m = new Map();
+  catalogo().forEach(c => { if(c.key && !m.has(c.key)) m.set(c.key, tipoDe(c.med, c.cal).label); });
+  Object.values(TIPOS()).forEach(t => { if(t.key && !m.has(t.key)) m.set(t.key, t.label || t.key); });
+  maqsCfg().forEach(q => Object.keys(pmDe(q).ext).forEach(k => { if(!m.has(k)) m.set(k, k); }));
+  return [...m].map(([key, label]) => ({key, label})).sort((a, b) => a.label.localeCompare(b.label, 'es', {numeric: true})); }
+function cardMaquinas(){
+  const M = maqsCfg(), P = Object.fromEntries(M.map(m => [m, pmDe(m)])), T = CFG.tramo, tub = tubularesConocidos(), enProg = new Set(S.items.map(i => i.tipo));
+  const fila = (k, t, step, tip) => `<tr title="${esc(tip || '')}"><td>${t}</td>${M.map(m => `<td class="n"><input type="number" step="${step || 1}" data-mq="${esc(m)}" data-mk="${k}" value="${P[m][k]}" style="width:90px"></td>`).join('')}</tr>`;
+  return `<details class="card" open><summary><b>🏭 Parámetros por máquina</b> <span class="mut sm">${M.map(m => m + ': útil ' + f0(utilDe(T, m, null)) + ' mm').join(' · ')}</span></summary>
+    <p class="mut sm" style="margin:10px 0">Los múltiples que arma la plataforma usan el chuck, el refrentado y la separación de la máquina que los corta; la extensión, solo en los tubulares marcados abajo. Los múltiples validados de la carpeta central se toman como si tuvieran extensión.</p>
+    <div class="tw" style="max-height:none"><table><tr><th>Parámetro</th>${M.map(m => `<th class="n">${esc(m)}</th>`).join('')}</tr>
+    ${fila('chuck', 'Chuck: lo que no se corta al final (mm)', 1, 'Zona que sujeta el chuck cuando ese tubular no tiene extensión')}${fila('refr', 'Refrentado del extremo (mm)', 0.1)}${fila('kerf', 'Separación entre piezas (mm)', 0.1)}${fila('extPct', 'Aprovechamiento con extensión (%)', 0.1, 'Parte del tramo que se aprovecha cuando el tubular tiene extensión en esa máquina')}
+    <tr><td class="mut">Útil por tramo de ${f0(T)} mm</td>${M.map(m => `<td class="n mut">${f0(utilDe(T, m, null))} · con extensión ${f0(T - zonaExt(m, T) - P[m].refr)}</td>`).join('')}</tr></table></div>
+    <p class="sm" style="margin:12px 0 6px"><b>Tubulares con extensión</b> <span class="mut">· marca en qué máquina hay extensión para ese tubular</span></p>
+    <div class="tw" style="max-height:340px"><table><tr><th>Tubular</th>${M.map(m => `<th class="n">${esc(m)}</th>`).join('')}</tr>
+    ${tub.map(t => `<tr><td>${esc(t.label)}${enProg.has(t.key) ? ' ' + badge('in', 'en el programa') : ''}</td>${M.map(m => `<td class="n"><input type="checkbox" data-ext="${esc(m)}|${esc(t.key)}" ${P[m].ext[t.key] ? 'checked' : ''} aria-label="Extensión de ${esc(t.label)} en ${esc(m)}"></td>`).join('')}</tr>`).join('') || `<tr><td colspan="${M.length + 1}" class="mut">Carga el programa o el catálogo para ver los tubulares.</td></tr>`}</table></div></details>`;
+}
+function bindMaquinas(el){
+  const guarda = (m, fn) => { const p = pmDe(m); fn(p); CFG.maq = Object.assign({}, CFG.maq || {}, {[m]: {chuck: p.chuck, refr: p.refr, kerf: p.kerf, extPct: p.extPct, ext: Object.assign({}, p.ext)}});
+    saveCfg(); explotar(); renderSide(); renderCfg(); toast(S.cfgCompActiva ? 'Guardado para todos los equipos' : 'Guardado en este equipo'); };
+  el.querySelectorAll('[data-mq]').forEach(i => i.onchange = () => guarda(i.dataset.mq, p => { p[i.dataset.mk] = +i.value; }));
+  el.querySelectorAll('[data-ext]').forEach(i => i.onchange = () => { const [m, k] = i.dataset.ext.split('|'); guarda(m, p => { p.ext = Object.assign({}, p.ext); if(i.checked) p.ext[k] = true; else delete p.ext[k]; }); });
+}
 function renderCfg(){
   const el = $('t-cfg');
   const num = (k, t, step) => `<label class="cfl"><span>${t}</span><input type="number" step="${step || 1}" data-k="${k}" value="${CFG[k]}"></label>`;
@@ -2659,11 +2717,9 @@ function renderCfg(){
     <span class="sub">${S.cfgCompActiva ? `Tramo, chuck, refrentado, separación, criterio, catálogo y las piezas o IGS elegidos a mano se guardan en el servidor: lo que cambies aquí cambia en todos los equipos (GW1, GW2 y oficina)${S.cfgCompTs ? ' · última actualización ' + fecha(S.cfgCompTs) : ''}.` : 'Ahora cada equipo tiene su propia configuración y por eso pueden salir múltiples distintos. Revisa el tramo y el chuck, y compártela para que todos usen la misma.'}</span></span>
     ${S.cfgCompActiva || !esProgramador() ? '' : '<button class="pri" id="cComp">Usar esta configuración en todos los equipos</button>'}</div></div>` : '';
   el.innerHTML = `${comp}${cardProgramadores()}<details class="card" open><summary><b>📏 Tramo y corte</b></summary><div class="grid2" style="margin-top:10px">
-    ${num('tramo', 'Largo del tramo nuevo (mm)')}
-    <label class="cfl" title="La extensión permite aprovechar casi todo el tramo pese al chuck. Desactívala si una máquina corta sin ella."><span>Extensión</span><span class="row" style="gap:6px;color:var(--text)"><input type="checkbox" id="cExt" ${CFG.extension === false ? '' : 'checked'}> Se usa la extensión</span></label>
-    ${CFG.extension === false ? num('chuck', 'Desperdicio del chuck (mm)') : num('extPct', 'Aprovechamiento del tramo con extensión (%)', 0.1)}${num('refr', 'Refrentado del extremo (mm)', 0.1)}${num('kerf', 'Separación entre piezas (mm)', 0.1)}
-    ${num('minRem', 'Recorte útil mínimo para guardar (mm)')}${num('tolSeccion', 'Tolerancia sección nombre vs IGS (mm)', 0.1)}${num('densidad', 'Densidad del acero (g/cm³)', 0.01)}</div>
-    <p class="mut sm">Útil por tramo: <b>${f0(utilDe(CFG.tramo))} mm</b> (tramo ${f0(CFG.tramo)} − ${nomChuck()} ${f0(chuckEf())} − refrentado ${CFG.refr}). Un sobrante se guarda como recorte si, al restarle ${CFG.extension === false ? 'el chuck' : 'la extensión'} y el refrentado, quedan al menos ${f0(CFG.minRem)} mm aprovechables.</p></details>
+    ${num('tramo', 'Largo del tramo nuevo (mm)')}${num('minRem', 'Recorte útil mínimo para guardar (mm)')}${num('tolSeccion', 'Tolerancia sección nombre vs IGS (mm)', 0.1)}${num('densidad', 'Densidad del acero (g/cm³)', 0.01)}</div>
+    <p class="mut sm">El chuck, el refrentado, la separación y la extensión van por máquina (abajo). Un sobrante se guarda como recorte si, al restarle el chuck (o la extensión) y el refrentado de la máquina, quedan al menos ${f0(CFG.minRem)} mm aprovechables.</p></details>
+  ${cardMaquinas()}
   <details class="card"><summary><b>📐 Espesor por calibre (mm)</b></summary><div class="grid2" style="margin-top:10px">${Object.entries(CFG.calibres).map(([c, v]) => `<label class="cfl"><span>Calibre ${c}</span><input type="number" step="0.01" data-cal="${c}" value="${v}"></label>`).join('')}</div></details>
   ${catHtml()}
   <details class="card" open><summary><b>☁ Conexión con Drive (Apps Script)</b></summary><div style="margin-top:10px">
@@ -2674,13 +2730,13 @@ function renderCfg(){
     <p class="mut sm">La URL de Línea Italia ya viene integrada; si la borras y guardas, se vuelve a usar la integrada. Sin conexión, la plataforma funciona solo en este navegador (los IGS se cargan desde tu equipo y los programas y recortes se guardan aquí). Con la URL, lee la biblioteca de Drive de Ingeniería y comparte programas, seguimiento y recortes entre equipos.</p></div></details>
   <div class="card"><div class="row"><button id="cExp">⬇ Respaldo (JSON)</button><button id="cImp">⬆ Importar respaldo</button><span style="flex:1"></span><button id="cDef">Valores de fábrica</button></div></div>`;
   if($('cComp')) $('cComp').onclick = async () => {
-    if(!confirm(`¿Usar esta configuración en todos los equipos?\n\nTramo ${f0(CFG.tramo)} mm · ${CFG.extension === false ? "chuck " + f0(CFG.chuck) + " mm" : "extensión " + CFG.extPct + " % útil"} · refrentado ${CFG.refr} mm · separación ${CFG.kerf} mm · recorte mínimo ${f0(CFG.minRem)} mm\n\nDesde ahora los cambios de Configuración aplican en GW1, GW2 y en cualquier otro equipo.`)) return;
+    if(!confirm(`¿Usar esta configuración en todos los equipos?\n\nTramo ${f0(CFG.tramo)} mm · ${maqsCfg().map(m => m + ': chuck ' + f0(pmDe(m).chuck) + ' mm').join(' · ')} · recorte mínimo ${f0(CFG.minRem)} mm\n\nDesde ahora los cambios de Configuración aplican en GW1, GW2 y en cualquier otro equipo.`)) return;
     await compartirCfg(true); renderCfg(); };
   bindProgramadores();
   // quien no es programador solo consulta la configuración compartida (la conexión de su equipo sí la puede cambiar)
   if(!esProgramador()) el.querySelectorAll('input, select, button, textarea').forEach(x => { if(!['cUrl', 'cClave', 'cSave', 'cTest', 'cExp'].includes(x.id) && !x.closest('summary')) { x.disabled = true; x.title = msgSoloProg(); } });
   el.querySelectorAll('[data-k]').forEach(i => i.onchange = () => { CFG[i.dataset.k] = +i.value; saveCfg(); explotar(); renderSide(); renderCfg(); toast(S.cfgCompActiva ? 'Guardado para todos los equipos' : 'Guardado en este equipo'); });
-  $('cExt').onchange = e => { CFG.extension = e.target.checked; saveCfg(); explotar(); renderSide(); renderCfg(); toast((CFG.extension ? 'Con extensión' : 'Sin extensión') + (S.cfgCompActiva ? ' · guardado para todos los equipos' : ' · guardado en este equipo')); };
+  bindMaquinas(el);
   el.querySelectorAll('[data-cal]').forEach(i => i.onchange = () => { CFG.calibres[i.dataset.cal] = +i.value; saveCfg(); });
   $('catBox').ontoggle = e => { S.catOpen = e.target.open; };
   el.querySelectorAll('[data-cat]').forEach(i => i.onchange = () => { const c = CFG.catalogo[+i.dataset.cat], f = i.dataset.f;
