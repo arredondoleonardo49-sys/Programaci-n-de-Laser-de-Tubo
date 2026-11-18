@@ -1112,6 +1112,24 @@ async function abrirProgramaOEE(fecha, callado){
     if(S.lib.length) await medirNecesarios(); else { explotar(); renderAll(); } }
   catch(e){ toast(e.message, 'er'); }
 }
+/* ======================= Niveles ligados a las cuentas del OEE (2026-11-18) =======================
+   Quien entra al OEE en este navegador entra aquí con el mismo nivel: el Operador solo ve los múltiples aprobados de su máquina
+   (la predeterminada en el OEE, p. ej. ISSAC → GW2) y Corte en piso; Líder e Ingeniero ven toda la plataforma.
+   Se lee del navegador (misma página de GitHub); es para ordenar la pantalla de cada quien, no un candado de seguridad. */
+const OEE_USER_KEY = 'oee_current_user_v1', OEE_AUTH_KEY = 'oee_auth_v1', OEE_DEFMAQ_KEY = 'oee_default_machines_v1', OEE_REGCTX_KEY = 'oee_reg_context_v1';
+const esBanco = () => /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+function cuentaOEE(){
+  let u = null, tok = null; try{ u = JSON.parse(localStorage.getItem(OEE_USER_KEY) || 'null'); tok = localStorage.getItem(OEE_AUTH_KEY); }catch(e){}
+  if(!u || !tok){ return esBanco() ? {id: 'banco', nombre: 'Banco de pruebas', rol: 'ingeniero', maq: '', operador: false} : null; }
+  const rol = String(u.role || 'operador').toLowerCase(); let maq = '';
+  try{ const dm = (JSON.parse(localStorage.getItem(OEE_DEFMAQ_KEY) || '{}') || {})[u.id]; if(dm && CFG.maquinas.includes(dm.machine)) maq = dm.machine; }catch(e){}
+  if(!maq){ try{ const rc = JSON.parse(localStorage.getItem(OEE_REGCTX_KEY) || 'null'); if(rc && (!rc.uid || rc.uid === u.id) && CFG.maquinas.includes(rc.machine)) maq = rc.machine; }catch(e){} }
+  return {id: u.id, nombre: u.name || u.username || 'Usuario', usuario: u.username || '', rol, maq, operador: rol === 'operador'};
+}
+const ROL_TXT = {operador: 'Operador', lider: 'Líder', ingeniero: 'Ingeniero'};
+const esOperador = () => !!(S.cuenta && S.cuenta.operador);
+/* máquina del operador: la predeterminada en el OEE; si no tiene, la que se eligió en esta pantalla */
+const maqOperador = () => (S.cuenta && S.cuenta.maq) || MAQ || '';
 function cardOEE(){
   const P = programasOEE(), fs = Object.keys(P).sort().reverse();
   if(!fs.length) return `<div class="card row"><span style="flex:1"><b>Programa del OEE</b><span class="sub">En este navegador no hay programa de GW1 / GW2 subido al OEE. Súbelo una sola vez en el OEE (Registrar turno › Programa del día) y aquí aparece; o arrastra el Excel abajo.</span></span><a href="${OEE_URL}" target="_blank" rel="noopener"><button>Abrir OEE ↗</button></a></div>`;
@@ -1302,7 +1320,9 @@ async function reconectarCentral(){
   const h = await DIRDB.leer('zzx'); if(!h) return;
   let p = 'prompt'; try{ p = await h.queryPermission({mode: 'readwrite'}); }catch(e){}
   if(p !== 'granted'){ S.cenPend = h.name; renderAviso(); return; }
-  S.cenDir = h; S.cenPend = ''; renderAviso(); S.libMsg = 'Leyendo la carpeta ' + h.name + '…'; renderAll();
+  S.cenDir = h; S.cenPend = ''; renderAviso();
+  if(esOperador()){ renderAll(); return; }   // el operador no lee la biblioteca: solo abre los IGS de su tramo, por su ruta
+  S.libMsg = 'Leyendo la carpeta ' + h.name + '…'; renderAll();
   if(await leerCentral()) await medirNecesarios(); else renderAll();
 }
 function renderAviso(){
@@ -1310,7 +1330,7 @@ function renderAviso(){
   if(!a){ a = document.createElement('div'); a.id = 'recon'; a.className = 'card row'; a.style.cssText = 'margin:12px 1.5rem 0;border-color:var(--amber)'; $('content').before(a); }
   if(!S.cenPend || S.cenDir){ a.style.display = 'none'; return; }
   a.style.display = 'flex';
-  a.innerHTML = `<span style="flex:1;min-width:240px">🔌 <b>La carpeta central ${esc(S.cenPend)} está desconectada</b> desde que se recargó la página.<span class="sub">Reconéctala con un clic; no hay que volver a elegirla. En el aviso del navegador elige «Permitir en cada visita» y ya no lo volverá a pedir.</span></span><button class="pri" id="reconBtn">Reconectar carpeta central</button>`;
+  a.innerHTML = `<span style="flex:1;min-width:240px">🔌 <b>La carpeta central ${esc(S.cenPend)} está desconectada</b> desde que se recargó la página.<span class="sub">Reconéctala con un clic; no hay que volver a elegirla${esOperador() ? ' y no se lee toda la carpeta: solo los IGS del tramo que bajes' : ''}. En el aviso del navegador elige «Permitir en cada visita» y ya no lo volverá a pedir.</span></span><button class="pri" id="reconBtn">Reconectar carpeta central</button>`;
   $('reconBtn').onclick = () => abrirCentral(false);
 }
 async function abrirCentral(otra){
@@ -1320,7 +1340,9 @@ async function abrirCentral(otra){
     if(h && (await h.queryPermission({mode: 'readwrite'})) !== 'granted' && (await h.requestPermission({mode: 'readwrite'})) !== 'granted') h = null;
     if(!h){ h = await window.showDirectoryPicker({id: 'central', mode: 'readwrite'}); await DIRDB.guardar(h, 'zzx'); }
   }catch(e){ if(e.name !== 'AbortError') toast('No se pudo abrir la carpeta: ' + e.message, 'er'); return; }
-  S.cenDir = h; S.cenPend = ''; renderAviso(); S.libMsg = 'Leyendo la carpeta ' + h.name + '…'; renderLib();
+  S.cenDir = h; S.cenPend = ''; renderAviso();
+  if(esOperador()){ toast('Carpeta central conectada: ya puedes bajar el IGS de cada tramo'); renderAll(); return; }   // sin leer toda la biblioteca
+  S.libMsg = 'Leyendo la carpeta ' + h.name + '…'; renderLib();
   if(!(await leerCentral())) return;
   const t = cuentaCentral();
   if(!t.igs) toast(`No encontré IGS en ${h.name}. Elige la carpeta TUBO LASER - DIBUJOS POR MODELO (con las carpetas LÍNEA \\ MODELO \\ IGS).`, 'er');
@@ -1350,13 +1372,19 @@ async function leerCentral(){
     await rec(d, '');
   };
   try{
+    const tareas = [];
     for(const [ln, dl] of await entradas(h)){
       if(dl.kind !== 'directory') continue;
       const hijos = (await entradas(dl)).filter(([, e]) => e.kind === 'directory');
       if(hijos.some(([n]) => /^(IGE?S|ZZX)$/i.test(n))) continue;   // carpeta de modelo suelta en la raíz (estructura anterior): no es una línea
-      for(const [mn, dm] of hijos) await leerModelo(dm, ln + '/' + mn);
+      hijos.forEach(([mn, dm]) => tareas.push([dm, ln + '/' + mn]));
     }
+    // varios modelos a la vez: la lectura de la carpeta tarda mucho menos
+    let ti = 0; const trab = async () => { while(ti < tareas.length){ const [dm, k] = tareas[ti++]; await leerModelo(dm, k); } };
+    await Promise.all(Array.from({length: 8}, trab));
   }catch(e){ S.libMsg = ''; renderLib(); toast('No se pudo leer la carpeta central: ' + e.message, 'er'); return false; }
+  // mismo orden en todos los equipos (Windows puede listar las carpetas en otro orden): así los empates se resuelven igual
+  lib.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
   S.cen = {nombre: h.name, mods, porClave};
   // múltiples armados por la plataforma: se marcan para no tomarlos como piezas sueltas del modelo
   const deApp = new Set(); for(const [key, M] of Object.entries(mods)) M.man.multiples.forEach(x => deApp.add(key + '|' + claveDibujo(x.nombre)));
@@ -1691,9 +1719,22 @@ async function guardarPrograma(){
 
 /* ======================= IGS combinado y hoja de corte ======================= */
 /* IGS de un tramo guardado cuando la biblioteca no está cargada en esta pantalla: se baja de Drive por su id */
+/* IGS por su ruta, directo de la carpeta central, sin leer toda la biblioteca: así el operador baja el IGS de su tramo al instante */
+async function igsPorRuta(fileId){
+  if(!String(fileId).startsWith('L:') || !S.cenDir) return null;
+  if(S.extra[fileId]) return S.extra[fileId];
+  const segs = String(fileId).slice(2).split('/'); let d = S.cenDir;
+  try{ for(const s of segs.slice(1, -1)) d = await d.getDirectoryHandle(s);
+    const name = segs[segs.length - 1], fh = await d.getFileHandle(name), fl = await fh.getFile(), path = segs.join('/');
+    const f = {id: fileId, name, path, handle: fh, modified: fl.lastModified, size: fl.size, p: parseNombre(name, path)};
+    S.extra[fileId] = f; return f; }
+  catch(e){ return null; }
+}
 async function igsSuelto(p){
   if(S.extra[p.fileId]) return S.extra[p.fileId];
-  if(String(p.fileId).startsWith('L:') || !API.on()) throw new Error(`No está cargado el IGS de ${p.pieza} (${p.ruta}). Este programa se armó con IGS del equipo: cárgalos en "Biblioteca de IGS".`);
+  const fr = await igsPorRuta(p.fileId); if(fr) return fr;
+  if(String(p.fileId).startsWith('L:') && !S.cenDir) throw new Error('Conecta la carpeta central en este equipo (arriba, "Conectar carpeta central"): de ahí se toman los IGS de las piezas.');
+  if(String(p.fileId).startsWith('L:') || !API.on()) throw new Error(`No encontré el IGS de ${p.pieza} (${p.ruta}) en la carpeta central: quizá se movió o se renombró.`);
   const d = await API.archivoInfo(p.fileId);
   const f = {id: p.fileId, name: d.nombre, path: '', p: parseNombre(d.nombre, '')};
   S.raw[f.id] = d.txt; S.extra[f.id] = f; return f;
@@ -1715,7 +1756,7 @@ const esCompleto = bar => bar.completo || (bar.piezas.length > 0 && bar.piezas.e
 async function descargarTramo(bar, label, registrar){
   try{
     if(esCompleto(bar)){
-      const p0 = bar.piezas[0], f = S.lib.find(x => x.id === p0.fileId) || await igsSuelto(p0), txt = await textoDe(f), k = bar.piezas.length;
+      const p0 = bar.piezas[0], f = S.lib.find(x => x.id === p0.fileId) || await igsSuelto(p0), txt = await textoDe(f), k = bar.piezas.length;   // igsSuelto también busca por ruta
       dl(f.name.replace(/\.gz$/i, ''), txt, 'application/iges');
       toast(`${f.name}: dibujo completo · córtalo ${k} ${k === 1 ? 'vez' : 'veces'} en este tramo (usa su .zzx si ya está dado de alta)`, 'in');
     } else { toast('Armando IGS de ' + bar.id + '…', 'in'); const txt = await igsTramo(bar, label); dl(bar.id + '.igs', txt, 'application/iges'); }
@@ -1727,7 +1768,7 @@ async function descargarTramo(bar, label, registrar){
 const GEO = new Map(), GEO_SYM = new Map(), GEO_PEND = new Set();
 function geoDe(fileId){
   if(GEO.has(fileId)) return GEO.get(fileId);
-  const pr = (async () => { const f = S.lib.find(x => x.id === fileId); if(!f) return null;
+  const pr = (async () => { const f = S.lib.find(x => x.id === fileId) || await igsPorRuta(fileId); if(!f) return null;
     try{ const txt = await textoDe(f), r = IGES.inspect(txt, f.p.med ? [f.p.med.a, f.p.med.b] : null, f.p.med && f.p.med.forma); if(!r.ok) return null;
       return {r, k: (MEAS[medKey(f)] || {}).k || 1, name: f.name}; }catch(e){ return null; } })();
   GEO.set(fileId, pr); return pr;
@@ -2084,7 +2125,52 @@ function renderLib(){
   el.querySelectorAll('[data-ver]').forEach(b => b.onclick = () => abrirVisor(S.lib.find(f => f.id === b.dataset.ver)));
   el.querySelectorAll('[data-elec]').forEach(b => b.onclick = () => { ELEC[b.dataset.elec] = b.dataset.id; saveElec(); medirNecesarios(); });
 }
+/* ======================= Vista del operador: solo los múltiples aprobados de su máquina =======================
+   Sin generar, sin aprobar, sin configuración y sin leer toda la carpeta central: cada tramo con su estado; al bajar su IGS
+   (se arma con los IGS de sus piezas, leídos por su ruta) queda "En proceso" en su máquina, y se termina aquí mismo. */
+function renderMultOperador(){
+  const el = $('t-mult'), maq = maqOperador(), col = colorMap();
+  if(!maq){ el.innerHTML = `<div class="card" style="max-width:640px"><h3>¿En qué máquina estás?</h3><p class="sm" style="margin:0 0 10px">Tu cuenta del OEE no tiene máquina predeterminada. Elígela aquí (se recuerda en este equipo) o pide a Ingeniería que te la asigne en el OEE.</p>
+    <div class="row">${CFG.maquinas.map(m => `<button class="pri" data-mq0="${esc(m)}" style="padding:10px 24px;font-size:15px">${esc(m)}</button>`).join('')}</div></div>`;
+    el.querySelectorAll('[data-mq0]').forEach(b => b.onclick = () => { MAQ = b.dataset.mq0; saveMaq(); renderAll(); }); return; }
+  if(MAQ !== maq){ MAQ = maq; saveMaq(); }
+  const deMaq = pid => (S.db.tramos || []).filter(t => t.programa === pid && t.maquina === maq && t.estado !== 'Cancelado');
+  const aps = programasAprobados().filter(p => deMaq(p.id).length);
+  if(!S.res || !S.res.aprobado || !aps.some(p => p.id === S.res.id)){
+    const p = aps.find(p => deMaq(p.id).some(t => t.estado !== 'Cortado')) || aps[0]; S.res = p ? resDeGuardado(p.id) : null; }
+  const R = S.res;
+  if(!R){ el.innerHTML = `<div class="card empty">Todavía no hay múltiples aprobados para <b>${esc(maq)}</b>. Cuando Ingeniería apruebe el programa del día, aparecen aquí.<div style="margin-top:12px"><button id="opRef">🔄 Volver a revisar</button></div></div>`;
+    $('opRef').onclick = async () => { try{ await API.cargar(); }catch(e){ toast(e.message, 'er'); } renderAll(); }; return; }
+  const gs = R.grupos.map((g, gi) => ({g, gi})).filter(x => x.g.maquina === maq), bars = gs.flatMap(x => x.g.bars);
+  const est = s => bars.filter(b => (b.estado || 'Pendiente') === s).length, abiertos = S.multAbiertos || (S.multAbiertos = new Set()), gk = g => (g.maquina || '') + '|' + g.grupo;
+  const lp = bars.reduce((s, b) => s + b.piezas.reduce((x, p) => x + (+p.L || 0), 0), 0), cs = bars.reduce((s, b) => s + (+b.consumo || 0), 0);
+  el.innerHTML = `<div class="card"><div class="row"><span style="flex:1;min-width:240px"><b style="font-size:16px">Múltiples de ${esc(maq)}</b> ${badge('ok', '✓ Aprobado')}
+      <span class="sub">${esc(R.id)} · ${esc(R.archivo || '')} · el mismo programa que ven Ingeniería y la otra máquina</span></span>
+    ${aps.length > 1 ? `<select id="opVer">${aps.map(p => `<option value="${esc(p.id)}" ${p.id === R.id ? 'selected' : ''}>${esc(p.id)} · ${esc(p.archivo || '')} · ${esc(p.estado || 'Pendiente')}</option>`).join('')}</select>` : ''}
+    <button id="mPrint">🖨 Hoja de corte</button><button id="opRef" title="Volver a leer del servidor">🔄</button></div>
+    ${dts(dt('Tramos', bars.length), dt('Cortados', est('Cortado'), '', 'ok'), est('En proceso') ? dt('En proceso', est('En proceso'), '', 'wa') : '', dt('Pendientes', est('Pendiente')), dt('Piezas', bars.reduce((s, b) => s + b.piezas.length, 0)), dt('Aprovechamiento', pct(cs ? lp/cs : 0), '', lvAprov(cs ? lp/cs : 0)))}
+    <div class="row" style="margin-top:10px"><span class="sub" style="flex:1;margin:0">Al bajar el IGS de un tramo queda "En proceso" en ${esc(maq)}; al bajar el siguiente, el anterior se cierra como cortado. Usa "■ Terminar" en el último del turno.</span><button id="mAbrir">⊞ Abrir todo</button><button id="mCerrar">⊟ Contraer todo</button></div></div>
+  ${S.cenDir ? '' : `<div class="card row" style="border-color:var(--amber)"><span style="flex:1">Para bajar el IGS de cada tramo, conecta la carpeta central <b>TUBO LASER - DIBUJOS POR MODELO</b>. Solo la primera vez en este equipo: después se recuerda.</span><button class="pri" id="opCarpeta">Conectar carpeta central</button></div>`}
+  ${gs.map(({g, gi}) => `<details class="card" data-gk="${esc(gk(g))}" ${abiertos.has(gk(g)) ? 'open' : ''}><summary><b>${esc(g.label)}</b> ${g.sku ? badge('in', 'SKU ' + g.sku) : ''}
+    ${dts(dt('Tramos', g.bars.length), dt('Cortados', g.bars.filter(b => b.estado === 'Cortado').length, '', 'ok'), dt('Piezas', g.tot.piezas), dt('Aprovechamiento', pct(g.tot.aprov), '', lvAprov(g.tot.aprov)))}</summary>
+    ${g.bars.map((b, bi) => { const e = b.estado || 'Pendiente'; return `<div class="bar" style="${e === 'Cortado' ? 'opacity:.6' : ''}"><div class="barhd"><b title="${esc(b.id)}">Tramo ${esc(String(b.id).replace(R.id + '-', ''))}</b> ${badge(e === 'Cortado' ? 'ok' : e === 'En proceso' ? 'wa' : 'in', e)}<span style="flex:1"></span>
+      <button data-ver="${gi}|${bi}" title="Ver el tramo con el dibujo de cada pieza, con zoom">🔍 Ver</button>${e === 'Cortado' ? '' : `<button data-opigs="${gi}|${bi}" class="${e === 'Pendiente' ? 'pri' : ''}" title="Baja el IGS del tramo y lo marca En proceso en ${esc(maq)}">⬇ IGS</button>`}${e === 'En proceso' ? `<button class="pri" data-opfin="${esc(b.id)}">■ Terminar</button>` : ''}<button data-hoja="${gi}|${bi}" title="Hoja de corte de este tramo">🖨</button></div>${svgBar(b, col, {op: true})}${pieBar(b)}</div>`; }).join('')}</details>`).join('')}`;
+  const res = S.res;
+  $('mPrint').onclick = () => hojaCorte('Programa de corte de tubular ' + res.id + ' · ' + maq, bars);
+  $('opRef').onclick = async () => { try{ await API.cargar(); }catch(e){ toast(e.message, 'er'); } S.res = null; renderAll(); };
+  if($('opVer')) $('opVer').onchange = e => { S.res = resDeGuardado(e.target.value); renderMultOperador(); };
+  if($('opCarpeta')) $('opCarpeta').onclick = () => abrirCentral(false);
+  $('mAbrir').onclick = () => el.querySelectorAll('details[data-gk]').forEach(d => d.open = true);
+  $('mCerrar').onclick = () => el.querySelectorAll('details[data-gk]').forEach(d => d.open = false);
+  el.querySelectorAll('details[data-gk]').forEach(d => d.addEventListener('toggle', () => { d.open ? S.multAbiertos.add(d.dataset.gk) : S.multAbiertos.delete(d.dataset.gk); }));
+  const barDeDs = s => { const [gi, bi] = s.split('|').map(Number), g = res.grupos[gi]; return {g, b: g.bars[bi]}; };
+  el.querySelectorAll('[data-ver]').forEach(x => x.onclick = () => { const {g, b} = barDeDs(x.dataset.ver); abrirVisorTramo(b, g.label); });
+  el.querySelectorAll('[data-hoja]').forEach(x => x.onclick = () => { const {b} = barDeDs(x.dataset.hoja); hojaCorte('Tramo ' + b.id, [b]); });
+  el.querySelectorAll('[data-opigs]').forEach(x => x.onclick = async () => { const {g, b} = barDeDs(x.dataset.opigs); await descargarTramo(b, g.label, true); S.res = resDeGuardado(res.id); renderMultOperador(); });
+  el.querySelectorAll('[data-opfin]').forEach(x => x.onclick = async () => { await terminarCorte(x.dataset.opfin); S.res = resDeGuardado(res.id); renderMultOperador(); });
+}
 function renderMult(){
+  if(esOperador()) return renderMultOperador();
   const el = $('t-mult'), R = S.res, col = colorMap();
   // qué programa se ve: uno aprobado (igual en todos los equipos) o el que se generó aquí y no se ha aprobado
   const aps = programasAprobados(), bo = leerBorrador(), hayLocal = (R && !R.aprobado) || (bo && bo.archivo === S.progFile);
@@ -2268,12 +2354,13 @@ function renderCons(){
 function renderPiso(){
   const el = $('t-piso'), P = (S.db.programas || []).slice().sort((a, b) => (b.fecha || 0) - (a.fecha || 0)), col = colorMap();
   if(!P.length) return el.innerHTML = `<div class="card empty">Aún no hay programas guardados. Genera los múltiples y presiona "Aprobar y guardar".</div>`;
-  const ver = S.pisoVer || 'activos';
-  const lista = P.filter(p => ver === 'todos' || !['Cortado', 'Cancelado'].includes(p.estado));
+  const ver = S.pisoVer || 'activos', soloMaq = esOperador() ? maqOperador() : '';   // el operador ve solo su máquina
+  if(soloMaq && MAQ !== soloMaq){ MAQ = soloMaq; saveMaq(); }
+  const lista = P.filter(p => (ver === 'todos' || !['Cortado', 'Cancelado'].includes(p.estado)) && (!soloMaq || (S.db.tramos || []).some(t => t.programa === p.id && t.maquina === soloMaq)));
   el.innerHTML = `<div class="card"><div class="row">${[['activos', 'Pendientes y en proceso'], ['todos', 'Todos']].map(([k, t]) => `<button data-pv="${k}" class="${k === ver ? 'pri' : ''}">${t}</button>`).join('')}
-    <span style="flex:1"></span><span class="sm">Esta pantalla corta en:</span>${CFG.maquinas.map(m => `<button data-maq="${esc(m)}" class="${m === MAQ ? 'pri' : ''}">${esc(m)}</button>`).join('')}<button id="pRef" title="Volver a leer del servidor">🔄</button></div>
+    <span style="flex:1"></span>${soloMaq ? `<span class="sm">Máquina: <b>${esc(soloMaq)}</b></span>` : `<span class="sm">Esta pantalla corta en:</span>${CFG.maquinas.map(m => `<button data-maq="${esc(m)}" class="${m === MAQ ? 'pri' : ''}">${esc(m)}</button>`).join('')}`}<button id="pRef" title="Volver a leer del servidor">🔄</button></div>
     <p class="mut sm" style="margin:8px 0 0">${MAQ ? `Al descargar el IGS de un tramo queda "En proceso" en <b>${esc(MAQ)}</b> con su hora de inicio; al descargar el siguiente en ${esc(MAQ)}, el anterior se cierra como cortado (lo que esté en proceso en otra máquina no se toca). Usa "Terminar corte" para el último del turno.` : '<b style="color:var(--er)">Elige en qué máquina estás antes de descargar un IGS.</b>'}</p></div>
-  ${lista.map(p => { const ts = (S.db.tramos || []).filter(t => t.programa === p.id).sort((a, b) => String(a.tipo).localeCompare(String(b.tipo)) || a.orden - b.orden), vivos = ts.filter(t => t.estado !== 'Cancelado'), hechos = vivos.filter(t => t.estado === 'Cortado').length;
+  ${lista.map(p => { const ts = (S.db.tramos || []).filter(t => t.programa === p.id && (!soloMaq || t.maquina === soloMaq)).sort((a, b) => String(a.tipo).localeCompare(String(b.tipo)) || a.orden - b.orden), vivos = ts.filter(t => t.estado !== 'Cancelado'), hechos = vivos.filter(t => t.estado === 'Cortado').length;
     return `<details class="card" ${!['Cortado', 'Cancelado'].includes(p.estado) ? 'open' : ''}><summary><b>${esc(p.id)}</b> ${badge(p.estado === 'Cortado' ? 'ok' : p.estado === 'En proceso' ? 'wa' : 'in', p.estado || 'Pendiente')} <span class="mut sm">${fecha(+p.fecha)} · ${esc(p.archivo || '')}</span>
     <div class="prog" title="${hechos} de ${vivos.length} tramos cortados"><i style="width:${vivos.length ? hechos/vivos.length*100 : 0}%"></i></div><span class="sm">${hechos} de ${vivos.length} tramos cortados</span></summary>
     <div class="tw" style="margin-top:8px;max-height:none"><table><tr><th>Tramo</th><th>Tubular</th><th>Material</th><th>Piezas</th><th>Recorte a guardar</th><th>Estado</th><th></th></tr>
@@ -2282,7 +2369,7 @@ function renderPiso(){
       <td class="sm">${t.recorteNuevo ? `♻ ${u(f0(t.largoRecorte), 'mm')}<span class="sub">${esc(t.recorteNuevo)}</span>` : '—'}</td>
       <td>${badge(t.estado === 'Cortado' ? 'ok' : t.estado === 'En proceso' ? 'wa' : 'in', t.estado)}${t.maquina ? ' ' + badge('in', t.maquina) : ''}<span class="sub">${t.inicio ? 'Inicio ' + fecha(+t.inicio) : ''}${t.fin ? '<br>Fin ' + fecha(+t.fin) : ''}</span></td>
       <td style="white-space:nowrap">${t.estado === 'Cancelado' ? '' : `<button data-pd="${esc(t.id)}" title="Descargar IGS del múltiple">⬇ IGS</button> <button data-ph="${esc(t.id)}" title="Hoja de corte">🖨</button>`}${t.estado === 'En proceso' ? ` <button class="pri" data-pt="${esc(t.id)}">■ Terminar corte</button>` : ''}</td></tr>`).join('')}</table></div>
-    ${!['Cortado', 'Cancelado'].includes(p.estado) && ts.some(t => t.estado === 'Pendiente') ? `<div class="row" style="margin-top:8px"><span style="flex:1"></span><button data-pc="${esc(p.id)}" title="Cancela los tramos pendientes y libera sus recortes reservados">✖ Cancelar tramos pendientes</button></div>` : ''}</details>`; }).join('') || '<div class="card empty">No hay programas pendientes.</div>'}`;
+    ${!soloMaq && !['Cortado', 'Cancelado'].includes(p.estado) && ts.some(t => t.estado === 'Pendiente') ? `<div class="row" style="margin-top:8px"><span style="flex:1"></span><button data-pc="${esc(p.id)}" title="Cancela los tramos pendientes y libera sus recortes reservados">✖ Cancelar tramos pendientes</button></div>` : ''}</details>`; }).join('') || '<div class="card empty">No hay programas pendientes.</div>'}`;
   el.querySelectorAll('[data-pv]').forEach(b => b.onclick = () => { S.pisoVer = b.dataset.pv; renderPiso(); });
   el.querySelectorAll('[data-maq]').forEach(b => b.onclick = () => { MAQ = b.dataset.maq; saveMaq(); renderPiso(); });
   el.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => cancelarPrograma(b.dataset.pc));
@@ -2502,14 +2589,18 @@ function badgeOf(k){
   switch(k){
     case 'prog': return S.ops.length ? ['in', S.ops.length] : null;
     case 'lib': { if(!S.lib.length) return null; if(S.lib.filter(f => f.p.planta).length > S.lib.length/2) return ['ok', f0(S.lib.length)]; const {vig, conflictos} = vigentes(); const er = vig.filter(f => evalPieza(f).lv === 'er').length + conflictos.length; return er ? ['er', er] : ['ok', vig.length]; }
-    case 'mult': return S.res ? ['ok', S.res.grupos.reduce((s, g) => s + g.bars.length, 0)] : S.items.length ? ['wa', '!'] : null;
-    case 'piso': { const n = (S.db.tramos || []).filter(t => !['Cortado', 'Cancelado'].includes(t.estado)).length; return n ? ['wa', n] : null; }
+    case 'mult': { const mq = esOperador() ? maqOperador() : ''; return S.res ? ['ok', S.res.grupos.filter(g => !mq || g.maquina === mq).reduce((s, g) => s + g.bars.length, 0)] : S.items.length ? ['wa', '!'] : null; }
+    case 'piso': { const mq = esOperador() ? maqOperador() : '', n = (S.db.tramos || []).filter(t => !['Cortado', 'Cancelado'].includes(t.estado) && (!mq || t.maquina === mq)).length; return n ? ['wa', n] : null; }
     case 'rec': { const n = (S.db.recortes || []).filter(r => r.estado === 'Disponible').length; return n ? ['ok', n] : null; }
   }
   return null;
 }
+/* el Operador solo ve sus múltiples aprobados y Corte en piso (y el acceso al OEE); sin sesión del OEE, solo el acceso al OEE */
+const menuVisible = () => !S.cuenta ? MENU.filter(g => g.items.some(i => i.url)) : esOperador() ? MENU.map(g => ({g: g.g, items: g.items.filter(i => ['mult', 'piso', 'oee'].includes(i.k))})).filter(g => g.items.length) : MENU;
 function renderSide(){
-  $('nav').innerHTML = MENU.map(g => `<div class="nav-section"><div class="nav-label">${esc(g.g)}</div>${g.items.map(i => { const b = badgeOf(i.k), ico = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICO[i.k]}</svg>`;
+  const sb = document.querySelector('.sb-info');
+  if(sb) sb.innerHTML = S.cuenta ? `👤 <b style="color:var(--text2)">${esc(S.cuenta.nombre)}</b> · ${ROL_TXT[S.cuenta.rol] || esc(S.cuenta.rol)}${esOperador() && maqOperador() ? ' · ' + esc(maqOperador()) : ''}` : 'Sin sesión del OEE';
+  $('nav').innerHTML = menuVisible().map(g => `<div class="nav-section"><div class="nav-label">${esc(g.g)}</div>${g.items.map(i => { const b = badgeOf(i.k), ico = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICO[i.k]}</svg>`;
     if(i.url) return `<a class="nav-item" href="${esc(i.url)}" target="_blank" rel="noopener" data-label="${esc(i.t)}" title="${esc(i.d)}" style="--ic:${i.c};text-decoration:none">${ico}<span>${esc(i.t)}</span></a>`;
     return `<div class="nav-item ${i.k === CUR ? 'active' : ''}" data-k="${i.k}" data-label="${esc(i.t)}" role="button" tabindex="0" style="--ic:${i.c}">${ico}<span>${esc(i.t)}</span>${b ? `<span class="nav-cnt b ${b[0]}">${b[1]}</span>` : ''}</div>`; }).join('')}</div>`).join('');
   $('nav').querySelectorAll('[data-k]').forEach(b => { b.onclick = () => { showTab(b.dataset.k); $('side').classList.remove('open'); };
@@ -2518,7 +2609,9 @@ function renderSide(){
 }
 const RENDER = {prog: renderProg, lib: renderLib, mult: renderMult, modelo: renderModelo, cons: renderCons, piso: renderPiso, rec: renderRec, cfg: renderCfg};
 function showTab(k){
-  const it = MENU.flatMap(g => g.items).find(i => i.k === k) || MENU[0].items[0]; CUR = it.k;
+  if(!S.cuenta) return pantallaSinSesion();
+  const vis = menuVisible().flatMap(g => g.items).filter(i => !i.url);
+  const it = vis.find(i => i.k === k) || vis[0]; CUR = it.k;
   $('pageTitle').textContent = it.t; $('pageSub').textContent = it.d;
   document.querySelectorAll('main section').forEach(s => s.classList.toggle('on', s.id === 't-' + CUR));
   try{ localStorage.setItem('mt-tab', CUR); }catch(e){}
@@ -2526,7 +2619,15 @@ function showTab(k){
   const ct = $('content'); ct.classList.remove('anim'); void ct.offsetWidth; ct.classList.add('anim'); clearTimeout(showTab._t); showTab._t = setTimeout(() => ct.classList.remove('anim'), 700);
   ct.scrollTop = 0; RENDER[CUR](); renderSide();
 }
-function renderAll(){ RENDER[CUR](); renderSide(); }
+function renderAll(){ if(!S.cuenta) return pantallaSinSesion(); RENDER[CUR](); renderSide(); }
+/* sin sesión del OEE en este navegador: se pide entrar al OEE con la cuenta de cada quien */
+function pantallaSinSesion(){
+  $('pageTitle').textContent = 'Entra con tu cuenta del OEE'; $('pageSub').textContent = 'Láser Tubo usa las mismas cuentas y niveles que la plataforma OEE.';
+  document.querySelectorAll('main section').forEach(s => s.classList.toggle('on', s.id === 't-prog'));
+  $('t-prog').innerHTML = `<div class="card" style="max-width:640px"><h3>🔒 Inicia sesión en el OEE</h3><p class="sm" style="margin:0 0 12px">Para usar Láser Tubo, entra primero al OEE en este navegador con tu cuenta. Al volver aquí, cada quien ve lo de su nivel: el operador, los múltiples aprobados de su máquina; Líder e Ingeniería, toda la plataforma.</p>
+    <div class="row"><a href="${OEE_URL}" target="_blank" rel="noopener"><button class="pri">Abrir OEE ↗</button></a><button id="ssRe">Ya entré: volver a revisar</button></div></div>`;
+  $('ssRe').onclick = () => location.reload(); renderSide(); const a = $('recon'); if(a) a.style.display = 'none';
+}
 $('menuBtn').onclick = () => $('side').classList.toggle('open');
 // un guardado rechazado (clave, conexión, validación del Apps Script) nunca queda en silencio
 window.addEventListener('unhandledrejection', e => { const m = (e.reason && e.reason.message) || String(e.reason || ''); if(m) toast(m.startsWith('No se') || e.reason.auth ? m : 'No se guardó: ' + m, 'er'); });
@@ -2536,14 +2637,23 @@ $('sbToggle').onclick = () => { const c = $('side').classList.toggle('collapsed'
 window.addEventListener('storage', e => { if(e.key !== OEE_KEY) return;
   if(S.progOEE && programasOEE()[S.progOEE]){ const fm = firmaOEE(S.progOEE);
     if(fm !== S.oeeFirma && fm !== S.oeeAvisada){ S.oeeAvisada = fm; toast('El OEE cambió el programa del ' + fechaOEE(S.progOEE) + ': en Programa usa "Volver a cargar"', 'wa'); } }
-  if(CUR === 'prog') renderProg(); });
+  if(CUR === 'prog' && S.cuenta && !esOperador()) renderProg(); });
+// si en el OEE entra o sale alguien, o cambia su máquina predeterminada, esta pantalla se ajusta a esa cuenta
+window.addEventListener('storage', e => { if([OEE_USER_KEY, OEE_AUTH_KEY, OEE_DEFMAQ_KEY].includes(e.key)){ const c = cuentaOEE();
+  if(JSON.stringify(c) !== JSON.stringify(S.cuenta)) location.reload(); } });
 (async () => {
   setConn(); let t = 'prog'; try{ t = localStorage.getItem('mt-tab') || 'prog'; }catch(e){}
   if(t === 'oee') t = 'prog';
   try{ S.multMaq = localStorage.getItem('mt-multmaq') || ''; }catch(e){}
+  // nivel de la cuenta del OEE de este navegador: el operador entra directo a sus múltiples aprobados
+  S.cuenta = cuentaOEE();
+  if(!S.cuenta){ pantallaSinSesion(); return; }
+  if(esOperador()) t = CUR === 'piso' || t === 'piso' ? 'piso' : 'mult';
   showTab(t);
   // 1) configuración compartida y programas aprobados (servidor), antes de leer el programa
   try{ await API.cargar(); }catch(e){ if(e.auth === 'clave'){ showTab('cfg'); toast(MSG_CLAVE, 'er'); } else toast('No se pudo leer el servidor: ' + e.message, 'er'); }
+  // el operador no carga programa ni biblioteca: ve los aprobados de su máquina y solo se conecta la carpeta para bajar IGS
+  if(esOperador()){ renderAll(); reconectarCentral(); return; }
   // 2) programa: el último que se usó en este equipo (Excel o el del OEE de esa fecha); si no, el del OEE de hoy o el siguiente
   if(!S.ops.length){ let u = null; try{ u = JSON.parse(localStorage.getItem('mt-prog') || 'null'); }catch(e){}
     const P = programasOEE();
