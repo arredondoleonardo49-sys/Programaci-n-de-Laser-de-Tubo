@@ -791,7 +791,7 @@ const OPT = (() => {
 
 /* ======================= Configuración ======================= */
 const API_URL = 'https://script.google.com/macros/s/AKfycbxZw8KfhHeSUdTfBQ3b4VNAXkQKrTtUkx1X4wWRyR8L1sRFT-R5umGcgcgq2evEiBhO/exec';
-const DEF = {version: 1, tramo: 6100, chuck: 400, refr: 5, kerf: 3, minRem: 500, modo: 'prio', ventana: 2, densidad: 7.85, extension: true, extPct: 98,
+const DEF = {version: 1, tramo: 6100, chuck: 400, refr: 5, kerf: 3, minRem: 500, modo: 'prio', ventana: 2, densidad: 7.85, extension: true, extPct: 98, programadores: [],
   tolSeccion: 1.5, apiUrl: API_URL, carpetaClave: 'TUBULAR|IGES|IGS', maquinas: ['GW1', 'GW2'],
   calibres: {'10': 3.42, '11': 3.04, '12': 2.66, '13': 2.28, '14': 1.90, '16': 1.52, '18': 1.21, '20': 0.91, '22': 0.76, '24': 0.61},
   /* catálogo de tubulares de Business Central (el mismo de la app OEE Planta): kg por tramo; el largo sale de la descripción o del tramo general */
@@ -980,7 +980,7 @@ const API = {
     const d = await this.jsonp({action: 'estado'});
     S.db = {programas: d.programas || [], tramos: (d.tramos || []).map(t => Object.assign(t, {piezas: typeof t.piezas === 'string' ? JSON.parse(t.piezas || '[]') : t.piezas})), recortes: d.recortes || []};
     S.db.recortes.forEach(r => r.largo = +r.largo);
-    aplicarCfgCompartida();
+    leerBorradorComp(); aplicarCfgCompartida(); completarProgramador();
   },
   /* upsert de filas por id; ts '__NOW__' lo pone el servidor. Con Apps Script, cada bloque se aplica aquí solo si el servidor lo confirmó */
   async upsert(tabla, filas){
@@ -1004,20 +1004,22 @@ function setConn(){ const c = $('conn'); if(API.on()){ c.className = 'conn ok'; 
    Todos los equipos deben generar los mismos múltiples: tramo, chuck, refrentado, separación, criterio, catálogo y las
    piezas sueltas / IGS elegidos a mano se guardan en el servidor y cada equipo los toma al conectarse. Se guardan como un
    renglón especial de la hoja de programas (id CFG-COMPARTIDA) para no cambiar el Apps Script; ese renglón no es un programa. */
-const CFG_COMP_ID = 'CFG-COMPARTIDA', CFG_COMP_CAMPOS = ['tramo', 'chuck', 'extension', 'extPct', 'refr', 'kerf', 'minRem', 'modo', 'ventana', 'usarRecortes', 'tolSeccion', 'densidad', 'calibres', 'catalogo', 'skuPref'];
+const CFG_COMP_ID = 'CFG-COMPARTIDA', CFG_COMP_CAMPOS = ['programadores', 'tramo', 'chuck', 'extension', 'extPct', 'refr', 'kerf', 'minRem', 'modo', 'ventana', 'usarRecortes', 'tolSeccion', 'densidad', 'calibres', 'catalogo', 'skuPref'];
 const paqueteComp = () => { const cfg = {}; CFG_COMP_CAMPOS.forEach(k => { if(k in CFG) cfg[k] = CFG[k]; }); return JSON.stringify({cfg, suelta: SUELTA, pzm: PZM, elec: ELEC}); };
 let compT = null;
 function programarCompartir(){
-  try{ if(!API.on() || S.cfgCompAplicando || !S.cfgCompActiva) return; }catch(e){ return; }   // al arrancar todavía no existen S ni API
+  try{ if(!API.on() || S.cfgCompAplicando || !S.cfgCompActiva || !esProgramador()) return; }catch(e){ return; }   // al arrancar todavía no existen S ni API
   clearTimeout(compT); compT = setTimeout(() => compartirCfg(false), 1200); }
 /* sube la configuración de este equipo para todos; la primera vez se hace con el botón de Configuración */
-async function compartirCfg(primera){
+async function compartirCfg(primera, forzar){
+  if(!esProgramador() && !forzar) return;   // solo los programadores cambian la configuración de todos
   const j = paqueteComp(); if(j === S.cfgCompJSON && !primera) return;
   try{ await API.upsert('programas', [{id: CFG_COMP_ID, fecha: '__NOW__', archivo: 'No borrar: configuración compartida de Láser Tubo', estado: 'Configuración', resumen: j}]);
     S.cfgCompJSON = j; S.cfgCompTs = Date.now(); S.cfgCompActiva = true; quitarCfgDeProgramas(); if(primera) toast('Configuración compartida: todos los equipos la usan desde ahora'); }
   catch(e){ toast('No se pudo compartir la configuración: ' + e.message, 'er'); }
 }
-const quitarCfgDeProgramas = () => { S.db.programas = (S.db.programas || []).filter(p => p.id !== CFG_COMP_ID); };
+const esEspecial = p => p.id === CFG_COMP_ID || String(p.id).startsWith(BORR_ID + '-');
+const quitarCfgDeProgramas = () => { S.db.programas = (S.db.programas || []).filter(p => !esEspecial(p)); };
 /* al leer el servidor: si hay configuración compartida, este equipo la adopta (gana sobre la suya) */
 function aplicarCfgCompartida(){
   const row = (S.db.programas || []).find(p => p.id === CFG_COMP_ID); quitarCfgDeProgramas(); if(!row) return;
@@ -1028,6 +1030,77 @@ function aplicarCfgCompartida(){
   SUELTA = Object.assign({}, d.suelta || {}); PZM = Object.assign({}, d.pzm || {}); ELEC = Object.assign({}, d.elec || {});
   saveCfg(); saveSuelta(); savePzm(); saveElec(); S.cfgCompAplicando = false; S.cfgCompJSON = paqueteComp(); S.match = null;
 }
+
+/* ======================= Rango Programador y borrador compartido (Leonardo, 2026-11-18) =======================
+   Leonardo y el líder de Láser tienen el rango Programador: los dos generan y aprueban los múltiples que cortan los operadores.
+   Lo que genera uno se guarda en el servidor como borrador compartido y el otro lo ve igual en su equipo hasta que alguno lo
+   aprueba. Los programadores son cuentas del OEE y se guardan en la configuración compartida. Sin programadores en la lista,
+   Líder e Ingeniero generan y aprueban como antes. El borrador va en renglones especiales de la hoja de programas
+   (BORR-COMPARTIDO-01, -02…; cada celda admite 49,000 caracteres) para no cambiar el Apps Script. */
+const BORR_ID = 'BORR-COMPARTIDO', BORR_MAX = 45000;
+const programadores = () => Array.isArray(CFG.programadores) ? CFG.programadores : [];
+const esProgramador = () => !!S.cuenta && !S.cuenta.operador && (S.cuenta.id === 'banco' || !programadores().length || programadores().some(p => esLaCuenta(p, S.cuenta)));
+const nombresProg = () => programadores().map(p => p.nombre).join(' y ') || 'Líder e Ingeniería';
+const msgSoloProg = () => `Solo los programadores (${nombresProg()}) generan y aprueban los múltiples`;
+/* borrador en texto compacto: los textos repetidos (modelo, pieza, OP, IGS) van una vez en un diccionario */
+function paqueteBorrador(R){
+  const D = [], ix = new Map(), s = v => { v = v == null ? '' : String(v); if(!ix.has(v)){ ix.set(v, D.length); D.push(v); } return ix.get(v); }, r1 = n => Math.round((+n || 0)*10)/10;
+  const grupos = R.grupos.map(g => ({tipo: g.tipo, grupo: g.grupo, maquina: g.maquina || '', completo: !!g.completo, dibujo: g.dibujo || '', label: g.label, corto: g.corto, kgm: g.kgm, sku: g.sku || '', nSku: g.nSku || 0, tramo: g.tramo, tot: g.tot,
+    largas: (g.largas || []).map(p => [s(p.pieza), s(p.ruta), r1(p.L)]),
+    bars: g.bars.map(b => ({id: b.id, P: b.P, o: b.origen, ri: b.recorteId || '', rn: b.recorteNuevo || '', r: b.recorte || 0, c: r1(b.consumo), a: +(+b.aprov || 0).toFixed(4), u: r1(b.usado), so: b.solo ? 1 : 0,
+      p: b.piezas.map(p => [r1(p.x), r1(p.L), s(p.op), s(p.ruta), s(p.pieza), s(p.fileId), r1(p.consumo), p.pzs > 1 ? p.pzs : 0, p.completo ? 1 : 0, p.prio || 0])}))}));
+  return JSON.stringify({v: 1, id: R.id, fecha: R.fecha, archivo: R.archivo || '', autor: (S.cuenta && S.cuenta.nombre) || '', D, grupos});
+}
+function resDePaquete(txt){
+  const d = JSON.parse(txt), D = d.D;
+  const grupos = d.grupos.map(g => Object.assign({}, g, {largas: g.largas.map(a => ({pieza: D[a[0]], ruta: D[a[1]], L: a[2]})),
+    bars: g.bars.map(b => ({id: b.id, P: b.P, origen: b.o, recorteId: b.ri, recorteNuevo: b.rn, recorte: b.r, consumo: b.c, aprov: b.a, usado: b.u, solo: !!b.so, maquina: g.maquina, completo: g.completo, tipoLabel: g.label,
+      piezas: b.p.map(a => Object.assign({x: a[0], L: a[1], op: D[a[2]], ruta: D[a[3]], pieza: D[a[4]], fileId: D[a[5]], consumo: a[6], prio: a[9]}, a[7] ? {pzs: a[7]} : {}, a[8] ? {completo: true} : {}))}))}));
+  return {id: d.id, fecha: d.fecha, archivo: d.archivo, autor: d.autor, grupos, guardado: false, aprobado: false, compartido: true};
+}
+/* sube el borrador para los programadores; si no se puede, se queda solo en este equipo */
+async function subirBorradorComp(R){
+  if(!API.on() || !esProgramador() || !R) return false;
+  const j = paqueteBorrador(R), sello = Date.now().toString(36), n = Math.ceil(j.length/BORR_MAX) || 1, filas = [];
+  // "§" al inicio: que la hoja guarde cada trozo como texto (no como número, fecha o fórmula)
+  for(let i = 0; i < n; i++) filas.push({id: BORR_ID + '-' + String(i + 1).padStart(2, '0'), fecha: '__NOW__', archivo: `${sello}|${i + 1}|${n}|${R.id}`, estado: 'Borrador compartido', ops: (S.cuenta && S.cuenta.nombre) || '', resumen: '§' + j.slice(i*BORR_MAX, (i + 1)*BORR_MAX)});
+  (S.borrIds || []).forEach(id => { if(+String(id).slice(BORR_ID.length + 1) > n) filas.push({id, archivo: '', estado: 'Vacío', ops: '', resumen: ''}); });   // trozos de un borrador anterior más grande
+  try{ await API.upsert('programas', filas); quitarCfgDeProgramas();
+    S.borrIds = [...new Set((S.borrIds || []).concat(filas.map(f => f.id)))]; R.compartido = true; R.sello = sello; R.autor = (S.cuenta && S.cuenta.nombre) || ''; S.borrComp = R; guardarBorrador(); return true; }
+  catch(e){ quitarCfgDeProgramas(); toast('No se pudo compartir el borrador (' + e.message + '): por ahora solo se ve en este equipo', 'er'); return false; }
+}
+/* al aprobarlo, el borrador compartido se vacía: desde ahí todos ven el programa aprobado */
+async function borrarBorradorComp(){
+  if(!API.on() || !(S.borrIds || []).length) { S.borrComp = null; return; }
+  try{ await API.upsert('programas', S.borrIds.map(id => ({id, archivo: '', estado: 'Vacío', ops: '', resumen: ''}))); }catch(e){} quitarCfgDeProgramas(); S.borrComp = null;
+}
+/* al leer el servidor (antes de quitar los renglones especiales): arma el borrador compartido más reciente */
+function leerBorradorComp(){
+  const filas = (S.db.programas || []).filter(p => String(p.id).startsWith(BORR_ID + '-'));
+  S.borrIds = filas.map(f => f.id);
+  const M = filas.filter(f => f.resumen).map(f => { const [sello, i, n] = String(f.archivo || '').split('|'); return {f, sello, i: +i, n: +n}; });
+  if(!M.length){ S.borrComp = null; return; }
+  const ult = M.slice().sort((a, b) => (+b.f.fecha || 0) - (+a.f.fecha || 0))[0], ps = M.filter(m => m.sello === ult.sello).sort((a, b) => a.i - b.i);
+  if(ps.length !== ult.n) return;                                 // se está escribiendo: se queda el anterior
+  if(S.borrComp && S.borrComp.sello === ult.sello) return;        // sin cambios
+  try{ S.borrComp = Object.assign(resDePaquete(ps.map(m => String(m.f.resumen).replace(/^§/, '')).join('')), {sello: ult.sello, ts: +ult.f.fecha || 0}); }catch(e){ S.borrComp = null; }
+}
+/* si en pantalla está el borrador compartido y otro programador lo cambió o lo aprobó, se sigue al nuevo */
+function seguirBorrador(){
+  const R = S.res; if(!R || R.aprobado || !R.compartido) return;
+  const bc = S.borrComp;
+  if(bc && bc.sello !== R.sello){ S.res = bc; toast(`${bc.autor || 'Otro programador'} generó otro borrador: ya lo ves aquí`, 'in'); }
+  else if(!bc){ const ap = (S.db.programas || []).find(p => p.id === R.id && p.estado !== 'Cancelado'); S.res = ap ? resDeGuardado(ap.id) : null; if(ap) toast('El borrador ya se aprobó: es el que ven los operadores', 'in'); }
+}
+/* cada minuto, con la pestaña a la vista, Líder e Ingeniería releen el servidor para ver el borrador o la aprobación del otro */
+const firmaServidor = () => (S.borrComp ? S.borrComp.sello : '') + '|' + (S.db.programas || []).map(p => p.id + ':' + p.estado).join(',');
+setInterval(async () => {
+  try{ if(document.hidden || !API.on() || !S.cuenta || esOperador() || S.generando) return; }catch(e){ return; }
+  const antes = firmaServidor();
+  try{ await API.cargar(); }catch(e){ return; }
+  seguirBorrador(); if(!S.res) elegirResPorOmision();
+  if(firmaServidor() !== antes) renderAll();
+}, 60000);
 
 /* ======================= Programa de producción ======================= */
 function leerPrograma(buf, name){
@@ -1713,17 +1786,21 @@ function explotarLaser(){
 const TIPOS = () => { const t = {}; S.items.forEach(i => t[i.tipo] = t[i.tipo] || {key: i.tipo, label: i.tipoLabel, corto: i.tipoCorto, med: i.med, cal: i.cal}); (S.db.recortes || []).forEach(r => { if(!t[r.tipo]) t[r.tipo] = {key: r.tipo, label: r.tipoLabel || r.tipo, corto: r.tipoCorto || r.tipo}; }); return t; };
 
 /* ======================= Optimización ======================= */
-function generar(){
+async function generar(){
+  if(!esProgramador()) return toast(msgSoloProg(), 'er');
   if(!S.items.length) return toast('No hay piezas de tubular para el programa', 'er');
   // si este programa ya tiene múltiples aprobados, se usan esos; generar otros puede dar un acomodo distinto
   const ap = aprobadoPara(S.progFile);
   if(ap && !confirm(`Este programa ya tiene múltiples aprobados (${ap.id}) y son los que se ven en todos los equipos.\n\nSi generas otros, el acomodo puede salir distinto. ¿Generar de todos modos?`)) return;
+  // el borrador compartido es uno solo para los programadores: generar otro lo reemplaza para todos
+  const bc = S.borrComp;
+  if(!ap && bc && !confirm(`Ya hay un borrador compartido${bc.autor ? ' de ' + bc.autor : ''} (${esc(bc.archivo || bc.id)}${bc.ts ? ', ' + fecha(bc.ts) : ''}).\n\nSi generas otro, se reemplaza también en el equipo del otro programador. ¿Generar de todos modos?`)) return;
   const recDisp = (S.db.recortes || []).filter(r => r.estado === 'Disponible').map(r => ({id: r.id, tipo: r.tipo, largo: +r.largo}));
   const c = {tramo: CFG.tramo, tramoDe, chuck: chuckEf(), refr: CFG.refr, kerf: CFG.kerf, minRem: CFG.minRem, modo: CFG.modo, ventana: CFG.ventana};
   const res = OPT.run(S.items, CFG.usarRecortes === false ? [] : recDisp, c);
   // el ID es por minuto: si ya hay un programa con ese ID se agrega b, c… para no sobrescribirlo al guardar
   const base = 'MT-' + hoyId(), T = TIPOS(); let pid = base;
-  for(let k = 1; (S.db.programas || []).some(p => p.id === pid); k++) pid = base + String.fromCharCode(97 + k);
+  for(let k = 1; (S.db.programas || []).some(p => p.id === pid) || (bc && bc.id === pid); k++) pid = base + String.fromCharCode(97 + k);
   // el consecutivo es por tubular aunque haya varios grupos (máquinas o dibujos completos) del mismo tubular
   const cons = {}, sello = Date.now().toString(36).slice(-4).toUpperCase();
   res.sort((a, b) => String(a.maquina).localeCompare(String(b.maquina)) || String(a.tipo).localeCompare(String(b.tipo)) || (a.completo ? 0 : 1) - (b.completo ? 0 : 1));
@@ -1732,10 +1809,13 @@ function generar(){
       b.id = `${pid}-${t.corto}-${nn}`; b.tipoLabel = t.label; b.maquina = g.maquina; b.completo = g.completo;
       if(b.recorte) b.recorteNuevo = 'R' + t.corto + '-' + sello + nn; }); });
   S.res = {id: pid, fecha: Date.now(), cfg: c, grupos: res, archivo: S.progFile, guardado: false}; S.consSel = null; guardarBorrador();
-  showTab('mult'); toast('Múltiples generados');
+  showTab('mult'); toast('Múltiples generados' + (API.on() ? ' · compartiendo con los programadores…' : ''));
+  if(API.on()){ S.generando = true; const ok = await subirBorradorComp(S.res); S.generando = false;
+    if(ok) toast(programadores().length > 1 ? 'Borrador compartido: ' + nombresProg() + ' ven los mismos múltiples' : 'Borrador compartido en el servidor'); renderAll(); }
 }
 async function guardarPrograma(){
   const R = S.res; if(!R) return; if(R.guardado) return toast('Este programa ya está guardado', 'in');
+  if(!esProgramador()) return toast(msgSoloProg(), 'er');
   // la misma OP en dos programas vigentes = piezas cortadas dos veces
   const opsR = [...new Set(R.grupos.flatMap(g => g.bars.flatMap(b => b.piezas.map(p => String(p.op)))))];
   const previos = (S.db.programas || []).filter(p => p.estado !== 'Cancelado' && p.id !== R.id).map(p => ({id: p.id, ops: String(p.ops ?? '').split(/\s*,\s*/).filter(o => opsR.includes(o))})).filter(p => p.ops.length);
@@ -1748,14 +1828,19 @@ async function guardarPrograma(){
     if(b.recorteNuevo) recNuevos.push({id: b.recorteNuevo, tipo: g.tipo, tipoLabel: g.label, tipoCorto: g.corto, largo: b.recorte, estado: 'Por generar', origen: b.id, programa: R.id, ubicacion: '', alta: '__NOW__'});
   }));
   const tot = R.grupos.reduce((s, g) => (s.tramos += g.tot.tramos, s.piezas += g.tot.piezas, s), {tramos: 0, piezas: 0});
+  S.generando = true;   // mientras se guarda, no se relee el servidor
   try{
-    await API.upsert('programas', [{id: R.id, fecha: '__NOW__', archivo: R.archivo || '', tramos: tot.tramos, piezas: tot.piezas, ops: [...new Set(S.items.map(i => i.op))].join(', '), resumen: JSON.stringify(R.grupos.map(g => ({tipo: g.tipo, label: g.label, ...g.tot}))), estado: 'Pendiente'}]);
+    await API.upsert('programas', [{id: R.id, fecha: '__NOW__', archivo: R.archivo || '', tramos: tot.tramos, piezas: tot.piezas, ops: opsR.join(', '), resumen: JSON.stringify(R.grupos.map(g => ({tipo: g.tipo, label: g.label, ...g.tot}))), estado: 'Pendiente'}]);
     await API.upsert('tramos', tramos);
     if(recUsados.length) await API.upsert('recortes', recUsados);
     if(recNuevos.length) await API.upsert('recortes', recNuevos);
     R.guardado = true; try{ localStorage.removeItem('mt-res'); }catch(e){}
-    toast('Programa ' + R.id + ' aprobado: es el que se ve en todos los equipos'); if(API.on()) setTimeout(() => API.cargar().then(renderAll), 2500); renderAll();
+    // aprobado: el borrador compartido ya no hace falta (el otro programador ve el programa aprobado al releer el servidor)
+    if(R.compartido || (S.borrComp && S.borrComp.id === R.id)){ await borrarBorradorComp(); R.compartido = false; }
+    toast('Programa ' + R.id + ' aprobado: es el que se ve en todos los equipos');
+    if(API.on()) setTimeout(() => API.cargar().then(() => { if(S.res === R) S.res = resDeGuardado(R.id) || R; renderAll(); }), 2500); renderAll();
   }catch(e){ toast('No se pudo guardar: ' + e.message, 'er'); }
+  S.generando = false;
 }
 
 /* ======================= IGS combinado y hoja de corte ======================= */
@@ -2027,7 +2112,7 @@ function resDeGuardado(pid){
     return Object.assign(g, {tot, sku: s ? s.sku : '', nSku: skusDe(g.tipo).length, kgm: kgmDe(g.tipo), tramo: tramoDe(g.tipo)}); });
   return {id: pid, fecha: +p.fecha, grupos, archivo: p.archivo || '', guardado: true, aprobado: true, estado: p.estado || 'Pendiente'};
 }
-const programasAprobados = () => (S.db.programas || []).filter(p => p.id !== CFG_COMP_ID && p.estado !== 'Cancelado').sort((a, b) => (+b.fecha || 0) - (+a.fecha || 0));
+const programasAprobados = () => (S.db.programas || []).filter(p => !esEspecial(p) && p.estado !== 'Cancelado').sort((a, b) => (+b.fecha || 0) - (+a.fecha || 0));
 const aprobadoPara = archivo => archivo ? programasAprobados().find(p => p.archivo === archivo) : null;
 /* lo que se generó en este equipo y no se ha aprobado sobrevive a recargar la página */
 function guardarBorrador(){ try{ if(S.res && !S.res.aprobado) localStorage.setItem('mt-res', JSON.stringify(S.res)); }catch(e){} }
@@ -2036,6 +2121,8 @@ function leerBorrador(){ try{ return JSON.parse(localStorage.getItem('mt-res') |
 function elegirResPorOmision(){
   if(S.res) return;
   const ap = aprobadoPara(S.progFile); if(ap){ S.res = resDeGuardado(ap.id); return; }
+  // el borrador compartido de los programadores se ve igual en todos sus equipos (aunque el programa se haya cargado distinto)
+  if(S.borrComp){ S.res = S.borrComp; return; }
   const bo = leerBorrador(); if(bo && bo.archivo && bo.archivo === S.progFile) S.res = bo;
 }
 
@@ -2256,17 +2343,21 @@ function renderMult(){
   if(esOperador()) return renderMultOperador();
   const el = $('t-mult'), R = S.res, col = colorMap();
   // qué programa se ve: uno aprobado (igual en todos los equipos) o el que se generó aquí y no se ha aprobado
-  const aps = programasAprobados(), bo = leerBorrador(), hayLocal = (R && !R.aprobado) || (bo && bo.archivo === S.progFile);
-  const verSel = aps.length || hayLocal ? `<div class="card"><div class="row"><span style="flex:1;min-width:240px"><b>Programa que se muestra</b>
-    <span class="sub">${R && R.aprobado ? '✓ Aprobado: el mismo en todos los equipos' : 'Generado aquí, sin aprobar: otros equipos no lo ven'}</span></span>
-    <select id="mVer" style="max-width:520px">${hayLocal ? `<option value="" ${R && !R.aprobado ? 'selected' : ''}>Generado en este equipo · sin aprobar</option>` : ''}
+  // borrador compartido (el mismo para los programadores) y, solo si no se pudo compartir, el generado en este equipo
+  const prog = esProgramador(), bc = S.borrComp, aps = programasAprobados(), bo = leerBorrador();
+  const hayLocal = (R && !R.aprobado && !R.compartido) || (bo && !bo.compartido && bo.archivo === S.progFile && (!bc || bo.id !== bc.id));
+  const verSel = aps.length || hayLocal || bc ? `<div class="card"><div class="row"><span style="flex:1;min-width:240px"><b>Programa que se muestra</b>
+    <span class="sub">${R && R.aprobado ? '✓ Aprobado: el mismo en todos los equipos' : R && R.compartido ? `Borrador compartido${R.autor ? ' de ' + esc(R.autor) : ''}: los programadores lo ven igual; los operadores, hasta que se apruebe` : 'Generado aquí, sin aprobar: otros equipos no lo ven'}</span></span>
+    <select id="mVer" style="max-width:520px">${bc ? `<option value="__borr" ${R && R.compartido ? 'selected' : ''}>Borrador compartido · ${esc(bc.archivo || bc.id)}${bc.autor ? ' · ' + esc(bc.autor) : ''}${bc.ts ? ' · ' + fecha(bc.ts) : ''}</option>` : ''}
+    ${hayLocal ? `<option value="" ${R && !R.aprobado && !R.compartido ? 'selected' : ''}>Generado en este equipo · sin compartir</option>` : ''}
     ${aps.map(p => `<option value="${esc(p.id)}" ${R && R.aprobado && R.id === p.id ? 'selected' : ''}>${esc(p.id)} · ${esc(p.archivo || '')} · ${esc(p.estado || 'Pendiente')}${p.archivo && p.archivo === S.progFile ? ' · programa cargado' : ''}</option>`).join('')}</select></div></div>` : '';
+  const dis = prog ? '' : `disabled title="${esc(msgSoloProg())}"`;
   const cfgBar = verSel + `<div class="card"><div class="row">
-    <label class="cfl" style="flex-direction:row;align-items:center;gap:6px">Criterio <select id="mMode"><option value="prio" ${CFG.modo === 'prio' ? 'selected' : ''}>Prioridad por hora de inicio de OP</option><option value="max" ${CFG.modo === 'max' ? 'selected' : ''}>Máximo aprovechamiento (todo junto)</option></select></label>
-    ${CFG.modo === 'prio' ? `<label class="cfl" style="flex-direction:row;align-items:center;gap:6px" title="Cuántos tramos de piezas siguientes se consideran para llenar cada tramo">Ventana <input type="number" id="mWin" min="1" max="20" step="1" value="${CFG.ventana}" style="width:60px"> tramos</label>` : ''}
-    <label class="row sm" style="gap:4px"><input type="checkbox" id="mRec" ${CFG.usarRecortes === false ? '' : 'checked'}> Usar recortes del inventario (${(S.db.recortes || []).filter(r => r.estado === 'Disponible').length} disponibles)</label>
+    <label class="cfl" style="flex-direction:row;align-items:center;gap:6px">Criterio <select id="mMode" ${dis}><option value="prio" ${CFG.modo === 'prio' ? 'selected' : ''}>Prioridad por hora de inicio de OP</option><option value="max" ${CFG.modo === 'max' ? 'selected' : ''}>Máximo aprovechamiento (todo junto)</option></select></label>
+    ${CFG.modo === 'prio' ? `<label class="cfl" style="flex-direction:row;align-items:center;gap:6px" title="Cuántos tramos de piezas siguientes se consideran para llenar cada tramo">Ventana <input type="number" id="mWin" min="1" max="20" step="1" value="${CFG.ventana}" style="width:60px" ${dis}> tramos</label>` : ''}
+    <label class="row sm" style="gap:4px"><input type="checkbox" id="mRec" ${CFG.usarRecortes === false ? '' : 'checked'} ${dis}> Usar recortes del inventario (${(S.db.recortes || []).filter(r => r.estado === 'Disponible').length} disponibles)</label>
     <label class="row sm" style="gap:4px" title="Dibuja dentro de cada pieza sus barrenos, ranuras y cortes (de su IGS)"><input type="checkbox" id="mGeo" ${CFG.verGeo === false ? '' : 'checked'}> Ver el dibujo de cada pieza</label>
-    <span style="flex:1"></span><button class="pri" id="mGen" ${S.items.length ? '' : 'disabled'}>⚙ Generar múltiples</button></div>
+    <span style="flex:1"></span><button class="pri" id="mGen" ${!prog ? dis : S.items.length ? '' : 'disabled'}>⚙ Generar múltiples</button></div>
     <p class="mut sm" style="margin:8px 0 0" title="Tramo ${f0(CFG.tramo)} mm − ${nomChuck()} ${f0(chuckEf())} − refrentado ${CFG.refr} (si el SKU del catálogo trae otro largo, se usa ese) · separación entre piezas ${CFG.kerf} mm · recorte útil mínimo ${f0(CFG.minRem)} mm">Útil por tramo: <b>${f0(utilDe(CFG.tramo))} mm</b>${CFG.extension === false ? '' : ` (con extensión, ${CFG.extPct} %)`} · ${S.items.length ? f0(S.items.length) + ' piezas en ' + Object.keys(TIPOS()).filter(k => S.items.some(i => i.tipo === k)).length + ' tubulares' : 'Carga el programa y la biblioteca'}</p></div>`;
   if(!R){ el.innerHTML = cfgBar + (S.fuera.length ? fueraHtml() : ''); bindMult(); return; }
   // pestañas por máquina: cada pantalla ve solo lo que corta su máquina (GW1 o GW2); por omisión, la de esta pantalla
@@ -2282,8 +2373,8 @@ function renderMult(){
   // solo lo importante (Leonardo, 2026-11-18): tramos, aprovechamiento y consumo; los recortes van en el detalle de tramos
   el.innerHTML = cfgBar + tabs + `<div class="kpis"><div class="kpi"><span>Tramos nuevos${MQ ? ' · ' + esc(MQ) : ''}</span><b>${tot.tr}</b><span>${f0(tot.p)} piezas${tot.ru ? ' · ' + tot.ru + ' recortes usados' : ''}</span></div>
   <div class="kpi"><span>Aprovechamiento</span><b style="color:var(--${lvAprov(tot.l/tot.c)})">${pct(tot.l/tot.c)}</b></div><div class="kpi"><span>Consumo real</span><b>${u(f2(tot.kg), 'kg')}</b><span>${f2(tot.tra)} TRA</span></div></div>
-  <div class="card"><div class="row"><b style="flex:1">${esc(R.id)} ${R.aprobado ? badge('ok', '✓ Aprobado · ' + (R.estado || 'Pendiente')) : R.guardado ? badge('ok', 'Aprobado') : badge('wa', 'Sin aprobar')}</b>
-  <button id="mPrint" title="Hoja de corte de ${esc(MQ || 'todo el programa')}">🖨 Hoja de corte${MQ ? ' ' + esc(MQ) : ''}</button><button id="mXls">📊 Consumos (Excel)</button><button class="pri" id="mSave" ${R.guardado ? 'disabled' : ''} title="Se guarda el programa completo (GW1 y GW2) y se ve igual en todos los equipos. Los recortes usados quedan reservados y los nuevos se registran Por generar; pasan a Disponible cuando el tramo se marca cortado.">💾 Aprobar y guardar</button></div></div>
+  <div class="card"><div class="row"><b style="flex:1">${esc(R.id)} ${R.aprobado ? badge('ok', '✓ Aprobado · ' + (R.estado || 'Pendiente')) : R.guardado ? badge('ok', 'Aprobado') : badge('wa', R.compartido ? 'Borrador compartido · sin aprobar' : 'Sin aprobar')}</b>
+  <button id="mPrint" title="Hoja de corte de ${esc(MQ || 'todo el programa')}">🖨 Hoja de corte${MQ ? ' ' + esc(MQ) : ''}</button><button id="mXls">📊 Consumos (Excel)</button><button class="pri" id="mSave" ${R.guardado ? 'disabled' : prog ? '' : 'disabled'} title="${prog ? '' : esc(msgSoloProg()) + '. '}Se guarda el programa completo (GW1 y GW2) y se ve igual en todos los equipos. Los recortes usados quedan reservados y los nuevos se registran Por generar; pasan a Disponible cuando el tramo se marca cortado.">💾 Aprobar y guardar</button></div></div>
   ${vis.map(({g, gi}) => `<details class="card" data-gk="${esc(gk(g))}" ${abiertos.has(gk(g)) ? 'open' : ''}><summary>${!maqs.length && g.maquina ? badge('in', g.maquina) + ' ' : ''}<b>${esc(g.label)}</b>${g.completo ? ' ' + badge('ok', '▣ ' + g.dibujo) : ''} ${g.sku ? '' : badge('wa', 'Sin SKU en el catálogo')}${g.nSku > 1 ? badge('wa', `Hay ${g.nSku} SKU: elige en Configuración`) : ''} ${g.largas.length ? badge('er', g.largas.length + ' piezas no caben') : ''}
     ${dts(dt('Tramos', g.tot.tramos + g.tot.recUsados), dt('Piezas', g.tot.piezas), dt('Aprovechamiento', pct(g.tot.aprov), '', lvAprov(g.tot.aprov)))}</summary>
     ${agrupar(g.bars).map(x => { const ref = gi + '|' + g.bars.indexOf(x.b); return `<div class="bar"><div class="barhd">${tramosTxt(x.ids, R.id)} ${vecesChip(x.n)} ${pieBar(x.b)}<span style="flex:1"></span>
@@ -2308,7 +2399,7 @@ function bindMult(){
   $('mRec').onchange = e => { CFG.usarRecortes = e.target.checked; saveCfg(); };
   $('mGeo').onchange = e => { CFG.verGeo = e.target.checked; saveCfg(); renderMult(); };
   $('mGen').onclick = generar;
-  if($('mVer')) $('mVer').onchange = e => { const v = e.target.value; S.res = v ? resDeGuardado(v) : leerBorrador(); renderMult(); };
+  if($('mVer')) $('mVer').onchange = e => { const v = e.target.value; S.res = v === '__borr' ? S.borrComp : v ? resDeGuardado(v) : leerBorrador(); renderMult(); };
   if(!S.res) return;
   $('mSave').onclick = guardarPrograma; $('mXls').onclick = () => { S.consSel = ''; exportarConsumos(); };
   const MQ = S.multMaq;
@@ -2458,7 +2549,7 @@ function renderPiso(){
       <td class="sm" title="${esc(recs.map(y => y.recorteNuevo).join(', '))}">${recs.length ? `<span style="white-space:nowrap">♻ ${u(f0(recs[0].largoRecorte), 'mm')}${recs.length > 1 ? ` <b>×${recs.length}</b>` : ''}</span><span class="sub">${recs.length > 1 ? 'marca el ID en cada uno' : esc(recs[0].recorteNuevo)}</span>` : '—'}</td>
       <td title="${esc(horas)}">${badge(e === 'Cortado' ? 'ok' : e === 'En proceso' ? 'wa' : 'in', e)}${t.maquina ? ' ' + badge('in', t.maquina) : ''}${x.n > 1 && cort && cort < x.n ? `<span class="sub">${cort} de ${x.n} cortados</span>` : ''}</td>
       <td style="white-space:nowrap">${e === 'Cancelado' ? '' : `${e === 'Cortado' ? '' : `<button data-pd="${esc(ids)}" title="Descargar el IGS del múltiple${x.n > 1 ? ' (se corta ' + x.n + ' veces)' : ''}">⬇ IGS</button> `}<button data-ph="${esc(ids)}" title="Hoja de corte">🖨</button>`}${enP.length ? ` <button class="pri" data-pt="${esc(enP.map(y => y.id).join(','))}">■ Terminar</button>` : ''}</td></tr>`; }).join('')}</table></div>
-    ${!soloMaq && !['Cortado', 'Cancelado'].includes(p.estado) && ts.some(t => t.estado === 'Pendiente') ? `<div class="row" style="margin-top:8px"><span style="flex:1"></span><button data-pc="${esc(p.id)}" title="Cancela los tramos pendientes y libera sus recortes reservados">✖ Cancelar tramos pendientes</button></div>` : ''}</details>`; }).join('') || '<div class="card empty">No hay programas pendientes.</div>'}`;
+    ${!soloMaq && esProgramador() && !['Cortado', 'Cancelado'].includes(p.estado) && ts.some(t => t.estado === 'Pendiente') ? `<div class="row" style="margin-top:8px"><span style="flex:1"></span><button data-pc="${esc(p.id)}" title="Cancela los tramos pendientes y libera sus recortes reservados">✖ Cancelar tramos pendientes</button></div>` : ''}</details>`; }).join('') || '<div class="card empty">No hay programas pendientes.</div>'}`;
   el.querySelectorAll('[data-pv]').forEach(b => b.onclick = () => { S.pisoVer = b.dataset.pv; renderPiso(); });
   el.querySelectorAll('[data-maq]').forEach(b => b.onclick = () => { MAQ = b.dataset.maq; saveMaq(); renderPiso(); });
   el.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => cancelarPrograma(b.dataset.pc));
@@ -2517,14 +2608,57 @@ function catHtml(){
       <td class="n"><input type="number" step="0.001" data-cat="${c.i}" data-f="peso" value="${esc(c.peso ?? '')}"></td><td class="n">${c.kgm ? f2(c.kgm) : '—'}</td><td><button data-catdel="${c.i}" title="Quitar del catálogo" aria-label="Quitar">✕</button></td></tr>`).join('')}</table></div>
     <div class="row" style="margin-top:8px"><button id="catAdd">➕ Agregar SKU</button><span class="mut sm">Escribe la descripción como en BC: "Tubular 2 x 1 in Cal 18".</span></div></details>`;
 }
+/* ---- Rango Programador en Configuración: cuentas del OEE (por su id o por su usuario) ---- */
+function usuariosOEE(){ try{ return (JSON.parse(localStorage.getItem('oee_users_v1') || '[]') || []).filter(u => u && u.id != null && /^(lider|líder|ingeniero)$/i.test(String(u.role || ''))); }catch(e){ return []; } }
+const esLaCuenta = (p, c) => !!c && ((p.id != null && p.id !== '' && String(p.id) === String(c.id)) || (!!p.usuario && !!c.usuario && String(p.usuario).toLowerCase() === String(c.usuario).toLowerCase()));
+function cardProgramadores(){
+  const P = programadores(), yo = S.cuenta, puede = esProgramador();
+  const U = usuariosOEE().filter(u => !P.some(p => esLaCuenta(p, {id: u.id, usuario: u.username})));
+  const yoFalta = yo && !yo.operador && yo.id !== 'banco' && !P.some(p => esLaCuenta(p, yo));
+  return `<div class="card"><div class="row"><span style="flex:1;min-width:260px"><b>🔑 Rango Programador</b> ${P.length ? badge('ok', P.length + (P.length === 1 ? ' programador' : ' programadores')) : badge('wa', 'Sin programadores: Líder e Ingeniería generan y aprueban')}
+    <span class="sub">Los programadores generan y aprueban los múltiples que cortan los operadores. Lo que genera uno se comparte en el servidor y el otro lo ve igual en su equipo hasta que alguno lo aprueba.</span></span></div>
+    ${P.length ? `<div class="row" style="margin-top:8px">${P.map((p, i) => `<span class="badge in" style="font-size:12.5px;padding:4px 10px">👤 ${esc(p.nombre)}${p.usuario && p.usuario.toLowerCase() !== String(p.nombre).toLowerCase() ? ` <span class="mut">(${esc(p.usuario)})</span>` : ''}${puede ? ` <button data-pdel="${i}" title="Quitar el rango Programador" aria-label="Quitar" style="padding:0 6px;margin-left:4px">✕</button>` : ''}</span>`).join(' ')}</div>` : ''}
+    ${puede ? `<div class="row" style="margin-top:10px">${yoFalta ? `<button class="pri" id="pYo">Agregar mi cuenta (${esc(yo.nombre)})</button>` : ''}
+      ${U.length ? `<select id="pSel" style="max-width:280px"><option value="">Agregar una cuenta del OEE…</option>${U.map(u => `<option value="${esc(u.id)}">${esc(u.name || u.username)} · ${esc(ROL_TXT[String(u.role).toLowerCase()] || u.role)}</option>`).join('')}</select>` : ''}
+      <input id="pUsr" placeholder="Usuario del OEE (p. ej., el del líder de Láser)" style="width:280px" autocomplete="off" spellcheck="false"><button id="pAdd">Agregar</button></div>` : `<p class="mut sm" style="margin:8px 0 0">${esc(msgSoloProg())}. Tu cuenta solo consulta.</p>`}</div>`;
+}
+/* el programador que se agregó por su usuario del OEE: al entrar la primera vez se completa con su id y su nombre */
+function completarProgramador(){
+  const c = S.cuenta, P = programadores(); if(!c || c.operador || c.id === 'banco' || !S.cfgCompActiva) return;
+  const i = P.findIndex(p => esLaCuenta(p, c)); if(i < 0 || (String(P[i].id) === String(c.id) && P[i].nombre === c.nombre)) return;
+  CFG.programadores = P.map((x, j) => j === i ? {id: c.id, usuario: c.usuario || x.usuario || '', nombre: c.nombre} : x);
+  S.cfgCompAplicando = true; saveCfg(); S.cfgCompAplicando = false; compartirCfg(false, true);
+}
+/* guarda la lista para todos los equipos: si la configuración todavía no es compartida, se comparte (si no, el rango no llegaría al otro equipo) */
+async function guardarProgramadores(lista, txt){
+  if(API.on() && !S.cfgCompActiva && !confirm(`${txt}\n\nPara que el rango y los múltiples sean iguales en todos los equipos, la configuración de este equipo (tramo, extensión, criterio, catálogo) se usará en GW1, GW2 y en cualquier otro equipo. ¿Continuar?`)) return;
+  const primera = API.on() && !S.cfgCompActiva;
+  S.cfgCompAplicando = true; CFG.programadores = lista; saveCfg(); S.cfgCompAplicando = false;   // se sube aquí mismo, aunque uno se quite el rango
+  if(API.on()) await compartirCfg(primera, true);
+  toast(txt); renderCfg(); renderSide();
+}
+function bindProgramadores(){
+  const P = programadores(), yo = S.cuenta;
+  if($('pYo')) $('pYo').onclick = () => guardarProgramadores(P.concat([{id: yo.id, usuario: yo.usuario || '', nombre: yo.nombre}]), `${yo.nombre} tiene el rango Programador`);
+  if($('pSel')) $('pSel').onchange = e => { const u = usuariosOEE().find(x => String(x.id) === e.target.value); if(!u) return;
+    guardarProgramadores(P.concat([{id: u.id, usuario: u.username || '', nombre: u.name || u.username}]), `${u.name || u.username} tiene el rango Programador`); };
+  if($('pAdd')) $('pAdd').onclick = () => { const v = $('pUsr').value.trim(); if(!v) return toast('Escribe el usuario con el que entra al OEE', 'er');
+    if(P.some(p => p.usuario && p.usuario.toLowerCase() === v.toLowerCase())) return toast('Esa cuenta ya es programador', 'in');
+    const u = usuariosOEE().find(x => String(x.username || '').toLowerCase() === v.toLowerCase());
+    guardarProgramadores(P.concat([{id: u ? u.id : '', usuario: v, nombre: u ? (u.name || v) : v}]), `${u ? u.name || v : v} tiene el rango Programador`); };
+  document.querySelectorAll('[data-pdel]').forEach(b => b.onclick = () => { const p = P[+b.dataset.pdel]; if(!p) return;
+    const resto = P.filter((x, i) => i !== +b.dataset.pdel);
+    if(esLaCuenta(p, yo) && resto.length && !confirm('¿Quitarte el rango Programador? Ya no podrás generar ni aprobar múltiples.')) return;
+    guardarProgramadores(resto, `${p.nombre} ya no tiene el rango Programador`); });
+}
 function renderCfg(){
   const el = $('t-cfg');
   const num = (k, t, step) => `<label class="cfl"><span>${t}</span><input type="number" step="${step || 1}" data-k="${k}" value="${CFG[k]}"></label>`;
   // configuración compartida: con ella todos los equipos generan los mismos múltiples
   const comp = API.on() ? `<div class="card"><div class="row"><span style="flex:1;min-width:260px"><b>🔗 Configuración compartida</b> ${S.cfgCompActiva ? badge('ok', 'Todos los equipos usan la misma') : badge('wa', 'Cada equipo usa la suya')}
     <span class="sub">${S.cfgCompActiva ? `Tramo, chuck, refrentado, separación, criterio, catálogo y las piezas o IGS elegidos a mano se guardan en el servidor: lo que cambies aquí cambia en todos los equipos (GW1, GW2 y oficina)${S.cfgCompTs ? ' · última actualización ' + fecha(S.cfgCompTs) : ''}.` : 'Ahora cada equipo tiene su propia configuración y por eso pueden salir múltiples distintos. Revisa el tramo y el chuck, y compártela para que todos usen la misma.'}</span></span>
-    ${S.cfgCompActiva ? '' : '<button class="pri" id="cComp">Usar esta configuración en todos los equipos</button>'}</div></div>` : '';
-  el.innerHTML = `${comp}<details class="card" open><summary><b>📏 Tramo y corte</b></summary><div class="grid2" style="margin-top:10px">
+    ${S.cfgCompActiva || !esProgramador() ? '' : '<button class="pri" id="cComp">Usar esta configuración en todos los equipos</button>'}</div></div>` : '';
+  el.innerHTML = `${comp}${cardProgramadores()}<details class="card" open><summary><b>📏 Tramo y corte</b></summary><div class="grid2" style="margin-top:10px">
     ${num('tramo', 'Largo del tramo nuevo (mm)')}
     <label class="cfl" title="La extensión permite aprovechar casi todo el tramo pese al chuck. Desactívala si una máquina corta sin ella."><span>Extensión</span><span class="row" style="gap:6px;color:var(--text)"><input type="checkbox" id="cExt" ${CFG.extension === false ? '' : 'checked'}> Se usa la extensión</span></label>
     ${CFG.extension === false ? num('chuck', 'Desperdicio del chuck (mm)') : num('extPct', 'Aprovechamiento del tramo con extensión (%)', 0.1)}${num('refr', 'Refrentado del extremo (mm)', 0.1)}${num('kerf', 'Separación entre piezas (mm)', 0.1)}
@@ -2542,6 +2676,9 @@ function renderCfg(){
   if($('cComp')) $('cComp').onclick = async () => {
     if(!confirm(`¿Usar esta configuración en todos los equipos?\n\nTramo ${f0(CFG.tramo)} mm · ${CFG.extension === false ? "chuck " + f0(CFG.chuck) + " mm" : "extensión " + CFG.extPct + " % útil"} · refrentado ${CFG.refr} mm · separación ${CFG.kerf} mm · recorte mínimo ${f0(CFG.minRem)} mm\n\nDesde ahora los cambios de Configuración aplican en GW1, GW2 y en cualquier otro equipo.`)) return;
     await compartirCfg(true); renderCfg(); };
+  bindProgramadores();
+  // quien no es programador solo consulta la configuración compartida (la conexión de su equipo sí la puede cambiar)
+  if(!esProgramador()) el.querySelectorAll('input, select, button, textarea').forEach(x => { if(!['cUrl', 'cClave', 'cSave', 'cTest', 'cExp'].includes(x.id) && !x.closest('summary')) { x.disabled = true; x.title = msgSoloProg(); } });
   el.querySelectorAll('[data-k]').forEach(i => i.onchange = () => { CFG[i.dataset.k] = +i.value; saveCfg(); explotar(); renderSide(); renderCfg(); toast(S.cfgCompActiva ? 'Guardado para todos los equipos' : 'Guardado en este equipo'); });
   $('cExt').onchange = e => { CFG.extension = e.target.checked; saveCfg(); explotar(); renderSide(); renderCfg(); toast((CFG.extension ? 'Con extensión' : 'Sin extensión') + (S.cfgCompActiva ? ' · guardado para todos los equipos' : ' · guardado en este equipo')); };
   el.querySelectorAll('[data-cal]').forEach(i => i.onchange = () => { CFG.calibres[i.dataset.cal] = +i.value; saveCfg(); });
@@ -2692,7 +2829,7 @@ function badgeOf(k){
 const menuVisible = () => !S.cuenta ? MENU.filter(g => g.items.some(i => i.url)) : esOperador() ? MENU.map(g => ({g: g.g, items: g.items.filter(i => ['mult', 'piso', 'oee'].includes(i.k))})).filter(g => g.items.length) : MENU;
 function renderSide(){
   const sb = document.querySelector('.sb-info');
-  if(sb) sb.innerHTML = S.cuenta ? `👤 <b style="color:var(--text2)">${esc(S.cuenta.nombre)}</b> · ${ROL_TXT[S.cuenta.rol] || esc(S.cuenta.rol)}${esOperador() && maqOperador() ? ' · ' + esc(maqOperador()) : ''}` : 'Sin sesión del OEE';
+  if(sb) sb.innerHTML = S.cuenta ? `👤 <b style="color:var(--text2)">${esc(S.cuenta.nombre)}</b> · ${ROL_TXT[S.cuenta.rol] || esc(S.cuenta.rol)}${!esOperador() && programadores().length && esProgramador() ? ' · <b style="color:var(--blue)">Programador</b>' : ''}${esOperador() && maqOperador() ? ' · ' + esc(maqOperador()) : ''}` : 'Sin sesión del OEE';
   $('nav').innerHTML = menuVisible().map(g => `<div class="nav-section"><div class="nav-label">${esc(g.g)}</div>${g.items.map(i => { const b = badgeOf(i.k), ico = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICO[i.k]}</svg>`;
     if(i.url) return `<a class="nav-item" href="${esc(i.url)}" target="_blank" rel="noopener" data-label="${esc(i.t)}" title="${esc(i.d)}" style="--ic:${i.c};text-decoration:none">${ico}<span>${esc(i.t)}</span></a>`;
     return `<div class="nav-item ${i.k === CUR ? 'active' : ''}" data-k="${i.k}" data-label="${esc(i.t)}" role="button" tabindex="0" style="--ic:${i.c}">${ico}<span>${esc(i.t)}</span>${b ? `<span class="nav-cnt b ${b[0]}">${b[1]}</span>` : ''}</div>`; }).join('')}</div>`).join('');
