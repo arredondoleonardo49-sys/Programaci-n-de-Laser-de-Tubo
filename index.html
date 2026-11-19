@@ -1388,7 +1388,7 @@ async function medirNecesarios(){
   let need;
   if(S.formato === 'laser'){ ligarDibujos(); const ids = new Set();
     // de un MULTIPLE se mide su pieza suelta (es la que se acomoda), no el múltiple
-    S.ops.forEach(o => { const x = S.match[o.idx]; if(!x || !x.f) return; if(esMultipleYa(x.f)){ const s = sueltaDe(o, x.f); if(s.f) ids.add(s.f.id); else ids.add(x.f.id); } else ids.add(x.f.id); });
+    S.ops.forEach(o => { const x = S.match[o.idx]; if(!x || !x.f) return; if(esMultipleYa(x.f)){ const s = sueltaDe(o, x.f); if(s.f) ids.add(s.f.id); else { ids.add(x.f.id); (s.top || []).forEach(c => ids.add(c.id)); } } else ids.add(x.f.id); });
     need = S.lib.filter(f => ids.has(f.id)); }
   else { const {vig} = vigentes(); const rutas = new Set(S.ops.map(o => norm(o.ruta))); need = vig.filter(f => !S.ops.length || rutas.has(norm(f.p.ruta))); }
   // carpeta recordada: la fecha del archivo se lee al usarlo, así no se vuelve a medir lo que no cambió
@@ -1621,7 +1621,16 @@ function sueltaDe(o, f){
     return {x, s, ok: cubre(C, P) || cubre(C, N), unaPz: /\b1\s*PZ/.test(norm(x.name))}; }).filter(c => c.ok && c.s > 0).sort((a, b) => b.s - a.s || b.unaPz - a.unaPz);
   if(!sc.length) return {f: null, cand, k, sinSuelta: true, motivo: 'MULTIPLE sin pieza suelta en la carpeta del modelo'};
   const top = sc.filter(c => c.s === sc[0].s && c.unaPz === sc[0].unaPz);
-  if(top.length > 1 && !top.every(c => c.x.size && c.x.size === top[0].x.size)) return {f: null, cand, k, motivo: `MULTIPLE: hay ${top.length} piezas sueltas posibles, elige cuál en Programa`};
+  if(top.length > 1 && !top.every(c => c.x.size && c.x.size === top[0].x.size)){
+    // varias posibles: se queda la que mide lo que mide cada pieza del múltiple (su largo ÷ piezas). Así se corta exacto lo
+    // que pide el programa, en vez de cortar el MULTIPLE completo y que sobren piezas (Leonardo, 2026-11-19: ni de más ni de menos)
+    const mM = MEAS[medKey(f)], n = f.p.n > 1 ? f.p.n : +PZM[f.p.clave] || 0, lenDe = x => { const m = MEAS[medKey(x)]; return m && m.ok ? m.len : null; };
+    if(mM && mM.ok && n > 1 && top.every(c => lenDe(c.x) != null)){
+      const esp = mM.len/n, ok = top.filter(c => lenDe(c.x) <= esp + 1 && lenDe(c.x) >= esp*0.95 - 10).sort((a, b) => Math.abs(lenDe(a.x) - esp) - Math.abs(lenDe(b.x) - esp));
+      if(ok.length && (ok.length === 1 || Math.abs(lenDe(ok[0].x) - lenDe(ok[1].x)) < 1)) return {f: ok[0].x, cand, k, porLargo: true};
+    }
+    return {f: null, cand, k, top: top.map(c => c.x), motivo: `MULTIPLE: hay ${top.length} piezas sueltas posibles, elige cuál en Programa`};
+  }
   return {f: sc[0].x, cand, k};
 }
 /* tubular de una pieza sin programa: sección medida → fracción de pulgada; pared → calibre */
@@ -1859,6 +1868,9 @@ async function generar(){
 async function guardarPrograma(){
   const R = S.res; if(!R) return; if(R.guardado) return toast('Este programa ya está guardado', 'in');
   if(!esProgramador()) return toast(msgSoloProg(), 'er');
+  // ni de más ni de menos: si no cuadra con el programa, se avisa antes de aprobar
+  const cq = cuadrePrograma(R);
+  if(cq && cq.mal && !confirm(`No cuadra con el programa:${cq.faltan ? `\n• faltan ${cq.faltan} piezas` : ''}${cq.sobran ? `\n• sobran ${cq.sobran} piezas` : ''}\n\nRevisa «Cuadre con el programa» en Múltiples de corte. ¿Aprobar de todas formas?`)) return;
   // la misma OP en dos programas vigentes = piezas cortadas dos veces
   const opsR = [...new Set(R.grupos.flatMap(g => g.bars.flatMap(b => b.piezas.map(p => String(p.op)))))];
   const previos = (S.db.programas || []).filter(p => p.estado !== 'Cancelado' && p.id !== R.id).map(p => ({id: p.id, ops: String(p.ops ?? '').split(/\s*,\s*/).filter(o => opsR.includes(o))})).filter(p => p.ops.length);
@@ -2269,7 +2281,7 @@ function progLaserHtml(){
     if(m.f) return `${n ? badge('ok', '✓ ' + n + (sm && sm.f ? (n === 1 ? ' pieza suelta' : ' piezas sueltas') : n === 1 ? ' corrida' : ' corridas')) : badge('er', 'No entra')}${sm ? ' ' + badge('in', sm.f ? 'MULTIPLE: se arma con su pieza suelta' : 'MULTIPLE validado: se corta completo') : (m.f.p.n || 1) > 1 ? ' ' + badge('in', 'Completo') : ''}
 ${m.iguales ? ' ' + `<span title="${esc(m.cand.map(x => x.path.split('/').slice(1, -2).join('/')).join('\n'))}">${badge('in', m.iguales + ' copias iguales')}</span>` : ''}
       <span class="sub" title="${esc(m.f.path)}">${esc(m.f.path.split('/').slice(2).join(' \\ '))}</span>${difP}
-      ${sm ? `<label class="sm" style="display:flex;gap:6px;align-items:center;margin-top:4px;flex-wrap:wrap">Pieza suelta <select data-suelta="${esc(sm.k)}" style="max-width:320px"><option value="">Elige la pieza suelta…</option>${sm.cand.map(x => `<option value="${esc(x.id)}" ${sm.f && sm.f.id === x.id ? 'selected' : ''}>${esc(x.path.split('/').slice(4).join('/'))}</option>`).join('')}</select>${sm.f && !sm.elegida ? '<span class="mut">automática</span>' : ''}</label>` : ''}
+      ${sm ? `<label class="sm" style="display:flex;gap:6px;align-items:center;margin-top:4px;flex-wrap:wrap">Pieza suelta <select data-suelta="${esc(sm.k)}" style="max-width:320px"><option value="">Elige la pieza suelta…</option>${sm.cand.map(x => `<option value="${esc(x.id)}" ${sm.f && sm.f.id === x.id ? 'selected' : ''}>${esc(x.path.split('/').slice(4).join('/'))}</option>`).join('')}</select>${sm.f && !sm.elegida ? `<span class="mut" title="${sm.porLargo ? 'Había varias posibles: se eligió la que mide lo mismo que cada pieza del MULTIPLE' : ''}">automática${sm.porLargo ? ' por largo' : ''}</span>` : ''}</label>` : ''}
       ${sm && !sm.f && !(m.f.p.n > 1) ? `<label class="sm" style="display:flex;gap:6px;align-items:center;margin-top:4px" title="El nombre del dibujo no dice cuántas piezas trae: con este número se calcula cuántas veces se corre (Cant. ÷ piezas). Se guarda para todos los equipos.">Piezas que trae el dibujo <input type="number" min="2" step="1" data-pzm="${esc(m.f.p.clave)}" value="${PZM[m.f.p.clave] || ''}" style="width:70px"></label>` : ''}      ${fu ? `<div class="sm" style="color:var(--${S.fuera.includes(fu) ? 'er' : 'wa'})">${esc(fu.motivo)}</div>` : ''}`;
     if(m.estado === 'sin') return badge('er', 'No está en la carpeta');
     return `${badge('wa', m.estado === 'anterior' ? 'Solo versión anterior' : m.cand.length + ' con ese nombre')}<div><select data-dsel="${esc('D|' + m.clave + '|' + norm(o.ruta))}" style="max-width:340px;margin-top:4px"><option value="">Elige el IGS…</option>${m.cand.map(f => `<option value="${esc(f.id)}">${esc(f.path.split('/').slice(1).join('/'))}</option>`).join('')}</select></div>`;
@@ -2418,6 +2430,7 @@ function renderMult(){
   <div class="kpi"><span>Aprovechamiento</span><b style="color:var(--${lvAprov(tot.l/tot.c)})">${pct(tot.l/tot.c)}</b></div><div class="kpi"><span>Consumo real</span><b>${u(f2(tot.kg), 'kg')}</b><span>${f2(tot.tra)} TRA</span></div></div>
   <div class="card"><div class="row"><b style="flex:1">${esc(R.id)} ${R.aprobado ? badge('ok', '✓ Aprobado · ' + (R.estado || 'Pendiente')) : R.guardado ? badge('ok', 'Aprobado') : badge('wa', R.compartido ? 'Borrador compartido · sin aprobar' : 'Sin aprobar')}</b>
   <button id="mPrint" title="Hoja de corte de ${esc(MQ || 'todo el programa')}">🖨 Hoja de corte${MQ ? ' ' + esc(MQ) : ''}</button><button id="mXls">📊 Consumos (Excel)</button><button class="pri" id="mSave" ${R.guardado ? 'disabled' : prog ? '' : 'disabled'} title="${prog ? '' : esc(msgSoloProg()) + '. '}Se guarda el programa completo (GW1 y GW2) y se ve igual en todos los equipos. Los recortes usados quedan reservados y los nuevos se registran Por generar; pasan a Disponible cuando el tramo se marca cortado.">💾 Aprobar y guardar</button></div></div>
+  ${cuadreHtml(cuadrePrograma(R))}
   ${vis.map(({g, gi}) => `<details class="card" data-gk="${esc(gk(g))}" ${abiertos.has(gk(g)) ? 'open' : ''}><summary>${!maqs.length && g.maquina ? badge('in', g.maquina) + ' ' : ''}<b>${esc(g.label)}</b>${g.completo ? ' ' + badge('ok', '▣ ' + g.dibujo) : ''} ${g.sku ? '' : badge('wa', 'Sin SKU en el catálogo')}${g.nSku > 1 ? badge('wa', `Hay ${g.nSku} SKU: elige en Configuración`) : ''} ${g.largas.length ? badge('er', g.largas.length + ' piezas no caben') : ''}
     ${dts(dt('Tramos', g.tot.tramos + g.tot.recUsados), dt('Piezas', g.tot.piezas), dt('Aprovechamiento', pct(g.tot.aprov), '', lvAprov(g.tot.aprov)))}</summary>
     ${agrupar(g.bars).map(x => { const ref = gi + '|' + g.bars.indexOf(x.b); return `<div class="bar"><div class="barhd">${tramosTxt(x.ids, R.id)} ${vecesChip(x.n)}${zonaBar(x.b).ext ? ' ' + badge('in', 'Con extensión') : ''} ${pieBar(x.b)}<span style="flex:1"></span>
@@ -2425,6 +2438,31 @@ function renderMult(){
     ${g.largas.length ? `<p style="color:var(--er)" class="sm">Más largas que el tramo: ${[...new Set(g.largas.map(p => p.pieza + ' (' + p.ruta + ')'))].map(esc).join(', ')}</p>` : ''}</details>`).join('') || `<div class="card empty">${esc(MQ)} no tiene tramos en este programa.</div>`}
   ${S.fuera.length ? fueraHtml(MQ) : ''}`;
   bindMult();
+}
+/* ======================= Cuadre con el programa (Leonardo, 2026-11-19: «que la plataforma no ponga ni de más ni de menos») =======================
+   Piezas que pide cada renglón del programa (OP + dibujo, ya sin lo cortado en el OEE) contra las que quedaron en los múltiples.
+   Solo para lo generado con el programa cargado (los aprobados ya se revisaron al aprobarlos). */
+function cuadrePrograma(R){
+  if(!R || R.aprobado || !S.ops.length || (R.archivo && S.progFile && R.archivo !== S.progFile)) return null;
+  const en = new Map(); let conPrio = false;
+  R.grupos.forEach(g => g.bars.forEach(b => b.piezas.forEach(p => { if(p.prio == null) return; conPrio = true; en.set(p.prio, (en.get(p.prio) || 0) + (p.pzs > 1 ? p.pzs : 1)); })));
+  if(!conPrio) return null;
+  const filas = S.ops.map(o => {
+    const req = Math.round(o.cant || o.progra * o.xMueble) || 0, n = en.get(o.idx) || 0, it = S.items.find(i => i.prio === o.idx), fu = S.fuera.find(x => x.o === o);
+    const tipo = n === req ? 'ok' : o.omitir ? 'aparte' : n < req ? 'faltan' : 'sobran';
+    const motivo = tipo === 'aparte' ? o.omitir : tipo === 'faltan' ? (fu ? fu.motivo : 'Más largas que el tramo') : tipo === 'sobran' ? (it && it.pzs > 1 ? `El MULTIPLE trae ${it.pzs} piezas y no tiene pieza suelta (o hay varias posibles): se cortan ${n}` : 'Se cortan de más') : '';
+    return {o, req, n, dif: n - req, tipo, motivo};
+  }).filter(f => f.req || f.n);
+  const suma = (t, fn) => filas.filter(f => f.tipo === t).reduce((s, f) => s + fn(f), 0);
+  const r = {filas, req: filas.reduce((s, f) => s + f.req, 0), n: filas.reduce((s, f) => s + f.n, 0), faltan: suma('faltan', f => -f.dif), sobran: suma('sobran', f => f.dif), aparte: suma('aparte', f => f.req)};
+  r.mal = r.faltan > 0 || r.sobran > 0; return r;
+}
+function cuadreHtml(cq){
+  if(!cq) return '';
+  const malas = cq.filas.filter(f => f.tipo !== 'ok');
+  return `<details class="card" ${cq.mal ? 'open' : ''}><summary><b>${cq.mal ? '⚠ No cuadra con el programa' : '✓ Cuadra con el programa'}</b> <span class="mut sm" title="Cada renglón del programa (OP y dibujo) contra las piezas que quedaron en los múltiples">${f0(cq.req)} piezas pedidas · ${f0(cq.n)} en múltiples${cq.faltan ? ` · <b style="color:var(--er)">faltan ${f0(cq.faltan)}</b>` : ''}${cq.sobran ? ` · <b style="color:var(--wa)">sobran ${f0(cq.sobran)}</b>` : ''}${cq.aparte ? ' · ' + f0(cq.aparte) + ' se cortan aparte' : ''}</span></summary>
+    ${malas.length ? `<div class="tw" style="margin-top:8px"><table><tr><th>OP</th><th>Modelo</th><th>Dibujo</th><th class="n">Pide</th><th class="n">En múltiples</th><th>Motivo</th></tr>${malas.map(f => `<tr><td class="sm">${esc(f.o.op)}</td><td>${esc(f.o.ruta)}</td><td>${esc(f.o.dibujo)}</td><td class="n">${f.req}</td><td class="n"><b style="color:var(--${f.tipo === 'faltan' ? 'er' : f.tipo === 'sobran' ? 'wa' : 'text2'})">${f.n}</b></td><td class="sm">${esc(f.motivo)}</td></tr>`).join('')}</table></div>`
+      : '<p class="mut sm" style="margin:8px 0 0">Cada renglón del programa (OP y dibujo) tiene en los múltiples exactamente las piezas que pide.</p>'}</details>`;
 }
 /* piezas del tramo por nombre y modelo, sin el largo (Leonardo, 2026-11-18) */
 function resumenPiezas(pz){ const m = new Map(); (pz || []).forEach(x => { const k = x.pieza + '|' + (x.ruta || ''); m.set(k, (m.get(k) || 0) + 1); });
