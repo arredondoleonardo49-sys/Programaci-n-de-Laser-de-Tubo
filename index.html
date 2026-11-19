@@ -783,7 +783,7 @@ const OPT = (() => {
         mmNuevos: nuevos.length*c.tramo, mmRecUsados: bars.filter(b => b.origen === 'recorte').reduce((s, b) => s + b.P, 0)
       };
       tot.aprov = tot.consumo ? tot.largoPiezas/tot.consumo : 0;
-      res.push({tipo, grupo, maquina: list[0].maquina || '', completo: !!list[0].completo, dibujo: list[0].completo ? list[0].pieza : '', bars, largas, tot, tramo: c.tramo});
+      res.push({tipo, grupo, maquina: list[0].maquina || '', perfil: list[0].perfil || '', completo: !!list[0].completo, dibujo: list[0].completo ? list[0].pieza : '', bars, largas, tot, tramo: c.tramo});
     }
     return res;
   }
@@ -978,7 +978,7 @@ function parsePlanta(name, path, r){
 
 /* ======================= Estado ======================= */
 const S = {ops: [], progFile: '', lib: [], extra: {}, meas: {}, raw: {}, res: null, items: [], fuera: [], db: {programas: [], tramos: [], recortes: []}, libSrc: '', libMsg: ''};
-let MEAS = (() => { try{ return JSON.parse(localStorage.getItem('mt-meas') || '{}'); }catch(e){ return {}; } })();
+let MEAS = (() => { try{ const m = JSON.parse(localStorage.getItem('mt-meas') || '{}'); Object.keys(m).forEach(k => { if(!k.startsWith('v5|')) delete m[k]; }); return m; }catch(e){ return {}; } })();   // sin medidas de versiones anteriores
 const saveMeas = () => { try{ localStorage.setItem('mt-meas', JSON.stringify(MEAS)); }catch(e){} };
 
 /* ======================= Backend (Apps Script o local) ======================= */
@@ -1038,30 +1038,83 @@ function setConn(){ const c = $('conn'); if(API.on()){ c.className = 'conn ok'; 
    piezas sueltas / IGS elegidos a mano se guardan en el servidor y cada equipo los toma al conectarse. Se guardan como un
    renglón especial de la hoja de programas (id CFG-COMPARTIDA) para no cambiar el Apps Script; ese renglón no es un programa. */
 const CFG_COMP_ID = 'CFG-COMPARTIDA', CFG_COMP_CAMPOS = ['programadores', 'maq', 'tramo', 'chuck', 'extension', 'extPct', 'refr', 'kerf', 'minRem', 'modo', 'ventana', 'usarRecortes', 'tolSeccion', 'densidad', 'calibres', 'catalogo', 'skuPref'];
-const paqueteComp = () => { const cfg = {}; CFG_COMP_CAMPOS.forEach(k => { if(k in CFG) cfg[k] = CFG[k]; }); return JSON.stringify({cfg, suelta: SUELTA, pzm: PZM, elec: ELEC}); };
+/* Configuración compartida v2 (Leonardo, 2026-11-19: «ajusté parámetros por máquina y a Tovar le salen los anteriores»).
+   Causa: el paquete se subía completo y ganaba el último. Una pantalla con una versión anterior de la plataforma (sin "parámetros
+   por máquina") subía su paquete sin ese campo y borraba lo que otro había puesto; dos personas cambiando cosas distintas se pisaban.
+   Ahora: renglón propio CFG-COMPARTIDA-2 que las versiones anteriores no conocen ni tocan, y antes de subir se relee el servidor y se
+   mezcla campo por campo: lo que cambió en este equipo gana y lo demás se toma del servidor (también los parámetros de cada máquina
+   y cada tubular con extensión). Cada pantalla relee el servidor cada minuto y adopta lo nuevo; se ve quién y cuándo lo cambió. */
+const CFG_V2_ID = 'CFG-COMPARTIDA-2';
+const copia = v => v === undefined ? undefined : JSON.parse(JSON.stringify(v));
+const paqueteObj = () => { const cfg = {}; CFG_COMP_CAMPOS.forEach(k => { if(k in CFG && CFG[k] !== undefined) cfg[k] = copia(CFG[k]); }); return {cfg, suelta: copia(SUELTA), pzm: copia(PZM), elec: copia(ELEC)}; };
+const firmaPaq = p => JSON.stringify({cfg: p.cfg || {}, suelta: p.suelta || {}, pzm: p.pzm || {}, elec: p.elec || {}});
+const paqueteComp = () => firmaPaq(paqueteObj());
+/* mezcla de tres: base = lo último que este equipo supo del servidor, l = este equipo, s = servidor ahora */
+function mezcla3(b, l, s){
+  const obj = v => v && typeof v === 'object' && !Array.isArray(v), eq = (x, y) => JSON.stringify(x) === JSON.stringify(y);
+  if(obj(l) && obj(s)){ const bb = obj(b) ? b : {}, out = {};
+    new Set([...Object.keys(l), ...Object.keys(s), ...Object.keys(bb)]).forEach(k => { const inL = k in l, inS = k in s, inB = k in bb;
+      if(inL && inS) out[k] = mezcla3(bb[k], l[k], s[k]);
+      else if(inL){ if(!inB || !eq(l[k], bb[k])) out[k] = l[k]; }     // nuevo o cambiado aquí; si no, se quitó en el servidor
+      else if(inS){ if(!inB || !eq(s[k], bb[k])) out[k] = s[k]; } });  // nuevo o cambiado en el servidor; si no, se quitó aquí
+    return out; }
+  return b !== undefined && eq(l, b) ? s : l;
+}
+const leerJSON = (k, d) => { try{ const v = JSON.parse(localStorage.getItem(k) || 'null'); return v == null ? d : v; }catch(e){ return d; } };
+const guardaSync = () => { try{ localStorage.setItem('mt-cfg-base', JSON.stringify(S.cfgBase || null)); localStorage.setItem('mt-cfg-pend', S.cfgPend ? '1' : ''); }catch(e){} };
+function aplicarPaquete(p){
+  S.cfgCompAplicando = true;
+  CFG_COMP_CAMPOS.forEach(k => { if(p.cfg && k in p.cfg) CFG[k] = copia(p.cfg[k]); });
+  SUELTA = Object.assign({}, p.suelta || {}); PZM = Object.assign({}, p.pzm || {}); ELEC = Object.assign({}, p.elec || {});
+  saveCfg(); saveSuelta(); savePzm(); saveElec(); S.cfgCompAplicando = false; S.match = null;
+}
+const paqDeFila = row => { try{ const d = JSON.parse(String(row.resumen || '')); return {pkg: {cfg: d.cfg || {}, suelta: d.suelta || {}, pzm: d.pzm || {}, elec: d.elec || {}}, autor: d.autor || '', ver: +d.ver || +row.fecha || 0}; }catch(e){ return null; } };
 let compT = null;
+/* un cambio de configuración en este equipo: queda pendiente y se sube en un momento (mezclado con lo del servidor) */
 function programarCompartir(){
   try{ if(!API.on() || S.cfgCompAplicando || !S.cfgCompActiva || !esProgramador()) return; }catch(e){ return; }   // al arrancar todavía no existen S ni API
+  S.cfgPend = true; guardaSync();
   clearTimeout(compT); compT = setTimeout(() => compartirCfg(false), 1200); }
-/* sube la configuración de este equipo para todos; la primera vez se hace con el botón de Configuración */
+/* sube la configuración: relee el servidor y mezcla campo por campo; "primera" (botón de Configuración) sube la de este equipo tal cual */
 async function compartirCfg(primera, forzar){
   if(!esProgramador() && !forzar) return;   // solo los programadores cambian la configuración de todos
-  const j = paqueteComp(); if(j === S.cfgCompJSON && !primera) return;
-  try{ await API.upsert('programas', [{id: CFG_COMP_ID, fecha: '__NOW__', archivo: 'No borrar: configuración compartida de Láser Tubo', estado: 'Configuración', resumen: j}]);
-    S.cfgCompJSON = j; S.cfgCompTs = Date.now(); S.cfgCompActiva = true; quitarCfgDeProgramas(); if(primera) toast('Configuración compartida: todos los equipos la usan desde ahora'); }
-  catch(e){ toast('No se pudo compartir la configuración: ' + e.message, 'er'); }
+  if(S.cfgSubiendo){ clearTimeout(compT); compT = setTimeout(() => compartirCfg(primera, forzar), 1500); return; }
+  S.cfgSubiendo = true;
+  try{
+    let srv = null;
+    try{ const d = await API.jsonp({action: 'estado'}); const f2r = (d.programas || []).find(p => p.id === CFG_V2_ID); srv = f2r ? paqDeFila(f2r) : null; }
+    catch(e){ throw new Error('no pude releer el servidor (' + e.message + ')'); }
+    const local = paqueteObj(), merged = primera || !srv ? local : mezcla3(S.cfgBase || undefined, local, srv.pkg);
+    CFG_COMP_CAMPOS.forEach(k => { if(!(k in merged.cfg) && k in local.cfg) merged.cfg[k] = local.cfg[k]; });
+    const ver = Date.now(), autor = (S.cuenta && S.cuenta.nombre) || '', txt = JSON.stringify(Object.assign({v: 2, ver, autor}, merged));
+    if(txt.length > 48000) throw new Error('la configuración es demasiado grande para el servidor');
+    await API.upsert('programas', [{id: CFG_V2_ID, fecha: '__NOW__', archivo: 'No borrar: configuración compartida de Láser Tubo (v2)', estado: 'Configuración', resumen: txt}]);
+    quitarCfgDeProgramas();
+    if(firmaPaq(merged) !== firmaPaq(local)){ aplicarPaquete(merged); renderAll(); }   // trae lo que otro cambió mientras tanto
+    S.cfgBase = merged; S.cfgPend = false; S.cfgCompJSON = firmaPaq(merged); S.cfgCompTs = ver; S.cfgAutor = autor; S.cfgCompActiva = true; guardaSync();
+    if(primera) toast('Configuración compartida: todos los equipos la usan desde ahora');
+  }catch(e){ toast('No se pudo compartir la configuración: ' + e.message + '. Se vuelve a intentar al rato.', 'er'); }
+  S.cfgSubiendo = false;
 }
-const esEspecial = p => p.id === CFG_COMP_ID || String(p.id).startsWith(BORR_ID + '-');
+const esEspecial = p => p.id === CFG_COMP_ID || p.id === CFG_V2_ID || String(p.id).startsWith(BORR_ID + '-');
 const quitarCfgDeProgramas = () => { S.db.programas = (S.db.programas || []).filter(p => !esEspecial(p)); };
-/* al leer el servidor: si hay configuración compartida, este equipo la adopta (gana sobre la suya) */
+/* al leer el servidor: este equipo adopta la configuración compartida; si tiene cambios sin subir, se mezclan y se suben */
 function aplicarCfgCompartida(){
-  const row = (S.db.programas || []).find(p => p.id === CFG_COMP_ID); quitarCfgDeProgramas(); if(!row) return;
-  S.cfgCompActiva = true; S.cfgCompTs = +row.fecha || S.cfgCompTs || 0; if(row.resumen === S.cfgCompJSON) return;
-  let d; try{ d = JSON.parse(row.resumen); }catch(e){ return; }
-  S.cfgCompAplicando = true;
-  CFG_COMP_CAMPOS.forEach(k => { if(d.cfg && k in d.cfg) CFG[k] = JSON.parse(JSON.stringify(d.cfg[k])); });
-  SUELTA = Object.assign({}, d.suelta || {}); PZM = Object.assign({}, d.pzm || {}); ELEC = Object.assign({}, d.elec || {});
-  saveCfg(); saveSuelta(); savePzm(); saveElec(); S.cfgCompAplicando = false; S.cfgCompJSON = paqueteComp(); S.match = null;
+  const r2 = (S.db.programas || []).find(p => p.id === CFG_V2_ID), r1 = (S.db.programas || []).find(p => p.id === CFG_COMP_ID); quitarCfgDeProgramas();
+  if(S.cfgBase === undefined){ S.cfgBase = leerJSON('mt-cfg-base', null); S.cfgPend = !!leerJSON('mt-cfg-pend', ''); }
+  const srv2 = r2 && paqDeFila(r2);
+  if(srv2){
+    S.cfgCompActiva = true; S.cfgCompTs = srv2.ver; S.cfgAutor = srv2.autor;
+    if(firmaPaq(srv2.pkg) === S.cfgCompJSON) return;
+    if(S.cfgPend && esProgramador()){ aplicarPaquete(mezcla3(S.cfgBase || undefined, paqueteObj(), srv2.pkg)); S.cfgBase = srv2.pkg; guardaSync(); programarCompartir(); return; }
+    aplicarPaquete(srv2.pkg); S.cfgBase = srv2.pkg; S.cfgPend = false; S.cfgCompJSON = firmaPaq(srv2.pkg); guardaSync(); return;
+  }
+  // todavía no hay v2: se toma la anterior (lo que traiga) y, lo que no traiga, de este equipo solo si aquí se configuró; un programador crea la v2
+  const srv1 = r1 && paqDeFila(r1); if(!srv1) return;
+  S.cfgCompActiva = true; S.cfgCompTs = srv1.ver;
+  const local = paqueteObj(), m = {cfg: Object.assign({}, local.cfg, srv1.pkg.cfg), suelta: srv1.pkg.suelta, pzm: srv1.pkg.pzm, elec: srv1.pkg.elec};
+  aplicarPaquete(m); S.cfgBase = srv1.pkg; S.cfgCompJSON = firmaPaq(srv1.pkg); guardaSync();
+  if(esProgramador()) programarCompartir();
 }
 
 /* ======================= Rango Programador y borrador compartido (Leonardo, 2026-11-18) =======================
@@ -1078,7 +1131,7 @@ const msgSoloProg = () => `Solo los programadores (${nombresProg()}) generan y a
 /* borrador en texto compacto: los textos repetidos (modelo, pieza, OP, IGS) van una vez en un diccionario */
 function paqueteBorrador(R){
   const D = [], ix = new Map(), s = v => { v = v == null ? '' : String(v); if(!ix.has(v)){ ix.set(v, D.length); D.push(v); } return ix.get(v); }, r1 = n => Math.round((+n || 0)*10)/10;
-  const grupos = R.grupos.map(g => ({tipo: g.tipo, grupo: g.grupo, maquina: g.maquina || '', completo: !!g.completo, dibujo: g.dibujo || '', label: g.label, corto: g.corto, kgm: g.kgm, sku: g.sku || '', nSku: g.nSku || 0, tramo: g.tramo, tot: g.tot,
+  const grupos = R.grupos.map(g => ({tipo: g.tipo, grupo: g.grupo, maquina: g.maquina || '', perfil: g.perfil || '', completo: !!g.completo, dibujo: g.dibujo || '', label: g.label, corto: g.corto, kgm: g.kgm, sku: g.sku || '', nSku: g.nSku || 0, tramo: g.tramo, tot: g.tot,
     largas: (g.largas || []).map(p => [s(p.pieza), s(p.ruta), r1(p.L)]),
     bars: g.bars.map(b => ({id: b.id, P: b.P, o: b.origen, ri: b.recorteId || '', rn: b.recorteNuevo || '', r: b.recorte || 0, c: r1(b.consumo), a: +(+b.aprov || 0).toFixed(4), u: r1(b.usado), so: b.solo ? 1 : 0, ch: b.ch, ce: b.chExt ? 1 : 0,
       p: b.piezas.map(p => [r1(p.x), r1(p.L), s(p.op), s(p.ruta), s(p.pieza), s(p.fileId), r1(p.consumo), p.pzs > 1 ? p.pzs : 0, p.completo ? 1 : 0, p.prio || 0])}))}));
@@ -1126,7 +1179,7 @@ function seguirBorrador(){
   else if(!bc){ const ap = (S.db.programas || []).find(p => p.id === R.id && p.estado !== 'Cancelado'); S.res = ap ? resDeGuardado(ap.id) : null; if(ap) toast('El borrador ya se aprobó: es el que ven los operadores', 'in'); }
 }
 /* cada minuto, con la pestaña a la vista, Líder e Ingeniería releen el servidor para ver el borrador o la aprobación del otro */
-const firmaServidor = () => (S.borrComp ? S.borrComp.sello : '') + '|' + (S.db.programas || []).map(p => p.id + ':' + p.estado).join(',');
+const firmaServidor = () => (S.borrComp ? S.borrComp.sello : '') + '|' + (S.cfgCompJSON || '').length + ':' + (S.cfgCompTs || '') + '|' + (S.db.programas || []).map(p => p.id + ':' + p.estado).join(',');
 setInterval(async () => {
   try{ if(document.hidden || !API.on() || !S.cuenta || esOperador() || S.generando) return; }catch(e){ return; }
   const antes = firmaServidor();
@@ -1297,7 +1350,7 @@ function vigentes(){
   }
   return {vig, conflictos};
 }
-function medKey(f){ return 'v4|' + f.id + '|' + (f.modified || f.size || ''); }   // v4: barrenos completos (2026-11-10)
+function medKey(f){ return 'v5|' + f.id + '|' + (f.modified || f.size || ''); }   // v5: radio de las esquinas (2026-11-19); v4: barrenos completos
 const endTxt = e => !e ? '—' : e.recto ? 'Recto' : e.inglete ? `Inglete ${e.angulo}°` : `Especial (${f1(e.prof ?? e.profundidad)} mm)`;
 function evalPieza(f){
   const p = f.p, m = MEAS[medKey(f)];
@@ -1326,13 +1379,29 @@ async function textoDe(f){
   else txt = await API.archivo(f.id);
   S.raw[f.id] = txt; return txt;
 }
+/* radio exterior de las esquinas del tubular, de las aristas a lo largo del tubo: en la cara de arriba la arista de la esquina
+   está a W/2 − r del centro. Con la pared, es el perfil de la pieza; TubesT reconoce el tubo con un solo perfil (2026-11-19) */
+function radioDe(a){
+  if(!a || !a.polys || a.round) return null;
+  const W = a.secA/2, Hh = a.secB/2, largo = Math.max(20, a.len*0.2); let my = null, mz = null;
+  a.polys.forEach(pl => { const p = pl.p, q0 = p[0], q1 = p[p.length - 1]; if(!q0 || !q1) return;
+    if(Math.abs(q1[0] - q0[0]) < largo || Math.abs(q1[1] - q0[1]) > 0.05 || Math.abs(q1[2] - q0[2]) > 0.05) return;   // solo aristas rectas a lo largo
+    const y = Math.abs(q0[1]), z = Math.abs(q0[2]);
+    if(Math.abs(z - Hh) < 0.05 && y < W - 0.01) my = my == null ? y : Math.max(my, y);
+    if(Math.abs(y - W) < 0.05 && z < Hh - 0.01) mz = mz == null ? z : Math.max(mz, z); });
+  const r = [my != null ? W - my : null, mz != null ? Hh - mz : null].filter(v => v != null && v >= 0 && v < Math.min(W, Hh));
+  return r.length ? Math.min(...r) : null;
+}
+/* perfil para agrupar: pared al 0.1 mm y radio al 0.5 mm ("1.2|1.5"); redondo, solo la pared */
+const perfilDe = m => !m ? '' : (m.wall != null ? (Math.round(m.wall*10)/10).toFixed(1) : '?') + '|' + (m.round ? 'R' : m.rad != null ? (Math.round(m.rad*2)/2).toFixed(1) : '?');
+const perfilTxt = p => { const [w, r] = String(p || '').split('|'); return (w && w !== '?' ? 'pared ' + w + ' mm' : '') + (r && r !== '?' && r !== 'R' ? ' · radio ' + r + ' mm' : ''); };
 async function medir(lista){
   let n = 0, i = 0; const tot = lista.length;
   const worker = async () => { while(i < lista.length){ const f = lista[i++];
     try{ const txt = await textoDe(f); const nom = f.p.med ? [f.p.med.a, f.p.med.b] : null; const a = IGES.inspect(txt, nom, f.p.med && f.p.med.forma);
       const um = IGES.parse(txt).unitFlag, k = um === 1 ? 25.4 : um === 4 ? 1000 : um === 10 ? 10 : 1;
       MEAS[medKey(f)] = a.ok ? {ok: true, len: a.len*k, secA: a.secA*k, secB: a.secB*k, combinable: a.combinable, unsup: a.unsup, units: a.units, k,
-        wall: a.wall != null ? +(a.wall*k).toFixed(2) : null, ends: a.ends.map(e => ({recto: e.recto, inglete: !!e.inglete, angulo: e.angulo, prof: +(e.profundidad*k).toFixed(1)})), nFeat: a.feats.length, round: !!a.round} : {error: a.error};
+        wall: a.wall != null ? +(a.wall*k).toFixed(2) : null, rad: (r => r != null ? +(r*k).toFixed(2) : null)(radioDe(a)), ends: a.ends.map(e => ({recto: e.recto, inglete: !!e.inglete, angulo: e.angulo, prof: +(e.profundidad*k).toFixed(1)})), nFeat: a.feats.length, round: !!a.round} : {error: a.error};
     }catch(e){ MEAS[medKey(f)] = {error: 'No se pudo leer: ' + e.message}; }
     n++; S.libMsg = `Leyendo IGS ${n}/${tot}…`; if(n % 3 === 0 || n === tot) renderLib(); } };
   await Promise.all([worker(), worker(), worker(), worker()]);
@@ -1419,8 +1488,25 @@ function ligarDibujos(){
       else if(cand.every(x => x.size && x.size === cand[0].size)){ f = sc[0][0]; iguales = cand.length; }
       else estado = 'ambiguo';
     } else if(!f) estado = ant.length ? 'anterior' : 'sin';
-    S.match[o.idx] = {f: f || null, estado: f ? 'ok' : estado, clave: k, iguales, cand: f ? (iguales ? cand : []) : estado === 'ambiguo' ? cand : estado === 'anterior' ? ant : []};
+    // el programa lo nombra distinto que la carpeta: se busca sin el modelo ni la versión y, si no, por la Parte en la carpeta del modelo
+    let como = '';
+    if(!f && estado === 'sin'){ const alt = buscarAlterno(o, vig); if(alt){ f = alt.f; como = alt.como; } }
+    S.match[o.idx] = {f: f || null, estado: f ? 'ok' : estado, clave: k, iguales, como, cand: f ? (iguales ? cand : []) : estado === 'ambiguo' ? cand : estado === 'anterior' ? ant : []};
   });
+}
+/* "AC-12090 TRAVESANO-90_V1" en el programa es "TRAVESAÑO 90.igs" en AC-12090\IGS (Leonardo, 2026-11-19):
+   1) el mismo nombre sin el modelo al inicio ni la versión al final (_V1); 2) si no, la Parte ("VERTICAL A") dentro de la carpeta del modelo.
+   Solo se liga si queda un solo dibujo (o copias iguales); en Programa se ve con qué se ligó y se puede cambiar */
+function buscarAlterno(o, vig){
+  const alnum = s => norm(s).replace(/[^A-Z0-9]/g, ''), modBase = norm(o.ruta).trim().replace(/[-\s]+[A-Z]{1,2}$/, ''), modTok = claveDibujo(modBase);
+  const enModelo = x => { const L = lugarCentral(x); return !!L && !!modBase && alnum(L.modelo) === alnum(modBase); };
+  const limpia = s => { let k = claveDibujo(s); if(modTok && k.startsWith(modTok + ' ')) k = k.slice(modTok.length + 1); return k.replace(/\s+V\d+$/, '').trim(); };
+  const elige = (k, soloModelo) => { if(!k) return null; const c = (vig[k] || []).filter(x => !soloModelo || enModelo(x)), m = c.filter(enModelo), l = m.length ? m : c;
+    return l.length === 1 || (l.length > 1 && l.every(x => x.size && x.size === l[0].size)) ? l[0] : null; };
+  const k2 = limpia(o.dibujo); let f = k2 && k2 !== claveDibujo(o.dibujo) ? elige(k2, false) : null;
+  if(f) return {f, como: 'nombre'};
+  if(o.parte){ f = elige(claveDibujo(o.parte), true); if(f) return {f, como: 'parte'}; }
+  return null;
 }
 function cargarLocal(files){
   const arr = [...files].filter(f => /\.(igs|iges)(\.gz)*$/i.test(f.name));
@@ -1831,8 +1917,11 @@ function explotarLaser(){
     const esMult = !sm && (esMultipleYa(f) || (f.p.n || 1) > 1), completo = esMult || !m.combinable || secMal, pzs = esMult ? (f.p.n > 1 ? f.p.n : +PZM[f.p.clave] || 0) : 1;
     if(esMult && !pzs) return fuera('MULTIPLE sin pieza suelta: escribe en Programa cuántas piezas trae el dibujo');
     corridas = Math.ceil(piezas / pzs);
+    // perfil dibujado (pared y radio de las esquinas): en un mismo IGS solo van piezas del mismo perfil. Si se mezclan, TubesT reconoce
+    // el tubo con unas y toma las aristas de las otras como trayectoria de corte (Leonardo, 2026-11-19)
+    const perfil = perfilDe(m);
     for(let i = 0; i < corridas; i++) S.items.push({uid: uid++, tipo: t.key, tipoLabel: t.label, tipoCorto: t.corto, L: m.len, prio: o.idx, op: o.op, ruta: o.ruta, pieza: sm ? f.p.pieza : o.dibujo, fileId: f.id,
-      med, cal, pzs, completo, validado: esMult, solo: cb === 'solo', maquina: o.maquina, grupo: o.maquina + '|' + t.key + (completo ? '|' + f.id : ''), ...(sm ? {deMultiple: o.dibujo} : {})});
+      med, cal, pzs, completo, validado: esMult, solo: cb === 'solo', perfil, maquina: o.maquina, grupo: o.maquina + '|' + t.key + (completo ? '|' + f.id : '') + '|' + perfil, ...(sm ? {deMultiple: o.dibujo} : {})});
   });
 }
 const TIPOS = () => { const t = {}; S.items.forEach(i => t[i.tipo] = t[i.tipo] || {key: i.tipo, label: i.tipoLabel, corto: i.tipoCorto, med: i.med, cal: i.cal}); (S.db.recortes || []).forEach(r => { if(!t[r.tipo]) t[r.tipo] = {key: r.tipo, label: r.tipoLabel || r.tipo, corto: r.tipoCorto || r.tipo}; }); return t; };
@@ -2279,7 +2368,7 @@ function progLaserHtml(){
     // informativo: muchos dibujos se hacen con una pared genérica; el calibre que manda es el del programa
     const difP = ms && ms.ok && ms.wall != null && tP && Math.abs(ms.wall - tP) > 0.15 ? `<span class="sub">Pared dibujada ${f2(ms.wall)} mm; el programa dice cal ${calP} (${f2(tP)} mm)</span>` : '';
     if(m.f) return `${n ? badge('ok', '✓ ' + n + (sm && sm.f ? (n === 1 ? ' pieza suelta' : ' piezas sueltas') : n === 1 ? ' corrida' : ' corridas')) : badge('er', 'No entra')}${sm ? ' ' + badge('in', sm.f ? 'MULTIPLE: se arma con su pieza suelta' : 'MULTIPLE validado: se corta completo') : (m.f.p.n || 1) > 1 ? ' ' + badge('in', 'Completo') : ''}
-${m.iguales ? ' ' + `<span title="${esc(m.cand.map(x => x.path.split('/').slice(1, -2).join('/')).join('\n'))}">${badge('in', m.iguales + ' copias iguales')}</span>` : ''}
+${m.como ? ' ' + `<span title="El programa lo nombra «${esc(o.dibujo)}»; en la carpeta se llama distinto. Revisa que sea el dibujo correcto">${badge('in', m.como === 'parte' ? 'Ligado por la Parte' : 'Nombre distinto en la carpeta')}</span>` : ''}${m.iguales ? ' ' + `<span title="${esc(m.cand.map(x => x.path.split('/').slice(1, -2).join('/')).join('\n'))}">${badge('in', m.iguales + ' copias iguales')}</span>` : ''}
       <span class="sub" title="${esc(m.f.path)}">${esc(m.f.path.split('/').slice(2).join(' \\ '))}</span>${difP}
       ${sm ? `<label class="sm" style="display:flex;gap:6px;align-items:center;margin-top:4px;flex-wrap:wrap">Pieza suelta <select data-suelta="${esc(sm.k)}" style="max-width:320px"><option value="">Elige la pieza suelta…</option>${sm.cand.map(x => `<option value="${esc(x.id)}" ${sm.f && sm.f.id === x.id ? 'selected' : ''}>${esc(x.path.split('/').slice(4).join('/'))}</option>`).join('')}</select>${sm.f && !sm.elegida ? `<span class="mut" title="${sm.porLargo ? 'Había varias posibles: se eligió la que mide lo mismo que cada pieza del MULTIPLE' : ''}">automática${sm.porLargo ? ' por largo' : ''}</span>` : ''}</label>` : ''}
       ${sm && !sm.f && !(m.f.p.n > 1) ? `<label class="sm" style="display:flex;gap:6px;align-items:center;margin-top:4px" title="El nombre del dibujo no dice cuántas piezas trae: con este número se calcula cuántas veces se corre (Cant. ÷ piezas). Se guarda para todos los equipos.">Piezas que trae el dibujo <input type="number" min="2" step="1" data-pzm="${esc(m.f.p.clave)}" value="${PZM[m.f.p.clave] || ''}" style="width:70px"></label>` : ''}      ${fu ? `<div class="sm" style="color:var(--${S.fuera.includes(fu) ? 'er' : 'wa'})">${esc(fu.motivo)}</div>` : ''}`;
@@ -2431,13 +2520,22 @@ function renderMult(){
   <div class="card"><div class="row"><b style="flex:1">${esc(R.id)} ${R.aprobado ? badge('ok', '✓ Aprobado · ' + (R.estado || 'Pendiente')) : R.guardado ? badge('ok', 'Aprobado') : badge('wa', R.compartido ? 'Borrador compartido · sin aprobar' : 'Sin aprobar')}</b>
   <button id="mPrint" title="Hoja de corte de ${esc(MQ || 'todo el programa')}">🖨 Hoja de corte${MQ ? ' ' + esc(MQ) : ''}</button><button id="mXls">📊 Consumos (Excel)</button><button class="pri" id="mSave" ${R.guardado ? 'disabled' : prog ? '' : 'disabled'} title="${prog ? '' : esc(msgSoloProg()) + '. '}Se guarda el programa completo (GW1 y GW2) y se ve igual en todos los equipos. Los recortes usados quedan reservados y los nuevos se registran Por generar; pasan a Disponible cuando el tramo se marca cortado.">💾 Aprobar y guardar</button></div></div>
   ${cuadreHtml(cuadrePrograma(R))}
-  ${vis.map(({g, gi}) => `<details class="card" data-gk="${esc(gk(g))}" ${abiertos.has(gk(g)) ? 'open' : ''}><summary>${!maqs.length && g.maquina ? badge('in', g.maquina) + ' ' : ''}<b>${esc(g.label)}</b>${g.completo ? ' ' + badge('ok', '▣ ' + g.dibujo) : ''} ${g.sku ? '' : badge('wa', 'Sin SKU en el catálogo')}${g.nSku > 1 ? badge('wa', `Hay ${g.nSku} SKU: elige en Configuración`) : ''} ${g.largas.length ? badge('er', g.largas.length + ' piezas no caben') : ''}
+  ${vis.map(({g, gi}) => `<details class="card" data-gk="${esc(gk(g))}" ${abiertos.has(gk(g)) ? 'open' : ''}><summary>${!maqs.length && g.maquina ? badge('in', g.maquina) + ' ' : ''}<b>${esc(g.label)}</b>${g.completo ? ' ' + badge('ok', '▣ ' + g.dibujo) : ''} ${g.sku ? '' : badge('wa', 'Sin SKU en el catálogo')}${g.nSku > 1 ? badge('wa', `Hay ${g.nSku} SKU: elige en Configuración`) : ''} ${g.largas.length ? badge('er', g.largas.length + ' piezas no caben') : ''}${perfilAparte(g, R) ? ' ' + badge('wa', 'Perfil distinto (' + perfilTxt(g.perfil) + '): va en su propio IGS') : ''}
     ${dts(dt('Tramos', g.tot.tramos + g.tot.recUsados), dt('Piezas', g.tot.piezas), dt('Aprovechamiento', pct(g.tot.aprov), '', lvAprov(g.tot.aprov)))}</summary>
     ${agrupar(g.bars).map(x => { const ref = gi + '|' + g.bars.indexOf(x.b); return `<div class="bar"><div class="barhd">${tramosTxt(x.ids, R.id)} ${vecesChip(x.n)}${zonaBar(x.b).ext ? ' ' + badge('in', 'Con extensión') : ''} ${pieBar(x.b)}<span style="flex:1"></span>
       <button data-ver="${ref}" title="Ver el tramo con el dibujo de cada pieza (barrenos, ranuras y cortes), con zoom">🔍 Ver</button><button data-igs="${ref}" title="IGS con las piezas acomodadas a lo largo del tubo">⬇ IGS</button><button data-hoja="${ref}" title="Hoja de corte de este múltiple">🖨</button></div>${svgBar(x.b, col, {op: true, ops: x.ops, rutas: x.rutas})}</div>`; }).join('')}
     ${g.largas.length ? `<p style="color:var(--er)" class="sm">Más largas que el tramo: ${[...new Set(g.largas.map(p => p.pieza + ' (' + p.ruta + ')'))].map(esc).join(', ')}</p>` : ''}</details>`).join('') || `<div class="card empty">${esc(MQ)} no tiene tramos en este programa.</div>`}
   ${S.fuera.length ? fueraHtml(MQ) : ''}`;
   bindMult();
+}
+/* ¿este grupo es de un perfil distinto al de los demás del mismo tubular y máquina? (el de más piezas es el normal) */
+function perfilAparte(g, R){
+  if(!g.perfil || g.completo) return false;
+  const her = R.grupos.filter(x => x.maquina === g.maquina && x.tipo === g.tipo && !x.completo && x.perfil);
+  if(new Set(her.map(x => x.perfil)).size < 2) return false;
+  const pz = p => her.filter(x => x.perfil === p).reduce((s, x) => s + (x.tot ? x.tot.piezas : 0), 0);
+  const dom = [...new Set(her.map(x => x.perfil))].sort((a, b) => pz(b) - pz(a))[0];
+  return g.perfil !== dom;
 }
 /* ======================= Cuadre con el programa (Leonardo, 2026-11-19: «que la plataforma no ponga ni de más ni de menos») =======================
    Piezas que pide cada renglón del programa (OP + dibujo, ya sin lo cortado en el OEE) contra las que quedaron en los múltiples.
@@ -2762,8 +2860,8 @@ function renderCfg(){
   const num = (k, t, step) => `<label class="cfl"><span>${t}</span><input type="number" step="${step || 1}" data-k="${k}" value="${CFG[k]}"></label>`;
   // configuración compartida: con ella todos los equipos generan los mismos múltiples
   const comp = API.on() ? `<div class="card"><div class="row"><span style="flex:1;min-width:260px"><b>🔗 Configuración compartida</b> ${S.cfgCompActiva ? badge('ok', 'Todos los equipos usan la misma') : badge('wa', 'Cada equipo usa la suya')}
-    <span class="sub">${S.cfgCompActiva ? `Tramo, chuck, refrentado, separación, criterio, catálogo y las piezas o IGS elegidos a mano se guardan en el servidor: lo que cambies aquí cambia en todos los equipos (GW1, GW2 y oficina)${S.cfgCompTs ? ' · última actualización ' + fecha(S.cfgCompTs) : ''}.` : 'Ahora cada equipo tiene su propia configuración y por eso pueden salir múltiples distintos. Revisa el tramo y el chuck, y compártela para que todos usen la misma.'}</span></span>
-    ${S.cfgCompActiva || !esProgramador() ? '' : '<button class="pri" id="cComp">Usar esta configuración en todos los equipos</button>'}</div></div>` : '';
+    <span class="sub">${S.cfgCompActiva ? `Lo que cambies aquí cambia en todos los equipos (GW1, GW2 y oficina) en menos de un minuto${S.cfgCompTs ? ` · última actualización${S.cfgAutor ? ' de <b>' + esc(S.cfgAutor) + '</b>' : ''} ${fecha(S.cfgCompTs)}` : ''}${S.cfgPend ? ' · <b style="color:var(--amber)">subiendo cambios de este equipo…</b>' : ''}.` : 'Ahora cada equipo tiene su propia configuración y por eso pueden salir múltiples distintos. Revisa el tramo y el chuck, y compártela para que todos usen la misma.'}</span></span>
+    ${!esProgramador() ? '' : S.cfgCompActiva ? '<button id="cComp" title="Si un equipo muestra otros valores: sube los de este equipo tal cual a todos los equipos">Subir mi configuración a todos</button>' : '<button class="pri" id="cComp">Usar esta configuración en todos los equipos</button>'}</div></div>` : '';
   el.innerHTML = `${comp}${cardProgramadores()}<details class="card" open><summary><b>📏 Tramo y corte</b></summary><div class="grid2" style="margin-top:10px">
     ${num('tramo', 'Largo del tramo nuevo (mm)')}${num('minRem', 'Recorte útil mínimo para guardar (mm)')}${num('tolSeccion', 'Tolerancia sección nombre vs IGS (mm)', 0.1)}${num('densidad', 'Densidad del acero (g/cm³)', 0.01)}</div>
     <p class="mut sm">El chuck, el refrentado, la separación y la extensión van por máquina (abajo). Un sobrante se guarda como recorte si, al restarle el chuck (o la extensión) y el refrentado de la máquina, quedan al menos ${f0(CFG.minRem)} mm aprovechables.</p></details>
@@ -2933,7 +3031,7 @@ function badgeOf(k){
 const menuVisible = () => !S.cuenta ? MENU.filter(g => g.items.some(i => i.url)) : esOperador() ? MENU.map(g => ({g: g.g, items: g.items.filter(i => ['mult', 'piso', 'oee'].includes(i.k))})).filter(g => g.items.length) : MENU;
 function renderSide(){
   const sb = document.querySelector('.sb-info');
-  if(sb) sb.innerHTML = S.cuenta ? `👤 <b style="color:var(--text2)">${esc(S.cuenta.nombre)}</b> · ${ROL_TXT[S.cuenta.rol] || esc(S.cuenta.rol)}${!esOperador() && programadores().length && esProgramador() ? ' · <b style="color:var(--blue)">Programador</b>' : ''}${esOperador() && maqOperador() ? ' · ' + esc(maqOperador()) : ''}` : 'Sin sesión del OEE';
+  if(sb) sb.innerHTML = S.cuenta ? `👤 <b style="color:var(--text2)">${esc(S.cuenta.nombre)}</b> · ${ROL_TXT[S.cuenta.rol] || esc(S.cuenta.rol)}${!esOperador() && programadores().length && esProgramador() ? ' · <b style="color:var(--blue)">Programador</b>' : ''}${esOperador() && maqOperador() ? ' · ' + esc(maqOperador()) : ''} <span style="font-family:var(--mono);opacity:.7" title="Versión de la plataforma en esta pantalla: debe ser la misma en todos los equipos">· v${verCorta()}</span>` : 'Sin sesión del OEE';
   $('nav').innerHTML = menuVisible().map(g => `<div class="nav-section"><div class="nav-label">${esc(g.g)}</div>${g.items.map(i => { const b = badgeOf(i.k), ico = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICO[i.k]}</svg>`;
     if(i.url) return `<a class="nav-item" href="${esc(i.url)}" target="_blank" rel="noopener" data-label="${esc(i.t)}" title="${esc(i.d)}" style="--ic:${i.c};text-decoration:none">${ico}<span>${esc(i.t)}</span></a>`;
     return `<div class="nav-item ${i.k === CUR ? 'active' : ''}" data-k="${i.k}" data-label="${esc(i.t)}" role="button" tabindex="0" style="--ic:${i.c}">${ico}<span>${esc(i.t)}</span>${b ? `<span class="nav-cnt b ${b[0]}">${b[1]}</span>` : ''}</div>`; }).join('')}</div>`).join('');
@@ -2981,6 +3079,8 @@ window.addEventListener('storage', e => { if(e.key !== OEE_KEY) return;
    misma pantalla (pestaña, máquina, tarjetas abiertas, programa que se muestra y posición). No corre en el banco (localhost). */
 const UPD_CADA = 3*60000, UPD_QUIETO = 60000, UPD_CAMPO = 10*60000, UPD_VENTANA = 20*60000, UPD_RESTORE = 'mt-upd-restore', UPD_N = 'mt-upd-n';
 /* firma del código de la página (los <script> en línea): cambia con cada versión publicada */
+/* código corto de la versión que corre en esta pantalla (en el menú): si dos equipos muestran códigos distintos, uno no se ha actualizado */
+const verCorta = () => (window.__verC = window.__verC || codigoFirma(document).split('.').pop().slice(-4).toUpperCase());
 function codigoFirma(doc){
   let s = ''; doc.querySelectorAll('script:not([src])').forEach(x => { s += x.textContent + '\u0000'; });
   let h1 = 0x811c9dc5, h2 = 7; for(let i = 0; i < s.length; i++){ const c = s.charCodeAt(i); h1 = Math.imul(h1 ^ c, 16777619); h2 = (Math.imul(h2, 31) + c) | 0; }
@@ -3008,7 +3108,7 @@ async function revisarVersion(){
 /* '' = se puede recargar ya; si no, por qué se espera */
 function motivoEspera(){
   const quieto = Date.now() - _updAccion, a = document.activeElement;
-  if(S.generando || (S.enviando || 0) > 0 || (S.ocupado || 0) > 0) return 'trabajando';   // guardando, compartiendo o leyendo la carpeta central
+  if(S.generando || S.cfgPend || S.cfgSubiendo || (S.enviando || 0) > 0 || (S.ocupado || 0) > 0) return 'trabajando';   // guardando, compartiendo o leyendo la carpeta central
   if(a && a !== document.body && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) && quieto < UPD_CAMPO) return 'campo';
   if(document.querySelector('.modal') && quieto < UPD_VENTANA) return 'ventana';   // visor de pieza o de tramo
   const pa = $('printArea'); if(pa && pa.style.display === 'block') return 'imprimiendo';
