@@ -207,7 +207,7 @@ details.card>summary>.dts{flex-basis:100%;margin:2px 0 0 18px}
   </main>
 </div>
 <div id="printArea"></div>
-<script>
+<script id="app">
 /* ===== Motor IGES: lectura, medición y combinado de piezas a lo largo de un tubo ===== */
 const IGES = (() => {
   const SUP = new Set([100,102,104,106,108,110,116,118,120,122,123,124,126,128,130,140,141,142,143,144,186,190,192,194,196,198,308,314,402,406,408,502,504,508,510,514]);
@@ -1567,6 +1567,18 @@ function renderAviso(){
   a.style.display = 'flex';
   a.innerHTML = `<span style="flex:1;min-width:240px">🔌 <b>La carpeta central ${esc(S.cenPend)} está desconectada</b> desde que se recargó la página.<span class="sub">Reconéctala con un clic; no hay que volver a elegirla${esOperador() ? ' y no se lee toda la carpeta: solo los IGS del tramo que bajes' : ''}. En el aviso del navegador elige «Permitir en cada visita» y ya no lo volverá a pedir.</span></span><button class="pri" id="reconBtn">Reconectar carpeta central</button>`;
   $('reconBtn').onclick = () => abrirCentral(false);
+  // el primer clic en cualquier parte de la pantalla también la reconecta (Chrome solo pide el permiso tras un clic), sin abrir el
+  // selector de carpetas: así el operador ve sus IGS aunque no note el aviso tras una actualización automática (2026-11-19)
+  if(!S.reconArmado){ S.reconArmado = true;
+    document.addEventListener('pointerdown', function una(ev){
+      if(ev.target && ev.target.closest && ev.target.closest('#reconBtn')) return;   // el botón ya lo hace
+      document.removeEventListener('pointerdown', una, true); S.reconArmado = false;
+      if(S.cenPend && !S.cenDir) reconectarConGesto(); }, true); }
+}
+async function reconectarConGesto(){
+  const h = await DIRDB.leer('zzx'); if(!h) return;
+  try{ if((await h.requestPermission({mode: 'readwrite'})) !== 'granted') return; }catch(e){ return; }
+  await reconectarCentral();
 }
 async function abrirCentral(otra){
   if(!window.showDirectoryPicker) return $('inDir').click();   // navegador sin acceso a carpetas: selector clásico (solo lectura)
@@ -3091,7 +3103,9 @@ const UPD_CADA = 3*60000, UPD_QUIETO = 60000, UPD_CAMPO = 10*60000, UPD_VENTANA 
 /* código corto de la versión que corre en esta pantalla (en el menú): si dos equipos muestran códigos distintos, uno no se ha actualizado */
 const verCorta = () => (window.__verC = window.__verC || codigoFirma(document).split('.').pop().slice(-4).toUpperCase());
 function codigoFirma(doc){
-  let s = ''; doc.querySelectorAll('script:not([src])').forEach(x => { s += x.textContent + '\u0000'; });
+  // solo el código de la plataforma (script#app): un script que meta una extensión del navegador no cuenta como versión nueva
+  const app = doc.getElementById('app'), nodos = app && app.tagName === 'SCRIPT' ? [app] : [...doc.querySelectorAll('script:not([src])')];
+  let s = ''; nodos.forEach(x => { s += x.textContent + '\u0000'; });
   let h1 = 0x811c9dc5, h2 = 7; for(let i = 0; i < s.length; i++){ const c = s.charCodeAt(i); h1 = Math.imul(h1 ^ c, 16777619); h2 = (Math.imul(h2, 31) + c) | 0; }
   return s.length + '.' + (h1 >>> 0).toString(36) + '.' + (h2 >>> 0).toString(36);
 }
