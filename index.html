@@ -1362,22 +1362,27 @@ async function cargarBibliotecaDrive(refrescar){
   else await medirNecesarios();
 }
 /* ======================= IGS por corregir: aviso a Ingeniería (2026-11-18) =======================
-   Cuando la sección de un IGS no coincide con el tubular del programa, se anota en la raíz de la carpeta central
-   (avisos-igs-por-corregir.json). La rutina avisar-igs-por-corregir (tarea de Windows cada 10 min en la PC de Leonardo)
-   manda un correo breve a Ingeniería con los nuevos, una sola vez por IGS y medida. */
+   Cualquier diferencia entre la descripción del material del programa y el IGS (tubo o tubular) se anota en la raíz de la
+   carpeta central (avisos-igs-por-corregir.json): medida (sección), calibre (pared dibujada) o descripción con error ("3/A").
+   La rutina avisar-igs-por-corregir (tarea de Windows cada 10 min en la PC de Leonardo) manda un correo breve a Ingeniería
+   con los nuevos, una sola vez por IGS y diferencia. */
 const AVISOS_IGS = 'avisos-igs-por-corregir.json';
 async function registrarIgsPorCorregir(){
   if(esOperador() || !S.cenDir || S.formato !== 'laser') return;
-  const malos = S.fuera.concat(S.secAviso || []).filter(x => x.seccion && x.igsMal && x.igsMal.path); if(!malos.length) return;
+  const lista = S.fuera.concat(S.secAviso || []).filter(x => x.seccion && x.igsMal && x.igsMal.path)
+    .map(x => ({o: x.o, f: x.igsMal, tipo: 'medida', igsTxt: f1(x.seccion.a) + ' × ' + f1(x.seccion.b) + ' mm', progTxt: x.o.tubular}))
+    .concat((S.difAviso || []).filter(x => x.f && x.f.path));
+  if(!lista.length) return;
   let d = {avisos: []}; try{ d = JSON.parse(await (await (await S.cenDir.getFileHandle(AVISOS_IGS)).getFile()).text()); }catch(e){}
   const mapa = new Map((d.avisos || []).map(a => [a.clave, a])); let nuevos = 0;
-  malos.forEach(x => { const f = x.igsMal, sec = f1(x.seccion.a) + ' × ' + f1(x.seccion.b) + ' mm', clave = f.path + '|' + norm(x.o.tubular) + '|' + sec;
+  lista.forEach(x => { const f = x.f, clave = f.path + '|' + x.tipo + '|' + norm(x.progTxt) + '|' + x.igsTxt;
     let a = mapa.get(clave); if(!a){ a = {clave, alta: new Date().toISOString(), ops: []}; mapa.set(clave, a); nuevos++; }
-    Object.assign(a, {igs: winRuta(f.path.split('/').slice(1).join('/')), carpeta: f.path.split('/')[0], modelo: x.o.ruta, pieza: f.p && f.p.pieza || f.name, tubularPrograma: x.o.tubular, seccionIGS: sec, programa: S.progFile});
+    Object.assign(a, {tipo: x.tipo, igs: winRuta(f.path.split('/').slice(1).join('/')), carpeta: f.path.split('/')[0], modelo: x.o.ruta, pieza: f.p && f.p.pieza || f.name,
+      igsDice: x.igsTxt, programaDice: x.progTxt, tubularPrograma: x.o.tubular, seccionIGS: x.tipo === 'medida' ? x.igsTxt : '', programa: S.progFile});
     if(!a.ops.includes(x.o.op)) a.ops.push(x.o.op); });
   if(!nuevos) return;
   try{ d.avisos = [...mapa.values()]; d.actualizado = new Date().toISOString(); await escribirArchivo(S.cenDir, AVISOS_IGS, JSON.stringify(d, null, 2));
-    toast(`${nuevos} IGS con medida distinta al tubular: se le avisa a Ingeniería por correo para corregirlos`, 'in'); }catch(e){}
+    toast(`${nuevos} ${nuevos === 1 ? 'diferencia' : 'diferencias'} entre la descripción del material y el IGS: se le avisa a Ingeniería por correo`, 'in'); }catch(e){}
 }
 async function medirNecesarios(){
   let need;
@@ -1761,7 +1766,7 @@ function exportarManifiesto(M){
 
 /* ======================= Explosión del programa ======================= */
 function explotar(){
-  S.items = []; S.fuera = []; S.sinTub = []; S.secAviso = [];
+  S.items = []; S.fuera = []; S.sinTub = []; S.secAviso = []; S.difAviso = [];
   if(S.formato === 'laser') return explotarLaser();
   const {vig} = vigentes(); const porRuta = {};
   vig.forEach(f => (porRuta[norm(f.p.ruta)] = porRuta[norm(f.p.ruta)] || []).push(f));
@@ -1804,6 +1809,11 @@ function explotarLaser(){
     const secMal = Math.abs(m.secA - med.b) > CFG.tolSeccion || Math.abs(m.secB - med.a) > CFG.tolSeccion;
     if(secMal){ const av = {o, f, n: piezas, seccion: {a: m.secA, b: m.secB}, igsMal: f, motivo: `La sección del IGS (${f1(m.secA)} × ${f1(m.secB)} mm) no coincide con el tubular del programa (${o.tubular})`};
       if(!f.p.planta) return fuera(av.motivo, {seccion: av.seccion, igsMal: f}); av.motivo += ': se corta con su propio IGS y se avisa a Ingeniería'; S.secAviso.push(av); }
+    // cualquier otra diferencia entre la descripción del material y el IGS también se avisa (Leonardo, 2026-11-18), sea tubo o tubular:
+    // el calibre (la pared dibujada) y la descripción con error que la plataforma corrige al leerla ("3/A" por "3/4"). La pieza sigue normal
+    const tP = CFG.calibres[cal];
+    if(f.p.planta && m.wall != null && tP && Math.abs(m.wall - tP) > 0.15) S.difAviso.push({o, f, tipo: 'calibre', igsTxt: `pared ${f2(m.wall)} mm`, progTxt: `cal ${cal} (${f2(tP)} mm) · ${o.tubular}`});
+    if(f.p.planta && /\d\s*\/\s*A\b/i.test(o.tubular)) S.difAviso.push({o, f, tipo: 'descripcion', igsTxt: `${f1(m.secA)} × ${f1(m.secB)} mm`, progTxt: o.tubular});
     const t = tipoDe(med, cal), Tt = tramoDe(t.key), cb = cabeEn(m.len, Tt, f, o.maquina, t.key);
     if(cb === 'largo') return fuera(`Mide ${f0(m.len)} mm: es más largo que el tramo de ${f0(Tt)} mm`);
     if(!piezas) return fuera('Sin cantidad programada');
