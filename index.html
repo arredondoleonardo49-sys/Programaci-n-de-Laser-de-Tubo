@@ -1544,6 +1544,7 @@ const winRuta = s => String(s).replace(/\//g, '\\');
 /* lugar de un IGS en la carpeta central: <raíz>/LÍNEA/MODELO/IGS/[sub]/archivo; null si no está dentro de la carpeta IGS de un modelo */
 function lugarCentral(f){
   const d = String(f.path || '').split('/').slice(1, -1);
+  if(d.length === 2 && /\.(igs|iges)$/i.test(f.name || '')) return {linea: d[0], modelo: d[1], sub: '', key: d[0] + '/' + d[1], raiz: true};   // suelto en la carpeta del modelo, aún sin acomodar
   if(d.length < 3 || !/^IGE?S$/i.test(d[2].trim())) return null;
   return {linea: d[0], modelo: d[1], sub: d.slice(3).join('/'), key: d[0] + '/' + d[1]};
 }
@@ -1598,7 +1599,9 @@ async function leerCentral(){
         const x = {name: n, mod: fl.lastModified, size: fl.size, rel: r, sub: r.split('/').slice(1, -1).join('/')};
         if(esZ) M.zzx.set(k, x);
         else { if(!M.igs.has(k)) M.igs.set(k, []); M.igs.get(k).push(x);
-          if(/^IGE?S\//i.test(r)){ const path = h.name + '/' + key + '/' + r; lib.push({id: 'L:' + path, name: n, path, handle: e, modified: fl.lastModified, size: fl.size});
+          // los de la carpeta IGS del modelo y, también, los que se subieron sueltos en la carpeta del modelo (la rutina de orden
+          // los pasa a IGS cada 10 min, pero solo con la PC de Leonardo prendida): así se pueden usar en cuanto se suben (2026-11-19)
+          if(/^IGE?S\//i.test(r) || !r.includes('/')){ const path = h.name + '/' + key + '/' + r; lib.push({id: 'L:' + path, name: n, path, handle: e, modified: fl.lastModified, size: fl.size});
             if(lib.length % 250 === 0){ S.libMsg = `Leyendo la carpeta ${h.name}: ${f0(lib.length)} IGS…`; renderLib(); } } }
         nota(k, key); }
       else if(!rel && n === MAN){ try{ const j = JSON.parse(await (await e.getFile()).text()); M.man = {dibujos: j.dibujos || [], multiples: j.multiples || []}; }catch(err){} }
@@ -1993,12 +1996,18 @@ async function guardarPrograma(){
 async function igsPorRuta(fileId){
   if(!String(fileId).startsWith('L:') || !S.cenDir) return null;
   if(S.extra[fileId]) return S.extra[fileId];
-  const segs = String(fileId).slice(2).split('/'); let d = S.cenDir;
-  try{ for(const s of segs.slice(1, -1)) d = await d.getDirectoryHandle(s);
-    const name = segs[segs.length - 1], fh = await d.getFileHandle(name), fl = await fh.getFile(), path = segs.join('/');
-    const f = {id: fileId, name, path, handle: fh, modified: fl.lastModified, size: fl.size, p: parseNombre(name, path)};
-    S.extra[fileId] = f; return f; }
-  catch(e){ return null; }
+  const segs = String(fileId).slice(2).split('/'), name = segs[segs.length - 1];
+  // donde estaba al armar el programa y, si la rutina de orden lo movió, la carpeta IGS del modelo (o la del modelo, o IGS\MULTIPLES)
+  const dirs = [segs.slice(1, -1)], mod = segs.slice(1, 3);
+  if(mod.length === 2){ [mod.concat('IGS'), mod, mod.concat(['IGS', 'MULTIPLES'])].forEach(c => { if(c.join('/') !== dirs[0].join('/')) dirs.push(c); }); }
+  for(const ds of dirs){
+    try{ let d = S.cenDir; for(const s of ds) d = await d.getDirectoryHandle(s);
+      const fh = await d.getFileHandle(name), fl = await fh.getFile(), path = [segs[0]].concat(ds, [name]).join('/');
+      const f = {id: fileId, name, path, handle: fh, modified: fl.lastModified, size: fl.size, p: parseNombre(name, path)};
+      S.extra[fileId] = f; return f; }
+    catch(e){}
+  }
+  return null;
 }
 async function igsSuelto(p){
   if(S.extra[p.fileId]) return S.extra[p.fileId];
