@@ -2934,6 +2934,91 @@ window.addEventListener('storage', e => { if(e.key !== OEE_KEY) return;
   if(S.progOEE && programasOEE()[S.progOEE]){ const fm = firmaOEE(S.progOEE);
     if(fm !== S.oeeFirma && fm !== S.oeeAvisada){ S.oeeAvisada = fm; toast('El OEE cambió el programa del ' + fechaOEE(S.progOEE) + ': en Programa usa "Volver a cargar"', 'wa'); } }
   if(CUR === 'prog' && S.cuenta && !esOperador()) renderProg(); });
+/* ======================= Versión al día en todos los equipos, en segundo plano (Leonardo, 2026-11-18) =======================
+   «Que las plataformas en las otras PC se actualicen en automático… sin ventanas ni tener que seleccionar nada».
+   Un equipo que deja la plataforma abierta días enteros seguiría con el código viejo. Cada pantalla compara su código con el
+   publicado (cada 3 min y al volver a la pestaña) y, si hay versión nueva, se recarga sola y sin avisar en cuanto nadie la usa:
+   sin cursor en un campo, sin ventana abierta, sin guardar ni leer la carpeta central en ese momento y 1 min sin tocarla.
+   No se pierde nada: la configuración, el programa cargado y lo generado viven en el equipo o en el servidor, y vuelve a la
+   misma pantalla (pestaña, máquina, tarjetas abiertas, programa que se muestra y posición). No corre en el banco (localhost). */
+const UPD_CADA = 3*60000, UPD_QUIETO = 60000, UPD_CAMPO = 10*60000, UPD_VENTANA = 20*60000, UPD_RESTORE = 'mt-upd-restore', UPD_N = 'mt-upd-n';
+/* firma del código de la página (los <script> en línea): cambia con cada versión publicada */
+function codigoFirma(doc){
+  let s = ''; doc.querySelectorAll('script:not([src])').forEach(x => { s += x.textContent + '\u0000'; });
+  let h1 = 0x811c9dc5, h2 = 7; for(let i = 0; i < s.length; i++){ const c = s.charCodeAt(i); h1 = Math.imul(h1 ^ c, 16777619); h2 = (Math.imul(h2, 31) + c) | 0; }
+  return s.length + '.' + (h1 >>> 0).toString(36) + '.' + (h2 >>> 0).toString(36);
+}
+let _updFirma = null, _updNueva = false, _updRevisando = false, _updUltRev = 0, _updAccion = Date.now(), _updReintento = null;
+['pointerdown', 'keydown', 'input', 'wheel', 'touchstart'].forEach(ev => document.addEventListener(ev, () => { _updAccion = Date.now(); }, {capture: true, passive: true}));
+const urlPagina = () => location.href.split('#')[0].replace(/([?&])_v=\d+&?/, '$1').replace(/[?&]$/, '');
+const updActivo = () => /^https?:/.test(location.protocol) && (!esBanco() || window.__UPD_BANCO);
+async function revisarVersion(){
+  if(_updRevisando || _updNueva || navigator.onLine === false || !updActivo()) return;
+  _updRevisando = true; _updUltRev = Date.now();
+  try{
+    if(_updFirma === null) _updFirma = codigoFirma(document);
+    const url = urlPagina(), r = await fetch(url + (url.includes('?') ? '&' : '?') + '_v=' + Date.now(), {cache: 'no-store', credentials: 'same-origin'});
+    const txt = r.ok ? await r.text() : '';
+    // solo cuenta una página completa de la plataforma (no una página de error o a medio publicar)
+    if(/<title>IGS L.ser Tubo/.test(txt) && /<\/html>\s*$/i.test(txt)){
+      const f = codigoFirma(new DOMParser().parseFromString(txt, 'text/html'));
+      if(f !== _updFirma){ _updNueva = true; console.info('IGS Láser Tubo: hay una versión nueva publicada; se actualiza sola en cuanto la pantalla esté libre.'); intentarRecargar(); }
+    }
+  }catch(e){}
+  _updRevisando = false;
+}
+/* '' = se puede recargar ya; si no, por qué se espera */
+function motivoEspera(){
+  const quieto = Date.now() - _updAccion, a = document.activeElement;
+  if(S.generando || (S.enviando || 0) > 0 || (S.ocupado || 0) > 0) return 'trabajando';   // guardando, compartiendo o leyendo la carpeta central
+  if(a && a !== document.body && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) && quieto < UPD_CAMPO) return 'campo';
+  if(document.querySelector('.modal') && quieto < UPD_VENTANA) return 'ventana';   // visor de pieza o de tramo
+  const pa = $('printArea'); if(pa && pa.style.display === 'block') return 'imprimiendo';
+  if(quieto < UPD_QUIETO && !document.hidden) return 'en uso';
+  return '';
+}
+function intentarRecargar(){
+  clearTimeout(_updReintento);
+  if(!_updNueva) return;
+  // si en 15 min ya se recargó 3 veces y sigue igual (el servidor aún reparte la versión anterior), espera y vuelve a revisar
+  let n = []; try{ n = JSON.parse(sessionStorage.getItem(UPD_N) || '[]').filter(t => Date.now() - t < 15*60000); }catch(e){}
+  if(n.length >= 3){ _updNueva = false; return; }
+  if(motivoEspera()){ _updReintento = setTimeout(intentarRecargar, 15000); return; }
+  recargarAhora(n);
+}
+async function recargarAhora(n){
+  try{ guardarBorrador(); }catch(e){}
+  try{
+    const c = $('content');
+    sessionStorage.setItem(UPD_RESTORE, JSON.stringify({ts: Date.now(), tab: CUR, multMaq: S.multMaq || '', abiertos: [...(S.multAbiertos || [])],
+      res: S.res && S.res.aprobado ? S.res.id : S.res && S.res.compartido ? '__borr' : '', y: c ? Math.round(c.scrollTop) : 0}));
+    sessionStorage.setItem(UPD_N, JSON.stringify([...(n || []), Date.now()]));
+  }catch(e){}
+  // trae la versión nueva al caché del navegador para que la recarga no muestre la anterior
+  try{ await fetch(urlPagina(), {cache: 'reload', credentials: 'same-origin'}); }catch(e){}
+  setTimeout(() => location.reload(), 800);
+}
+/* después de actualizarse: misma pestaña, máquina, tarjetas abiertas, programa que se muestra y posición */
+function restaurarTrasActualizar(){
+  let st = null; try{ st = JSON.parse(sessionStorage.getItem(UPD_RESTORE)); sessionStorage.removeItem(UPD_RESTORE); }catch(e){}
+  if(!st || !(Date.now() - st.ts < 180000) || !S.cuenta) return;
+  try{
+    if(st.multMaq) S.multMaq = st.multMaq;
+    if(Array.isArray(st.abiertos)) S.multAbiertos = new Set(st.abiertos);
+    if(st.res === '__borr' && S.borrComp) S.res = S.borrComp;
+    else if(st.res && (S.db.programas || []).some(p => p.id === st.res && p.estado !== 'Cancelado')) S.res = resDeGuardado(st.res);
+    if(st.tab && st.tab !== CUR) showTab(st.tab); else renderAll();
+    if(st.y) setTimeout(() => { const c = $('content'); if(c) c.scrollTop = st.y; }, 500);
+  }catch(e){ console.warn('restaurarTrasActualizar', e); }
+}
+/* trabajo largo en curso (leer la carpeta central, medir IGS) y envíos al servidor: mientras duran, no se recarga */
+const enTrabajo = fn => async (...a) => { S.ocupado = (S.ocupado || 0) + 1; try{ return await fn(...a); } finally{ S.ocupado--; } };
+abrirCentral = enTrabajo(abrirCentral); medirNecesarios = enTrabajo(medirNecesarios); reconectarCentral = enTrabajo(reconectarCentral);
+{ const post = API.post.bind(API); API.post = async body => { S.enviando = (S.enviando || 0) + 1; try{ return await post(body); } finally{ S.enviando--; } }; }
+setTimeout(revisarVersion, 30000);
+setInterval(revisarVersion, UPD_CADA);
+document.addEventListener('visibilitychange', () => { if(!document.hidden && Date.now() - _updUltRev > 60000) revisarVersion(); });
+window.addEventListener('online', () => { setTimeout(revisarVersion, 5000); });
 // si en el OEE entra o sale alguien, o cambia su máquina predeterminada, esta pantalla se ajusta a esa cuenta
 window.addEventListener('storage', e => { if([OEE_USER_KEY, OEE_AUTH_KEY, OEE_DEFMAQ_KEY].includes(e.key)){ const c = cuentaOEE();
   if(JSON.stringify(c) !== JSON.stringify(S.cuenta)) location.reload(); } });
@@ -2949,7 +3034,7 @@ window.addEventListener('storage', e => { if([OEE_USER_KEY, OEE_AUTH_KEY, OEE_DE
   // 1) configuración compartida y programas aprobados (servidor), antes de leer el programa
   try{ await API.cargar(); }catch(e){ if(e.auth === 'clave'){ showTab('cfg'); toast(MSG_CLAVE, 'er'); } else toast('No se pudo leer el servidor: ' + e.message, 'er'); }
   // el operador no carga programa ni biblioteca: ve los aprobados de su máquina y solo se conecta la carpeta para bajar IGS
-  if(esOperador()){ renderAll(); reconectarCentral(); return; }
+  if(esOperador()){ renderAll(); restaurarTrasActualizar(); reconectarCentral(); return; }
   // 2) programa: el último que se usó en este equipo (Excel o el del OEE de esa fecha); si no, el del OEE de hoy o el siguiente
   if(!S.ops.length){ let u = null; try{ u = JSON.parse(localStorage.getItem('mt-prog') || 'null'); }catch(e){}
     const P = programasOEE();
@@ -2957,7 +3042,7 @@ window.addEventListener('storage', e => { if([OEE_USER_KEY, OEE_AUTH_KEY, OEE_DE
     else if(u && u.tipo === 'oee' && P[u.fecha]) await abrirProgramaOEE(u.fecha, true);
     else { const f = fechaOEEPorOmision(P); if(f) await abrirProgramaOEE(f); } }
   // 3) múltiples: los aprobados para ese programa (iguales en todos los equipos) o los que se generaron aquí
-  elegirResPorOmision(); renderAll();
+  elegirResPorOmision(); renderAll(); restaurarTrasActualizar();
   // 4) carpeta central: se vuelve a leer sola si el navegador conserva el permiso; si no, aviso para reconectarla con un clic
   reconectarCentral();
 })();
