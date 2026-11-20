@@ -2458,8 +2458,23 @@ function renderLib(){
 /* ======================= Vista del operador: solo los múltiples aprobados de su máquina =======================
    Sin generar, sin aprobar, sin configuración y sin leer toda la carpeta central: cada tramo con su estado; al bajar su IGS
    (se arma con los IGS de sus piezas, leídos por su ruta) queda "En proceso" en su máquina, y se termina aquí mismo. */
+/* la clave de acceso del servidor se guarda en cada equipo y el operador no tiene Configuración: si a este equipo le falta (o es otra),
+   se escribe aquí mismo, una sola vez (la escribe Ingeniería o el líder). Sin ella no se leen los múltiples aprobados (2026-11-20) */
+function claveOperadorHtml(){
+  return `<div class="card" style="max-width:720px;border-color:var(--red)"><h3 style="margin:0 0 6px">🔑 Este equipo no tiene la clave de acceso del servidor</h3>
+    <p class="sm" style="margin:0 0 10px">Sin ella no se pueden ver los múltiples aprobados ni bajar sus IGS. Pide a Ingeniería de Procesos o al líder de Láser que la escriba aquí; se guarda solo en este equipo y no se vuelve a pedir.</p>
+    <div class="row"><input id="opClave" type="password" placeholder="Clave de acceso" autocomplete="off" spellcheck="false" style="width:260px"><button class="pri" id="opClaveOk">Guardar y entrar</button><span id="opClaveMsg" class="sm"></span></div></div>`;
+}
+function bindClaveOperador(){
+  const ok = async () => { const v = $('opClave').value.trim(); if(!v) return; const m = $('opClaveMsg'); m.textContent = 'Revisando…'; m.style.color = 'var(--text2)';
+    CLAVE = v; saveClave();
+    try{ await API.cargar(); S.authErr = false; S.res = null; toast('Clave guardada en este equipo'); renderAll(); reconectarCentral(); }
+    catch(e){ m.textContent = e.auth === 'clave' ? 'La clave no es correcta' : 'No se pudo leer el servidor: ' + e.message; m.style.color = 'var(--red)'; } };
+  $('opClaveOk').onclick = ok; $('opClave').onkeydown = e => { if(e.key === 'Enter') ok(); };
+}
 function renderMultOperador(){
   const el = $('t-mult'), maq = maqOperador(), col = colorMap();
+  if(S.authErr || (API.on() && !CLAVE)){ el.innerHTML = claveOperadorHtml(); bindClaveOperador(); return; }
   if(!maq){ el.innerHTML = `<div class="card" style="max-width:640px"><h3>¿En qué máquina estás?</h3><p class="sm" style="margin:0 0 10px">Tu cuenta del OEE no tiene máquina predeterminada. Elígela aquí (se recuerda en este equipo) o pide a Ingeniería que te la asigne en el OEE.</p>
     <div class="row">${CFG.maquinas.map(m => `<button class="pri" data-mq0="${esc(m)}" style="padding:10px 24px;font-size:15px">${esc(m)}</button>`).join('')}</div></div>`;
     el.querySelectorAll('[data-mq0]').forEach(b => b.onclick = () => { MAQ = b.dataset.mq0; saveMaq(); renderAll(); }); return; }
@@ -2728,6 +2743,7 @@ function renderCons(){
 }
 function renderPiso(){
   const el = $('t-piso'), P = (S.db.programas || []).slice().sort((a, b) => (b.fecha || 0) - (a.fecha || 0)), col = colorMap();
+  if(esOperador() && (S.authErr || (API.on() && !CLAVE))){ el.innerHTML = claveOperadorHtml(); bindClaveOperador(); return; }   // sin clave no hay programas que mostrar
   if(!P.length) return el.innerHTML = `<div class="card empty">Aún no hay programas guardados. Genera los múltiples y presiona "Aprobar y guardar".</div>`;
   const ver = S.pisoVer || 'activos', soloMaq = esOperador() ? maqOperador() : '';   // el operador ve solo su máquina
   if(soloMaq && MAQ !== soloMaq){ MAQ = soloMaq; saveMaq(); }
@@ -3193,7 +3209,7 @@ window.addEventListener('storage', e => { if([OEE_USER_KEY, OEE_AUTH_KEY, OEE_DE
   if(esOperador()) t = CUR === 'piso' || t === 'piso' ? 'piso' : 'mult';
   showTab(t);
   // 1) configuración compartida y programas aprobados (servidor), antes de leer el programa
-  try{ await API.cargar(); }catch(e){ if(e.auth === 'clave'){ showTab('cfg'); toast(MSG_CLAVE, 'er'); } else toast('No se pudo leer el servidor: ' + e.message, 'er'); }
+  try{ await API.cargar(); }catch(e){ if(e.auth === 'clave'){ if(esOperador()) toast('Este equipo no tiene la clave de acceso del servidor: escríbela en Múltiples de corte (una sola vez)', 'er'); else { showTab('cfg'); toast(MSG_CLAVE, 'er'); } } else toast('No se pudo leer el servidor: ' + e.message, 'er'); }
   // el operador no carga programa ni biblioteca: ve los aprobados de su máquina y solo se conecta la carpeta para bajar IGS
   if(esOperador()){ renderAll(); restaurarTrasActualizar(); reconectarCentral(); return; }
   // 2) programa: el último que se usó en este equipo (Excel o el del OEE de esa fecha); si no, el del OEE de hoy o el siguiente
