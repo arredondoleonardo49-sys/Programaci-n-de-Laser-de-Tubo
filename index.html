@@ -2908,7 +2908,7 @@ function renderCfg(){
   <details class="card" open><summary><b>☁ Conexión con Drive (Apps Script)</b></summary><div style="margin-top:10px">
     ${S.authErr ? `<p style="color:var(--er);margin:0 0 10px">⚠ ${esc(MSG_CLAVE)}</p>` : ''}
     <div class="grid2"><label class="cfl"><span>URL de la aplicación web de Apps Script (termina en /exec)</span><input id="cUrl" value="${esc(CFG.apiUrl)}" placeholder="https://script.google.com/macros/s/…/exec"></label>
-    <label class="cfl"><span>Clave de acceso (la da Ingeniería de Procesos; se guarda solo en este equipo)</span><input id="cClave" type="password" value="${esc(CLAVE)}" autocomplete="off" spellcheck="false"></label></div>
+    <label class="cfl"><span>Clave de acceso (la da Ingeniería de Procesos; se guarda solo en este equipo)</span><span class="row" style="gap:6px;flex-wrap:nowrap"><input id="cClave" type="password" value="${esc(CLAVE)}" autocomplete="off" spellcheck="false" style="flex:1">${esProgramador() ? `<button id="cVer" type="button" title="Mostrar u ocultar la clave para escribirla en otro equipo (por ejemplo, la PC de un operador)" aria-label="Mostrar la clave">👁</button>` : ""}</span></label></div>
     <div class="row" style="margin-top:8px"><button class="pri" id="cSave">Guardar</button><button id="cTest" ${CFG.apiUrl ? '' : 'disabled'}>Probar conexión</button><span id="cMsg" class="mut sm"></span></div>
     <p class="mut sm">La URL de Línea Italia ya viene integrada; si la borras y guardas, se vuelve a usar la integrada. Sin conexión, la plataforma funciona solo en este navegador (los IGS se cargan desde tu equipo y los programas y recortes se guardan aquí). Con la URL, lee la biblioteca de Drive de Ingeniería y comparte programas, seguimiento y recortes entre equipos.</p></div></details>
   <div class="card"><div class="row"><button id="cExp">⬇ Respaldo (JSON)</button><button id="cImp">⬆ Importar respaldo</button><span style="flex:1"></span><button id="cDef">Valores de fábrica</button></div></div>`;
@@ -2929,6 +2929,7 @@ function renderCfg(){
     if(confirm(`¿Quitar el SKU ${c.sku || '(sin SKU)'} · ${c.desc} del catálogo?`)){ CFG.catalogo.splice(+b.dataset.catdel, 1); saveCfg(); renderCfg(); } });
   $('catAdd').onclick = () => { CFG.catalogo.push({sku: '', desc: 'Tubular ', peso: 0}); saveCfg(); renderCfg(); };
   el.querySelectorAll('[data-pref]').forEach(s => s.onchange = () => { CFG.skuPref[s.dataset.pref] = s.value; saveCfg(); toast('Guardado'); });
+  if($('cVer')) $('cVer').onclick = () => { const i = $('cClave'), ver = i.type === 'password'; i.type = ver ? 'text' : 'password'; $('cVer').textContent = ver ? '🙈' : '👁'; };
   $('cSave').onclick = async () => { CFG.apiUrl = $('cUrl').value.trim() || API_URL; CLAVE = $('cClave').value.trim(); saveCfg(); saveClave(); setConn(); renderCfg();
     if(CFG.apiUrl){ try{ await API.cargar(); renderAll(); toast('Conectado'); }catch(e){ toast(e.message, 'er'); renderCfg(); } } };
   // prueba la conexión y, con "estado", que la clave sea correcta
