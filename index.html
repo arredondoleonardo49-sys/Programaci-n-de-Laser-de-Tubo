@@ -1294,7 +1294,15 @@ async function abrirProgramaOEE(fecha, callado){
    Se lee del navegador (misma página de GitHub); es para ordenar la pantalla de cada quien, no un candado de seguridad. */
 const OEE_USER_KEY = 'oee_current_user_v1', OEE_AUTH_KEY = 'oee_auth_v1', OEE_DEFMAQ_KEY = 'oee_default_machines_v1', OEE_REGCTX_KEY = 'oee_reg_context_v1';
 const esBanco = () => /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+/* Equipo de operador (Leonardo, 2026-11-20): la PC de una máquina queda fija como de operador de esa máquina, sin importar qué cuenta
+   del OEE esté abierta en el navegador (si en GW1 se quedaba abierta la sesión de un programador, el operador entraba como programador).
+   Lo activa un programador en Configuración; para quitarlo se pide la clave de acceso del servidor. Se guarda solo en ese equipo. */
+const equipoOp = () => { try{ const e = JSON.parse(localStorage.getItem('mt-equipo-op') || 'null'); return e && (CFG.maquinas || []).includes(e.maq) ? e : null; }catch(e){ return null; } };
 function cuentaOEE(){
+  const c = cuentaOEEBase(), eq = equipoOp(); if(!eq) return c;
+  return {id: c ? c.id : 'equipo-' + eq.maq, nombre: c && c.operador ? c.nombre : 'Operador ' + eq.maq, usuario: c && c.operador ? c.usuario : '', rol: 'operador', maq: eq.maq, operador: true, equipo: true};
+}
+function cuentaOEEBase(){
   let u = null, tok = null; try{ u = JSON.parse(localStorage.getItem(OEE_USER_KEY) || 'null'); tok = localStorage.getItem(OEE_AUTH_KEY); }catch(e){}
   if(!u || !tok){ return esBanco() ? {id: 'banco', nombre: 'Banco de pruebas', rol: 'ingeniero', maq: '', operador: false} : null; }
   const rol = String(u.role || 'operador').toLowerCase(); let maq = '';
@@ -2256,7 +2264,7 @@ async function cancelarPrograma(pid){
 }
 /* tramo guardado → barra para hoja de corte, IGS y consumos */
 function barDe(t){
-  return {id: t.id, tipo: t.tipo, P: +t.largo, origen: t.origen, recorteId: t.recorteUsado, recorteNuevo: t.recorteNuevo, recorte: +t.largoRecorte || 0, tipoLabel: t.tipoLabel, maquina: t.maquina || '', piezas: t.piezas || [], completo: false,
+  return {id: t.id, tipo: t.tipo, inicio: t.inicio || '', fin: t.fin || '', P: +t.largo, origen: t.origen, recorteId: t.recorteUsado, recorteNuevo: t.recorteNuevo, recorte: +t.largoRecorte || 0, tipoLabel: t.tipoLabel, maquina: t.maquina || '', piezas: t.piezas || [], completo: false,
     usado: (t.piezas || []).reduce((m, p) => Math.max(m, p.x + p.L), 0), aprov: +t.aprov || 0, consumo: +t.consumo || 0};
 }
 const idCorto = t => t.programa && String(t.id).startsWith(t.programa + '-') ? String(t.id).slice(t.programa.length + 1) : String(t.id);
@@ -2458,6 +2466,25 @@ function renderLib(){
 /* ======================= Vista del operador: solo los múltiples aprobados de su máquina =======================
    Sin generar, sin aprobar, sin configuración y sin leer toda la carpeta central: cada tramo con su estado; al bajar su IGS
    (se arma con los IGS de sus piezas, leídos por su ruta) queda "En proceso" en su máquina, y se termina aquí mismo. */
+/* quitar el modo operador del equipo: solo Ingeniería, con la clave de acceso del servidor */
+function salirEquipoOp(){
+  const v = prompt('Para quitar el modo operador de este equipo, escribe la clave de acceso del servidor (la tiene Ingeniería):');
+  if(v == null) return;
+  if(!CLAVE || v.trim() !== CLAVE) return toast('Clave incorrecta: el equipo sigue en modo operador', 'er');
+  try{ localStorage.removeItem('mt-equipo-op'); }catch(e){} location.reload();
+}
+/* tarjeta de Configuración (solo programadores): dejar esta PC fija como equipo de operador de una máquina */
+function cardEquipoOp(){
+  if(!esProgramador()) return '';
+  return `<div class="card"><div class="row"><span style="flex:1;min-width:260px"><b>🖥 Equipo de operador</b><span class="sub">En la PC de una máquina, Láser Tubo queda fijo como operador de esa máquina (Múltiples de corte e Inventario de recortes), aunque en el navegador esté abierta otra cuenta del OEE. Para quitarlo se pide la clave de acceso del servidor.</span></span>
+    ${maqsCfg().map(m => `<button data-eqop="${esc(m)}">Dejar este equipo como el de ${esc(m)}</button>`).join('')}</div></div>`;
+}
+function bindEquipoOp(el){
+  el.querySelectorAll('[data-eqop]').forEach(b => b.onclick = () => { const m = b.dataset.eqop;
+    if(!confirm(`¿Dejar este equipo como equipo de operador de ${m}?\n\nDesde ahora, en este navegador Láser Tubo solo muestra los múltiples aprobados de ${m} y el inventario de recortes, aunque se entre con otra cuenta del OEE.\nPara quitarlo se pide la clave de acceso del servidor.`)) return;
+    try{ localStorage.setItem('mt-equipo-op', JSON.stringify({maq: m, desde: Date.now(), por: (S.cuenta && S.cuenta.nombre) || ''})); }catch(e){}
+    location.reload(); });
+}
 /* la clave de acceso del servidor se guarda en cada equipo y el operador no tiene Configuración: si a este equipo le falta (o es otra),
    se escribe aquí mismo, una sola vez (la escribe Ingeniería o el líder). Sin ella no se leen los múltiples aprobados (2026-11-20) */
 function claveOperadorHtml(){
@@ -2493,18 +2520,24 @@ function renderMultOperador(){
   const GA = gs.map(x => agrupar(x.g.bars)), ayuda = `Al bajar el IGS de un múltiple quedan "En proceso" en ${maq} sus tramos iguales; al bajar el siguiente, el anterior se cierra como cortado. Usa "■ Terminar" en el último del turno.`;
   el.innerHTML = `<div class="card"><div class="row"><span style="flex:1;min-width:240px"><b style="font-size:16px">Múltiples de ${esc(maq)}</b> ${badge('ok', '✓ Aprobado')}
       <span class="sub" title="El mismo programa que ven Ingeniería y la otra máquina">${esc(R.id)} · ${esc(R.archivo || '')}</span></span>
-    ${aps.length > 1 ? `<select id="opVer">${aps.map(p => `<option value="${esc(p.id)}" ${p.id === R.id ? 'selected' : ''}>${esc(p.id)} · ${esc(p.archivo || '')} · ${esc(p.estado || 'Pendiente')}</option>`).join('')}</select>` : ''}
-    <button id="mPrint">🖨 Hoja de corte</button><button id="opRef" title="Volver a leer del servidor">🔄</button><button id="mAbrir" title="Abrir todas las tarjetas">⊞</button><button id="mCerrar" title="Contraer todas las tarjetas">⊟</button></div>
+    ${aps.length > 1 ? `<select id="opVer" title="Programas aprobados de ${esc(maq)}">${aps.map(p => { const ts = deMaq(p.id), h = ts.filter(t => t.estado === 'Cortado').length; return `<option value="${esc(p.id)}" ${p.id === R.id ? 'selected' : ''}>${esc(p.archivo || p.id)} · ${h} de ${ts.length} cortados</option>`; }).join('')}</select>` : ''}
+    <button id="opOcultar" title="Ocultar o ver los múltiples que ya se cortaron">${S.opOcultar ? '👁 Ver cortados' : '◌ Ocultar cortados'}</button><button id="mPrint">🖨 Hoja de corte</button><button id="opRef" title="Volver a leer del servidor">🔄</button><button id="mAbrir" title="Abrir todas las tarjetas">⊞</button><button id="mCerrar" title="Contraer todas las tarjetas">⊟</button></div>
     <div class="row" style="margin-top:8px" title="${esc(ayuda)}"><div class="prog" style="max-width:320px"><i style="width:${bars.length ? est('Cortado')/bars.length*100 : 0}%"></i></div>
     ${dts(dt('Cortados', `${est('Cortado')} de ${bars.length}`, 'tramos', 'ok'), est('En proceso') ? dt('En proceso', est('En proceso'), '', 'wa') : '', dt('Aprovechamiento', pct(cs ? lp/cs : 0), '', lvAprov(cs ? lp/cs : 0)))}</div></div>
   ${S.cenDir ? '' : `<div class="card row" style="border-color:var(--amber)"><span style="flex:1">Para bajar el IGS de cada tramo, conecta la carpeta central <b>TUBO LASER - DIBUJOS POR MODELO</b>. Solo la primera vez en este equipo: después se recuerda.</span><button class="pri" id="opCarpeta">Conectar carpeta central</button></div>`}
-  ${gs.map(({g, gi}, k) => `<details class="card" data-gk="${esc(gk(g))}" ${abiertos.has(gk(g)) ? 'open' : ''}><summary><b>${esc(g.label)}</b>
+  ${gs.map(({g, gi}, k) => S.opOcultar && g.bars.every(b => b.estado === 'Cortado') ? '' : `<details class="card" data-gk="${esc(gk(g))}" ${abiertos.has(gk(g)) ? 'open' : ''}><summary><b>${esc(g.label)}</b>
     ${dts(dt('Cortados', `${g.bars.filter(b => b.estado === 'Cortado').length} de ${g.bars.length}`, 'tramos', 'ok'), dt('Aprovechamiento', pct(g.tot.aprov), '', lvAprov(g.tot.aprov)))}</summary>
     ${GA[k].map((x, xi) => { const E = s => x.bars.filter(b => (b.estado || 'Pendiente') === s).length, hechos = E('Cortado'), enP = E('En proceso'), pend = E('Pendiente');
       const e = hechos === x.n ? 'Cortado' : enP ? 'En proceso' : 'Pendiente', ref = gi + '|' + xi;
-      return `<div class="bar" style="${e === 'Cortado' ? 'opacity:.6' : ''}"><div class="barhd">${tramosTxt(x.ids, R.id)} ${vecesChip(x.n)}${zonaBar(x.b).ext ? ' ' + badge('in', 'Con extensión') : ''} ${badge(e === 'Cortado' ? 'ok' : e === 'En proceso' ? 'wa' : 'in', e === 'Cortado' && x.n > 1 ? 'Cortados' : e)}${x.n > 1 && hechos && hechos < x.n ? ` <span class="bmini">${hechos} de ${x.n} cortados</span>` : ''} ${pieBar(x.b)}<span style="flex:1"></span>
-      <button data-ver="${ref}" title="Ver el tramo con el dibujo de cada pieza, con zoom">🔍 Ver</button>${pend ? `<button data-opigs="${ref}" class="${enP ? '' : 'pri'}" title="Baja el IGS y marca En proceso en ${esc(maq)} ${x.n > 1 ? 'los ' + pend + ' tramos iguales que faltan' : 'el tramo'}">⬇ IGS</button>` : ''}${enP ? `<button class="pri" data-opfin="${ref}" title="Marca como cortado${x.n > 1 ? 's los tramos en proceso' : ''}">■ Terminar</button>` : ''}<button data-hoja="${ref}" title="Hoja de corte de este múltiple">🖨</button></div>${svgBar(x.b, col, {op: true, ops: x.ops, rutas: x.rutas})}</div>`; }).join('')}</details>`).join('')}`;
+      if(S.opOcultar && e === 'Cortado') return '';
+      // lo que tenía Corte en piso: horas de inicio y fin (al pasar el mouse) y los recortes que se guardan, con su ID
+      const horas = x.bars.map(b => `${String(b.id).replace(/^.*-(\d+)$/, '$1')}: ${b.inicio ? 'inicio ' + fecha(+b.inicio) : 'sin iniciar'}${b.fin ? ' · fin ' + fecha(+b.fin) : ''}`).join('\n'), recs = x.bars.map(b => b.recorteNuevo).filter(Boolean);
+      return `<div class="bar" style="${e === 'Cortado' ? 'opacity:.6' : ''}"><div class="barhd">${tramosTxt(x.ids, R.id)} ${vecesChip(x.n)}${zonaBar(x.b).ext ? ' ' + badge('in', 'Con extensión') : ''} <span title="${esc(horas)}">${badge(e === 'Cortado' ? 'ok' : e === 'En proceso' ? 'wa' : 'in', e === 'Cortado' && x.n > 1 ? 'Cortados' : e)}</span>${x.n > 1 && hechos && hechos < x.n ? ` <span class="bmini">${hechos} de ${x.n} cortados</span>` : ''} ${pieBar(x.b)}${recs.length ? ` <span class="bmini" style="color:var(--green)" title="Marca el ID en cada recorte: ${esc(recs.join(', '))}">♻ guarda ${recs.length === 1 ? esc(recs[0]) : recs.length + ' recortes'}</span>` : ''}<span style="flex:1"></span>
+      <button data-ver="${ref}" title="Ver el tramo con el dibujo de cada pieza, con zoom">🔍 Ver</button>${pend ? `<button data-opigs="${ref}" class="${enP ? '' : 'pri'}" title="Baja el IGS y marca En proceso en ${esc(maq)} ${x.n > 1 ? 'los ' + pend + ' tramos iguales que faltan' : 'el tramo'}">⬇ IGS</button>` : ''}${enP ? `<button class="pri" data-opfin="${ref}" title="Marca como cortado${x.n > 1 ? 's los tramos en proceso' : ''}">■ Terminar</button>` : ''}<button data-hoja="${ref}" title="Hoja de corte de este múltiple">🖨</button></div>${svgBar(x.b, col, {op: true, ops: x.ops, rutas: x.rutas})}</div>`; }).join('')}</details>`).join('')}
+  ${S.cuenta && S.cuenta.equipo ? `<p class="mut sm" style="margin:14px 0 0;text-align:right">🖥 Equipo de operador de <b>${esc(maq)}</b> · <a href="#" id="opSalirEq" title="Solo Ingeniería: pide la clave de acceso del servidor">Quitar el modo operador</a></p>` : ''}`;
   const res = S.res;
+  $('opOcultar').onclick = () => { S.opOcultar = !S.opOcultar; renderMultOperador(); };
+  if($('opSalirEq')) $('opSalirEq').onclick = e => { e.preventDefault(); salirEquipoOp(); };
   $('mPrint').onclick = () => hojaCorte('Programa de corte de tubular ' + res.id + ' · ' + maq, bars);
   $('opRef').onclick = async () => { try{ await API.cargar(); }catch(e){ toast(e.message, 'er'); } S.res = null; renderAll(); };
   if($('opVer')) $('opVer').onchange = e => { S.res = resDeGuardado(e.target.value); renderMultOperador(); };
@@ -2746,12 +2779,13 @@ function renderPiso(){
   if(esOperador() && (S.authErr || (API.on() && !CLAVE))){ el.innerHTML = claveOperadorHtml(); bindClaveOperador(); return; }   // sin clave no hay programas que mostrar
   if(!P.length) return el.innerHTML = `<div class="card empty">Aún no hay programas guardados. Genera los múltiples y presiona "Aprobar y guardar".</div>`;
   const ver = S.pisoVer || 'activos', soloMaq = esOperador() ? maqOperador() : '';   // el operador ve solo su máquina
+  const filtroMaq = soloMaq || (S.pisoAmbas ? '' : MAQ || '');   // Ingeniería: una máquina a la vez (o ambas), como pidió Leonardo el 2026-11-20
   if(soloMaq && MAQ !== soloMaq){ MAQ = soloMaq; saveMaq(); }
-  const lista = P.filter(p => (ver === 'todos' || !['Cortado', 'Cancelado'].includes(p.estado)) && (!soloMaq || (S.db.tramos || []).some(t => t.programa === p.id && t.maquina === soloMaq)));
+  const lista = P.filter(p => (ver === 'todos' || !['Cortado', 'Cancelado'].includes(p.estado)) && (!filtroMaq || (S.db.tramos || []).some(t => t.programa === p.id && t.maquina === filtroMaq)));
   el.innerHTML = `<div class="card"><div class="row">${[['activos', 'Pendientes y en proceso'], ['todos', 'Todos']].map(([k, t]) => `<button data-pv="${k}" class="${k === ver ? 'pri' : ''}">${t}</button>`).join('')}
-    <span style="flex:1"></span>${soloMaq ? `<span class="sm">Máquina: <b>${esc(soloMaq)}</b></span>` : `<span class="sm">Esta pantalla corta en:</span>${CFG.maquinas.map(m => `<button data-maq="${esc(m)}" class="${m === MAQ ? 'pri' : ''}">${esc(m)}</button>`).join('')}`}<button id="pRef" title="Volver a leer del servidor">🔄</button></div>
+    <span style="flex:1"></span>${soloMaq ? `<span class="sm">Máquina: <b>${esc(soloMaq)}</b></span>` : `<span class="sm" title="La máquina en la que corta esta pantalla; Ambas muestra las dos">Máquina:</span>${CFG.maquinas.map(m => `<button data-maq="${esc(m)}" class="${m === MAQ && !S.pisoAmbas ? 'pri' : ''}">${esc(m)}</button>`).join('')}<button data-maq="" class="${S.pisoAmbas ? 'pri' : ''}">Ambas</button>`}<button id="pRef" title="Volver a leer del servidor">🔄</button></div>
     <p class="mut sm" style="margin:8px 0 0" title="Al descargar el IGS de un múltiple quedan En proceso sus tramos iguales con su hora de inicio; al descargar el siguiente en la misma máquina, el anterior se cierra como cortado (lo que esté en proceso en otra máquina no se toca). Usa Terminar para el último del turno.">${MAQ ? `Cortando en <b>${esc(MAQ)}</b> · al bajar el siguiente IGS, el anterior se cierra como cortado` : '<b style="color:var(--er)">Elige en qué máquina estás antes de descargar un IGS.</b>'}</p></div>
-  ${lista.map(p => { const ts = (S.db.tramos || []).filter(t => t.programa === p.id && (!soloMaq || t.maquina === soloMaq)).sort((a, b) => String(a.tipo).localeCompare(String(b.tipo)) || a.orden - b.orden), vivos = ts.filter(t => t.estado !== 'Cancelado'), hechos = vivos.filter(t => t.estado === 'Cortado').length;
+  ${lista.map(p => { const ts = (S.db.tramos || []).filter(t => t.programa === p.id && (!filtroMaq || t.maquina === filtroMaq)).sort((a, b) => String(a.tipo).localeCompare(String(b.tipo)) || a.orden - b.orden), vivos = ts.filter(t => t.estado !== 'Cancelado'), hechos = vivos.filter(t => t.estado === 'Cortado').length;
     // los tramos iguales (el mismo múltiple) van en un renglón con cuántas veces se corta; se bajan y se cierran juntos
     const G = agrupar(ts.map(t => Object.assign(barDe(t), {_t: t, estado: t.estado, _k: (t.maquina || '') + '|' + (t.estado === 'Cancelado' ? 'X' : '')})));
     return `<details class="card" ${!['Cortado', 'Cancelado'].includes(p.estado) ? 'open' : ''}><summary><b>${esc(p.id)}</b> ${badge(p.estado === 'Cortado' ? 'ok' : p.estado === 'En proceso' ? 'wa' : 'in', p.estado || 'Pendiente')} <span class="mut sm">${fecha(+p.fecha)} · ${esc(p.archivo || '')}</span>
@@ -2767,7 +2801,7 @@ function renderPiso(){
       <td style="white-space:nowrap">${e === 'Cancelado' ? '' : `${e === 'Cortado' ? '' : `<button data-pd="${esc(ids)}" title="Descargar el IGS del múltiple${x.n > 1 ? ' (se corta ' + x.n + ' veces)' : ''}">⬇ IGS</button> `}<button data-ph="${esc(ids)}" title="Hoja de corte">🖨</button>`}${enP.length ? ` <button class="pri" data-pt="${esc(enP.map(y => y.id).join(','))}">■ Terminar</button>` : ''}</td></tr>`; }).join('')}</table></div>
     ${!soloMaq && esProgramador() && !['Cortado', 'Cancelado'].includes(p.estado) && ts.some(t => t.estado === 'Pendiente') ? `<div class="row" style="margin-top:8px"><span style="flex:1"></span><button data-pc="${esc(p.id)}" title="Cancela los tramos pendientes y libera sus recortes reservados">✖ Cancelar tramos pendientes</button></div>` : ''}</details>`; }).join('') || '<div class="card empty">No hay programas pendientes.</div>'}`;
   el.querySelectorAll('[data-pv]').forEach(b => b.onclick = () => { S.pisoVer = b.dataset.pv; renderPiso(); });
-  el.querySelectorAll('[data-maq]').forEach(b => b.onclick = () => { MAQ = b.dataset.maq; saveMaq(); renderPiso(); });
+  el.querySelectorAll('[data-maq]').forEach(b => b.onclick = () => { if(b.dataset.maq){ MAQ = b.dataset.maq; saveMaq(); S.pisoAmbas = false; } else S.pisoAmbas = true; renderPiso(); });
   el.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => cancelarPrograma(b.dataset.pc));
   $('pRef').onclick = async () => { await API.cargar().catch(e => toast(e.message, 'er')); renderAll(); };
   const tramosDe = s => s.split(',').map(id => S.db.tramos.find(x => x.id === id)).filter(Boolean);
@@ -2899,7 +2933,7 @@ function renderCfg(){
   const comp = API.on() ? `<div class="card"><div class="row"><span style="flex:1;min-width:260px"><b>🔗 Configuración compartida</b> ${S.cfgCompActiva ? badge('ok', 'Todos los equipos usan la misma') : badge('wa', 'Cada equipo usa la suya')}
     <span class="sub">${S.cfgCompActiva ? `Lo que cambies aquí cambia en todos los equipos (GW1, GW2 y oficina) en menos de un minuto${S.cfgCompTs ? ` · última actualización${S.cfgAutor ? ' de <b>' + esc(S.cfgAutor) + '</b>' : ''} ${fecha(S.cfgCompTs)}` : ''}${S.cfgPend ? ' · <b style="color:var(--amber)">subiendo cambios de este equipo…</b>' : ''}.` : 'Ahora cada equipo tiene su propia configuración y por eso pueden salir múltiples distintos. Revisa el tramo y el chuck, y compártela para que todos usen la misma.'}</span></span>
     ${!esProgramador() ? '' : S.cfgCompActiva ? '<button id="cComp" title="Si un equipo muestra otros valores: sube los de este equipo tal cual a todos los equipos">Subir mi configuración a todos</button>' : '<button class="pri" id="cComp">Usar esta configuración en todos los equipos</button>'}</div></div>` : '';
-  el.innerHTML = `${comp}${cardProgramadores()}<details class="card" open><summary><b>📏 Tramo y corte</b></summary><div class="grid2" style="margin-top:10px">
+  el.innerHTML = `${comp}${cardProgramadores()}${cardEquipoOp()}<details class="card" open><summary><b>📏 Tramo y corte</b></summary><div class="grid2" style="margin-top:10px">
     ${num('tramo', 'Largo del tramo nuevo (mm)')}${num('minRem', 'Recorte útil mínimo para guardar (mm)')}${num('tolSeccion', 'Tolerancia sección nombre vs IGS (mm)', 0.1)}${num('densidad', 'Densidad del acero (g/cm³)', 0.01)}</div>
     <p class="mut sm">El chuck, el refrentado, la separación y la extensión van por máquina (abajo). Un sobrante se guarda como recorte si, al restarle el chuck (o la extensión) y el refrentado de la máquina, quedan al menos ${f0(CFG.minRem)} mm aprovechables.</p></details>
   ${cardMaquinas()}
@@ -2915,7 +2949,7 @@ function renderCfg(){
   if($('cComp')) $('cComp').onclick = async () => {
     if(!confirm(`¿Usar esta configuración en todos los equipos?\n\nTramo ${f0(CFG.tramo)} mm · ${maqsCfg().map(m => m + ': chuck ' + f0(pmDe(m).chuck) + ' mm').join(' · ')} · recorte mínimo ${f0(CFG.minRem)} mm\n\nDesde ahora los cambios de Configuración aplican en GW1, GW2 y en cualquier otro equipo.`)) return;
     await compartirCfg(true); renderCfg(); };
-  bindProgramadores();
+  bindProgramadores(); bindEquipoOp(el);
   // quien no es programador solo consulta la configuración compartida (la conexión de su equipo sí la puede cambiar)
   if(!esProgramador()) el.querySelectorAll('input, select, button, textarea').forEach(x => { if(!['cUrl', 'cClave', 'cSave', 'cTest', 'cExp'].includes(x.id) && !x.closest('summary')) { x.disabled = true; x.title = msgSoloProg(); } });
   el.querySelectorAll('[data-k]').forEach(i => i.onchange = () => { CFG[i.dataset.k] = +i.value; saveCfg(); explotar(); renderSide(); renderCfg(); toast(S.cfgCompActiva ? 'Guardado para todos los equipos' : 'Guardado en este equipo'); });
@@ -3066,7 +3100,8 @@ function badgeOf(k){
   return null;
 }
 /* el Operador solo ve sus múltiples aprobados y Corte en piso (y el acceso al OEE); sin sesión del OEE, solo el acceso al OEE */
-const menuVisible = () => !S.cuenta ? MENU.filter(g => g.items.some(i => i.url)) : esOperador() ? MENU.map(g => ({g: g.g, items: g.items.filter(i => ['mult', 'piso', 'oee'].includes(i.k))})).filter(g => g.items.length) : MENU;
+// el operador: Múltiples de corte (con el seguimiento de Corte en piso, en una sola pantalla) e Inventario de recortes (Leonardo, 2026-11-20)
+const menuVisible = () => !S.cuenta ? MENU.filter(g => g.items.some(i => i.url)) : esOperador() ? MENU.map(g => ({g: g.g, items: g.items.filter(i => ['mult', 'rec', 'oee'].includes(i.k))})).filter(g => g.items.length) : MENU;
 function renderSide(){
   const sb = document.querySelector('.sb-info');
   if(sb) sb.innerHTML = S.cuenta ? `👤 <b style="color:var(--text2)">${esc(S.cuenta.nombre)}</b> · ${ROL_TXT[S.cuenta.rol] || esc(S.cuenta.rol)}${!esOperador() && programadores().length && esProgramador() ? ' · <b style="color:var(--blue)">Programador</b>' : ''}${esOperador() && maqOperador() ? ' · ' + esc(maqOperador()) : ''} <span style="font-family:var(--mono);opacity:.7" title="Versión de la plataforma en esta pantalla: debe ser la misma en todos los equipos">· v${verCorta()}</span>` : 'Sin sesión del OEE';
@@ -3207,7 +3242,7 @@ window.addEventListener('storage', e => { if([OEE_USER_KEY, OEE_AUTH_KEY, OEE_DE
   // nivel de la cuenta del OEE de este navegador: el operador entra directo a sus múltiples aprobados
   S.cuenta = cuentaOEE();
   if(!S.cuenta){ pantallaSinSesion(); return; }
-  if(esOperador()) t = CUR === 'piso' || t === 'piso' ? 'piso' : 'mult';
+  if(esOperador()) t = t === 'rec' ? 'rec' : 'mult';
   showTab(t);
   // 1) configuración compartida y programas aprobados (servidor), antes de leer el programa
   try{ await API.cargar(); }catch(e){ if(e.auth === 'clave'){ if(esOperador()) toast('Este equipo no tiene la clave de acceso del servidor: escríbela en Múltiples de corte (una sola vez)', 'er'); else { showTab('cfg'); toast(MSG_CLAVE, 'er'); } } else toast('No se pudo leer el servidor: ' + e.message, 'er'); }
