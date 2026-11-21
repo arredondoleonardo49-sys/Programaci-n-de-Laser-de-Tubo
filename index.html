@@ -201,7 +201,6 @@ details.card>summary>.dts{flex-basis:100%;margin:2px 0 0 18px}
 <section id="t-mult"></section>
 <section id="t-modelo"></section>
 <section id="t-cons"></section>
-<section id="t-piso"></section>
 <section id="t-rec"></section>
 <section id="t-cfg"></section>
   </main>
@@ -1179,12 +1178,15 @@ function seguirBorrador(){
   else if(!bc){ const ap = (S.db.programas || []).find(p => p.id === R.id && p.estado !== 'Cancelado'); S.res = ap ? resDeGuardado(ap.id) : null; if(ap) toast('El borrador ya se aprobó: es el que ven los operadores', 'in'); }
 }
 /* cada minuto, con la pestaña a la vista, Líder e Ingeniería releen el servidor para ver el borrador o la aprobación del otro */
-const firmaServidor = () => (S.borrComp ? S.borrComp.sello : '') + '|' + (S.cfgCompJSON || '').length + ':' + (S.cfgCompTs || '') + '|' + (S.db.programas || []).map(p => p.id + ':' + p.estado).join(',');
+// también el avance en piso de cada tramo: Múltiples de corte muestra lo que van cortando GW1 y GW2 (2026-11-20)
+const firmaServidor = () => (S.borrComp ? S.borrComp.sello : '') + '|' + (S.cfgCompJSON || '').length + ':' + (S.cfgCompTs || '') + '|' + (S.db.programas || []).map(p => p.id + ':' + p.estado).join(',')
+  + '|' + (S.db.tramos || []).map(t => (t.estado || '').charAt(0) + (t.inicio || '') + (t.fin || '')).join(',');
 setInterval(async () => {
   try{ if(document.hidden || !API.on() || !S.cuenta || esOperador() || S.generando) return; }catch(e){ return; }
   const antes = firmaServidor();
   try{ await API.cargar(); }catch(e){ return; }
   seguirBorrador(); if(!S.res) elegirResPorOmision();
+  if(S.res && S.res.aprobado && firmaServidor() !== antes) S.res = resDeGuardado(S.res.id) || S.res;
   if(firmaServidor() !== antes) renderAll();
 }, 60000);
 
@@ -2054,6 +2056,7 @@ async function igsTramo(bar, label){
 const esCompleto = bar => bar.completo || (bar.piezas.length > 0 && bar.piezas.every(p => p.completo) && new Set(bar.piezas.map(p => p.fileId)).size === 1);
 async function descargarTramo(bar, label, registrar){
   try{
+    await esperarCarpeta();
     if(esCompleto(bar)){
       const p0 = bar.piezas[0], f = S.lib.find(x => x.id === p0.fileId) || await igsSuelto(p0), txt = await textoDe(f), k = bar.piezas.length;   // igsSuelto también busca por ruta
       dl(f.name.replace(/\.gz$/i, ''), txt, 'application/iges');
@@ -2067,17 +2070,38 @@ async function descargarTramo(bar, label, registrar){
 const GEO = new Map(), GEO_SYM = new Map(), GEO_PEND = new Set();
 function geoDe(fileId){
   if(GEO.has(fileId)) return GEO.get(fileId);
-  const pr = (async () => { const f = S.lib.find(x => x.id === fileId) || await igsPorRuta(fileId); if(!f) return null;
+  // el operador no lee la biblioteca: el IGS se abre por su ruta en la carpeta central (o del servidor, si se subió ahí)
+  const pr = (async () => { const f = S.lib.find(x => x.id === fileId) || await igsSuelto({fileId, pieza: '', ruta: ''}).catch(() => null); if(!f) return null;
     try{ const txt = await textoDe(f), r = IGES.inspect(txt, f.p.med ? [f.p.med.a, f.p.med.b] : null, f.p.med && f.p.med.forma); if(!r.ok) return null;
       return {r, k: (MEAS[medKey(f)] || {}).k || 1, name: f.name}; }catch(e){ return null; } })();
+  // lo que no se pudo leer no se recuerda: al abrir la página la carpeta central se reconecta después de dibujar los múltiples,
+  // y el dibujo de las piezas y 🔍 Ver se quedaban sin IGS aunque la carpeta ya estuviera conectada (operadores, 2026-11-20)
+  pr.then(g => { if(!g && GEO.get(fileId) === pr) GEO.delete(fileId); });
   GEO.set(fileId, pr); return pr;
 }
-/* símbolo SVG de la pieza en planta (barrenos, ranuras y extremos), estirado al rectángulo de la pieza en la barra */
+/* el primer clic de la pantalla reconecta la carpeta central: si ese clic fue en 🔍 Ver o ⬇ IGS, se espera a que termine */
+async function esperarCarpeta(){ for(let t = 0; !S.cenDir && S.cenPend && t < 5000; t += 200) await new Promise(r => setTimeout(r, 200)); }
+/* símbolo SVG de la pieza en planta (barrenos, ranuras y extremos), estirado al rectángulo de la pieza en la barra.
+   La barra exagera mucho el alto (un tramo de 6 m cabe en el ancho de la pantalla) y un barreno redondo salía como una elipse
+   alargada. Ahora cada barreno o ranura va en su lugar a lo largo de la pieza, pero ensanchado con la misma escala del alto,
+   hasta donde quepa sin encimarse con el de junto ni salirse de la pieza (Leonardo, 2026-11-20: «que no se vea tan deformado»). */
+const BAR_H = 58;
 function simboloGeo(g){
   // barrenos y cortes en rojo oscuro, extremos en gris oscuro: se distinguen sobre cualquier color de pieza
-  const L = g.r.len || 1, W = g.r.secA || 1, path = f => g.r.polys.filter(f)
-    .map(pl => pl.p.map((q, i) => (i ? 'L' : 'M') + (q[0]/L*1000).toFixed(1) + ',' + (-q[1]/W*100).toFixed(1)).join('')).join('');
-  const df = path(pl => pl.feat), de = path(pl => pl.end && !pl.feat);
+  const L = g.r.len || 1, W = g.r.secA || 1, E = Math.max(1, (BAR_H - 4)*(CFG.tramo || 6100)/(1000*W));
+  // un barreno viene en varios trazos (mitades del círculo, cara de arriba y de abajo): los trazos que se tocan a lo largo del
+  // tubo forman un solo rasgo y se ensanchan juntos alrededor de su centro
+  const ps = g.r.polys.filter(pl => pl.feat).map(pl => { const xs = pl.p.map(q => q[0]); return {pl, x0: Math.min(...xs), x1: Math.max(...xs)}; }).sort((a, b) => a.x0 - b.x0);
+  const fs = []; ps.forEach(p => { const f = fs[fs.length - 1]; if(f && p.x0 <= f.x1 + 0.3){ f.x1 = Math.max(f.x1, p.x1); f.pls.push(p.pl); } else fs.push({x0: p.x0, x1: p.x1, pls: [p.pl]}); });
+  fs.forEach(f => { f.cx = (f.x0 + f.x1)/2; f.w = f.x1 - f.x0; });
+  // primero los que tienen menos lugar (junto a los extremos); cada uno toma el espacio que le dejan los ya acomodados
+  fs.forEach(f => { f.cap = f.w > 0.01 ? Math.min(E, 2*Math.min(f.cx, L - f.cx)/f.w) : 1; });
+  [...fs].sort((a, b) => a.cap - b.cap).forEach(f => { let e = f.cap;
+    if(f.w > 0.01) fs.forEach(o => { if(o === f) return; const d = 2*Math.abs(o.cx - f.cx); e = Math.min(e, o.e != null ? (d - o.w*o.e)/f.w : d/(f.w + o.w)); });
+    f.e = Math.max(1, e); });
+  const xy = (x, y) => (x/L*1000).toFixed(1) + ',' + (-y/W*100).toFixed(1);
+  const df = fs.map(f => f.pls.map(pl => pl.p.map((q, i) => (i ? 'L' : 'M') + xy(f.cx + (q[0] - f.cx)*f.e, q[1])).join('')).join('')).join('');
+  const de = g.r.polys.filter(pl => pl.end && !pl.feat).map(pl => pl.p.map((q, i) => (i ? 'L' : 'M') + xy(q[0], q[1])).join('')).join('');
   return (de ? `<path d="${de}" fill="none" stroke="#2c2c2a" stroke-width="1" vector-effect="non-scaling-stroke"/>` : '') + (df ? `<path d="${df}" fill="none" stroke="#a32d2d" stroke-width="1.3" vector-effect="non-scaling-stroke"/>` : '');
 }
 let geoCorriendo = false;
@@ -2085,6 +2109,7 @@ async function cargarGeoPendientes(){
   if(geoCorriendo || !GEO_PEND.size) return; geoCorriendo = true;
   const ids = [...GEO_PEND]; GEO_PEND.clear(); let nuevos = 0, i = 0;
   const worker = async () => { while(i < ids.length){ const id = ids[i++]; const g = await geoDe(id); if(GEO_SYM.has(id)) continue;
+    if(!g && !S.cenDir && String(id).startsWith('L:')) continue;   // sin carpeta central todavía: se dibuja en cuanto se conecte
     GEO_SYM.set(id, g ? {n: GEO_SYM.size, svg: simboloGeo(g)} : null); nuevos++; } };
   await Promise.all([worker(), worker(), worker(), worker()]);
   let defs = $('geoDefs'); if(!defs){ defs = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); defs.id = 'geoDefs'; defs.setAttribute('width', '0'); defs.setAttribute('height', '0'); defs.style.position = 'absolute'; document.body.appendChild(defs); }
@@ -2096,8 +2121,9 @@ async function cargarGeoPendientes(){
 /* visor de un tramo: todas sus piezas acomodadas con su geometría, con zoom (Planta, Frente, Sección) */
 async function abrirVisorTramo(bar, label, colorOf){
   toast('Leyendo las piezas de ' + (bar.id || 'el tramo') + '…', 'in');
+  await esperarCarpeta();
   const geos = await Promise.all(bar.piezas.map(p => geoDe(p.fileId)));
-  if(!geos.some(Boolean)) return toast('No pude leer los IGS de este tramo', 'er');
+  if(!geos.some(Boolean)) return toast(S.cenDir ? 'No pude leer los IGS de este tramo en la carpeta central' : 'Conecta la carpeta central (aviso de arriba) para ver el dibujo de las piezas', 'er');
   S.visor = {tramo: {bar, label, geos, col: colorOf || colorMap()}, vista: 'XY'}; dibujarVisorTramo(); $('toast') && ($('toast').style.display = 'none');
 }
 function dibujarVisorTramo(){
@@ -2145,7 +2171,7 @@ function svgBar(b, colorOf, opts){
   // dentro de la barra va el nombre de la pieza y su modelo, sin el largo (Leonardo, 2026-11-18). Las piezas iguales seguidas se
   // rotulan juntas ("6× PATA"); si el rótulo no cabe completo, va en la leyenda de abajo. El largo se ve al pasar el mouse.
   // opts.op: también la OP; opts.ops(i): OPs de la pieza i en todos los tramos iguales (cuando se muestran agrupados)
-  opts = opts || {}; const W = 1000, H = 58, T = b.P, sc = W/Math.max(T, CFG.tramo), zb = zonaBar(b), ch = zb.ch, geo = CFG.verGeo !== false;
+  opts = opts || {}; const W = 1000, H = BAR_H, T = b.P, sc = W/Math.max(T, CFG.tramo), zb = zonaBar(b), ch = zb.ch, geo = CFG.verGeo !== false;
   const opsDe = i => opts.ops ? opts.ops(i) : [b.piezas[i].op].filter(Boolean), rutasDe = i => opts.rutas ? opts.rutas(i) : [b.piezas[i].ruta];
   let s = `<svg viewBox="-2 -2 ${W + 4} ${H + 4}" role="img" aria-label="Tramo ${esc(b.id)}" style="font-family:'IBM Plex Sans',system-ui,sans-serif"><rect x="0" y="0" width="${T*sc}" height="${H}" rx="3" fill="var(--tube)" stroke="var(--mut)" stroke-width="1"/>`;
   s += `<defs><pattern id="hR" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="#c0dd97"/><line x1="0" y1="0" x2="0" y2="7" stroke="#97c459" stroke-width="2"/></pattern>
@@ -2499,6 +2525,16 @@ function bindClaveOperador(){
     catch(e){ m.textContent = e.auth === 'clave' ? 'La clave no es correcta' : 'No se pudo leer el servidor: ' + e.message; m.style.color = 'var(--red)'; } };
   $('opClaveOk').onclick = ok; $('opClave').onkeydown = e => { if(e.key === 'Enter') ok(); };
 }
+/* estado en piso de un múltiple (sus tramos iguales): pendiente, en proceso o cortado, con las horas de inicio y fin al pasar el
+   mouse y los recortes que se guardan con su ID. Lo que era Corte en piso, ahora dentro de Múltiples de corte (Leonardo, 2026-11-20) */
+function estadoPiso(x, conMaq){
+  const E = s => x.bars.filter(b => (b.estado || 'Pendiente') === s).length, hechos = E('Cortado'), enP = E('En proceso'), pend = E('Pendiente');
+  const e = hechos === x.n ? 'Cortado' : enP ? 'En proceso' : 'Pendiente', recs = x.bars.map(b => b.recorteNuevo).filter(Boolean);
+  const horas = x.bars.map(b => `${String(b.id).replace(/^.*-(\d+)$/, '$1')}: ${b.inicio ? 'inicio ' + fecha(+b.inicio) : 'sin iniciar'}${b.fin ? ' · fin ' + fecha(+b.fin) : ''}${conMaq && b.maquina ? ' · ' + b.maquina : ''}`).join('\n');
+  return {e, hechos, enP, pend,
+    html: `<span title="${esc(horas)}">${badge(e === 'Cortado' ? 'ok' : e === 'En proceso' ? 'wa' : 'in', e === 'Cortado' && x.n > 1 ? 'Cortados' : e)}</span>${x.n > 1 && hechos && hechos < x.n ? ` <span class="bmini">${hechos} de ${x.n} cortados</span>` : ''}`,
+    recs: recs.length ? ` <span class="bmini" style="color:var(--green)" title="Marca el ID en cada recorte: ${esc(recs.join(', '))}">♻ guarda ${recs.length === 1 ? esc(recs[0]) : recs.length + ' recortes'}</span>` : ''};
+}
 function renderMultOperador(){
   const el = $('t-mult'), maq = maqOperador(), col = colorMap();
   if(S.authErr || (API.on() && !CLAVE)){ el.innerHTML = claveOperadorHtml(); bindClaveOperador(); return; }
@@ -2527,13 +2563,10 @@ function renderMultOperador(){
   ${S.cenDir ? '' : `<div class="card row" style="border-color:var(--amber)"><span style="flex:1">Para bajar el IGS de cada tramo, conecta la carpeta central <b>TUBO LASER - DIBUJOS POR MODELO</b>. Solo la primera vez en este equipo: después se recuerda.</span><button class="pri" id="opCarpeta">Conectar carpeta central</button></div>`}
   ${gs.map(({g, gi}, k) => S.opOcultar && g.bars.every(b => b.estado === 'Cortado') ? '' : `<details class="card" data-gk="${esc(gk(g))}" ${abiertos.has(gk(g)) ? 'open' : ''}><summary><b>${esc(g.label)}</b>
     ${dts(dt('Cortados', `${g.bars.filter(b => b.estado === 'Cortado').length} de ${g.bars.length}`, 'tramos', 'ok'), dt('Aprovechamiento', pct(g.tot.aprov), '', lvAprov(g.tot.aprov)))}</summary>
-    ${GA[k].map((x, xi) => { const E = s => x.bars.filter(b => (b.estado || 'Pendiente') === s).length, hechos = E('Cortado'), enP = E('En proceso'), pend = E('Pendiente');
-      const e = hechos === x.n ? 'Cortado' : enP ? 'En proceso' : 'Pendiente', ref = gi + '|' + xi;
-      if(S.opOcultar && e === 'Cortado') return '';
-      // lo que tenía Corte en piso: horas de inicio y fin (al pasar el mouse) y los recortes que se guardan, con su ID
-      const horas = x.bars.map(b => `${String(b.id).replace(/^.*-(\d+)$/, '$1')}: ${b.inicio ? 'inicio ' + fecha(+b.inicio) : 'sin iniciar'}${b.fin ? ' · fin ' + fecha(+b.fin) : ''}`).join('\n'), recs = x.bars.map(b => b.recorteNuevo).filter(Boolean);
-      return `<div class="bar" style="${e === 'Cortado' ? 'opacity:.6' : ''}"><div class="barhd">${tramosTxt(x.ids, R.id)} ${vecesChip(x.n)}${zonaBar(x.b).ext ? ' ' + badge('in', 'Con extensión') : ''} <span title="${esc(horas)}">${badge(e === 'Cortado' ? 'ok' : e === 'En proceso' ? 'wa' : 'in', e === 'Cortado' && x.n > 1 ? 'Cortados' : e)}</span>${x.n > 1 && hechos && hechos < x.n ? ` <span class="bmini">${hechos} de ${x.n} cortados</span>` : ''} ${pieBar(x.b)}${recs.length ? ` <span class="bmini" style="color:var(--green)" title="Marca el ID en cada recorte: ${esc(recs.join(', '))}">♻ guarda ${recs.length === 1 ? esc(recs[0]) : recs.length + ' recortes'}</span>` : ''}<span style="flex:1"></span>
-      <button data-ver="${ref}" title="Ver el tramo con el dibujo de cada pieza, con zoom">🔍 Ver</button>${pend ? `<button data-opigs="${ref}" class="${enP ? '' : 'pri'}" title="Baja el IGS y marca En proceso en ${esc(maq)} ${x.n > 1 ? 'los ' + pend + ' tramos iguales que faltan' : 'el tramo'}">⬇ IGS</button>` : ''}${enP ? `<button class="pri" data-opfin="${ref}" title="Marca como cortado${x.n > 1 ? 's los tramos en proceso' : ''}">■ Terminar</button>` : ''}<button data-hoja="${ref}" title="Hoja de corte de este múltiple">🖨</button></div>${svgBar(x.b, col, {op: true, ops: x.ops, rutas: x.rutas})}</div>`; }).join('')}</details>`).join('')}
+    ${GA[k].map((x, xi) => { const ep = estadoPiso(x), ref = gi + '|' + xi;
+      if(S.opOcultar && ep.e === 'Cortado') return '';
+      return `<div class="bar" style="${ep.e === 'Cortado' ? 'opacity:.6' : ''}"><div class="barhd">${tramosTxt(x.ids, R.id)} ${vecesChip(x.n)}${zonaBar(x.b).ext ? ' ' + badge('in', 'Con extensión') : ''} ${ep.html} ${pieBar(x.b)}${ep.recs}<span style="flex:1"></span>
+      <button data-ver="${ref}" title="Ver el tramo con el dibujo de cada pieza, con zoom">🔍 Ver</button>${ep.pend ? `<button data-opigs="${ref}" class="${ep.enP ? '' : 'pri'}" title="Baja el IGS y marca En proceso en ${esc(maq)} ${x.n > 1 ? 'los ' + ep.pend + ' tramos iguales que faltan' : 'el tramo'}">⬇ IGS</button>` : ''}${ep.enP ? `<button class="pri" data-opfin="${ref}" title="Marca como cortado${x.n > 1 ? 's los tramos en proceso' : ''}">■ Terminar</button>` : ''}<button data-hoja="${ref}" title="Hoja de corte de este múltiple">🖨</button></div>${svgBar(x.b, col, {op: true, ops: x.ops, rutas: x.rutas})}</div>`; }).join('')}</details>`).join('')}
   ${S.cuenta && S.cuenta.equipo ? `<p class="mut sm" style="margin:14px 0 0;text-align:right">🖥 Equipo de operador de <b>${esc(maq)}</b> · <a href="#" id="opSalirEq" title="Solo Ingeniería: pide la clave de acceso del servidor">Quitar el modo operador</a></p>` : ''}`;
   const res = S.res;
   $('opOcultar').onclick = () => { S.opOcultar = !S.opOcultar; renderMultOperador(); };
@@ -2554,7 +2587,12 @@ function renderMultOperador(){
 }
 function renderMult(){
   if(esOperador()) return renderMultOperador();
+  // Corte en piso va aquí mismo (Leonardo, 2026-11-20: «combina Múltiples de corte y Corte en piso»): sin programa cargado para
+  // generar, se ve el programa aprobado que sigue en piso (con tramos pendientes o en proceso)
+  if(!S.res && !S.items.length){ const a0 = programasAprobados(), vivo = p => (S.db.tramos || []).some(t => t.programa === p.id && (t.estado === 'Pendiente' || t.estado === 'En proceso'));
+    const p0 = a0.find(vivo) || a0[0]; if(p0) S.res = resDeGuardado(p0.id); }
   const el = $('t-mult'), R = S.res, col = colorMap();
+  const avance = pid => { const ts = (S.db.tramos || []).filter(t => t.programa === pid && t.estado !== 'Cancelado'); return ts.filter(t => t.estado === 'Cortado').length + ' de ' + ts.length + ' cortados'; };
   // qué programa se ve: uno aprobado (igual en todos los equipos) o el que se generó aquí y no se ha aprobado
   // borrador compartido (el mismo para los programadores) y, solo si no se pudo compartir, el generado en este equipo
   const prog = esProgramador(), bc = S.borrComp, aps = programasAprobados(), bo = leerBorrador();
@@ -2563,7 +2601,7 @@ function renderMult(){
     <span class="sub">${R && R.aprobado ? '✓ Aprobado: el mismo en todos los equipos' : R && R.compartido ? `Borrador compartido${R.autor ? ' de ' + esc(R.autor) : ''}: los programadores lo ven igual; los operadores, hasta que se apruebe` : 'Generado aquí, sin aprobar: otros equipos no lo ven'}</span></span>
     <select id="mVer" style="max-width:520px">${bc ? `<option value="__borr" ${R && R.compartido ? 'selected' : ''}>Borrador compartido · ${esc(bc.archivo || bc.id)}${bc.autor ? ' · ' + esc(bc.autor) : ''}${bc.ts ? ' · ' + fecha(bc.ts) : ''}</option>` : ''}
     ${hayLocal ? `<option value="" ${R && !R.aprobado && !R.compartido ? 'selected' : ''}>Generado en este equipo · sin compartir</option>` : ''}
-    ${aps.map(p => `<option value="${esc(p.id)}" ${R && R.aprobado && R.id === p.id ? 'selected' : ''}>${esc(p.id)} · ${esc(p.archivo || '')} · ${esc(p.estado || 'Pendiente')}${p.archivo && p.archivo === S.progFile ? ' · programa cargado' : ''}</option>`).join('')}</select></div></div>` : '';
+    ${aps.map(p => `<option value="${esc(p.id)}" ${R && R.aprobado && R.id === p.id ? 'selected' : ''}>${esc(p.id)} · ${esc(p.archivo || '')} · ${esc(avance(p.id))}${p.archivo && p.archivo === S.progFile ? ' · programa cargado' : ''}</option>`).join('')}</select></div></div>` : '';
   const dis = prog ? '' : `disabled title="${esc(msgSoloProg())}"`;
   const cfgBar = verSel + `<div class="card"><div class="row">
     <label class="cfl" style="flex-direction:row;align-items:center;gap:6px">Criterio <select id="mMode" ${dis}><option value="prio" ${CFG.modo === 'prio' ? 'selected' : ''}>Prioridad por hora de inicio de OP</option><option value="max" ${CFG.modo === 'max' ? 'selected' : ''}>Máximo aprovechamiento (todo junto)</option></select></label>
@@ -2575,24 +2613,32 @@ function renderMult(){
   if(!R){ el.innerHTML = cfgBar + (S.fuera.length ? fueraHtml() : ''); bindMult(); return; }
   // pestañas por máquina: cada pantalla ve solo lo que corta su máquina (GW1 o GW2); por omisión, la de esta pantalla
   const maqs = [...new Set(R.grupos.map(g => g.maquina).filter(Boolean))].sort();
-  const MQ = maqs.length ? (maqs.includes(S.multMaq) ? S.multMaq : maqs.includes(MAQ) ? MAQ : maqs[0]) : '';
-  S.multMaq = MQ;
+  const MQ1 = maqs.length ? (maqs.includes(S.multMaq) ? S.multMaq : maqs.includes(MAQ) ? MAQ : maqs[0]) : '';
+  S.multMaq = MQ1; const MQ = S.multAmbas && maqs.length > 1 ? '' : MQ1; S.multVis = MQ;   // «Ambas»: las dos máquinas juntas
   const sumar = gs => gs.reduce((s, g) => { s.tr += g.tot.tramos; s.ru += g.tot.recUsados; s.rg += g.tot.recGenerados; s.c += g.tot.consumo; s.l += g.tot.largoPiezas; s.kg += g.kgm ? g.tot.consumo/1000*g.kgm : 0; s.tra += g.tot.consumo/(g.tramo || CFG.tramo); s.p += g.tot.piezas; return s; }, {tr: 0, ru: 0, rg: 0, c: 0, l: 0, kg: 0, tra: 0, p: 0});
   const vis = R.grupos.map((g, gi) => ({g, gi})).filter(x => !MQ || x.g.maquina === MQ), tot = sumar(vis.map(x => x.g));
   // las tarjetas empiezan contraídas; las que abras se quedan abiertas aunque la pantalla se vuelva a dibujar
   const abiertos = S.multAbiertos || (S.multAbiertos = new Set()), gk = g => (g.maquina || '') + '|' + g.grupo;
-  const tabs = maqs.length ? `<div class="row" style="margin:0 0 12px">${maqs.map(m => { const t = sumar(R.grupos.filter(g => g.maquina === m)); return `<button data-mq="${esc(m)}" class="${m === MQ ? 'pri' : ''}" style="padding:8px 18px;font-size:14px"><b>${esc(m)}</b> <span style="font-size:11.5px;opacity:.8;font-weight:400">· ${t.tr} tramos · ${f0(t.p)} piezas</span></button>`; }).join('')}
-    <span style="flex:1"></span><button id="mAbrir" title="Abrir todas las tarjetas de ${esc(MQ)}">⊞ Abrir todo</button><button id="mCerrar" title="Contraer todas las tarjetas">⊟ Contraer todo</button></div>` : '';
+  const tabs = maqs.length ? `<div class="row" style="margin:0 0 12px">${maqs.map(m => { const t = sumar(R.grupos.filter(g => g.maquina === m)); return `<button data-mq="${esc(m)}" class="${m === MQ ? 'pri' : ''}" style="padding:8px 18px;font-size:14px"><b>${esc(m)}</b> <span style="font-size:11.5px;opacity:.8;font-weight:400">· ${t.tr} tramos · ${f0(t.p)} piezas</span></button>`; }).join('')}${maqs.length > 1 ? `<button data-mq="" class="${MQ ? '' : 'pri'}" style="padding:8px 18px;font-size:14px" title="Las dos máquinas juntas"><b>Ambas</b></button>` : ''}
+    <span style="flex:1"></span><button id="mAbrir" title="Abrir todas las tarjetas de ${esc(MQ || 'las dos máquinas')}">⊞ Abrir todo</button><button id="mCerrar" title="Contraer todas las tarjetas">⊟ Contraer todo</button></div>` : '';
+  // programa aprobado: su avance en piso (lo que era Corte en piso), de la máquina elegida o de las dos
+  const vb = vis.flatMap(x => x.g.bars), nE = s => vb.filter(b => (b.estado || 'Pendiente') === s).length;
+  const pisoHtml = R.aprobado ? `<div class="row" style="margin-top:8px" title="En la PC de cada máquina, al bajar el IGS de un múltiple sus tramos quedan En proceso; al bajar el siguiente, el anterior se cierra como cortado. Se actualiza solo cada minuto.">
+    <div class="prog" style="max-width:320px"><i style="width:${vb.length ? nE('Cortado')/vb.length*100 : 0}%"></i></div>${dts(dt('Cortados' + (MQ ? ' · ' + esc(MQ) : ''), `${nE('Cortado')} de ${vb.length}`, 'tramos', 'ok'), nE('En proceso') ? dt('En proceso', nE('En proceso'), '', 'wa') : '')}
+    <span style="flex:1"></span><button id="mOcultar" title="Ocultar o ver los múltiples que ya se cortaron">${S.opOcultar ? '👁 Ver cortados' : '◌ Ocultar cortados'}</button><button id="mRef" title="Volver a leer del servidor">🔄</button>
+    ${prog && !['Cortado', 'Cancelado'].includes(R.estado) && R.grupos.some(g => g.bars.some(b => b.estado === 'Pendiente')) ? `<button id="mCancel" title="Cancela los tramos pendientes del programa (GW1 y GW2) y libera sus recortes reservados">✖ Cancelar pendientes</button>` : ''}</div>` : '';
   // solo lo importante (Leonardo, 2026-11-18): tramos, aprovechamiento y consumo; los recortes van en el detalle de tramos
-  el.innerHTML = cfgBar + tabs + `<div class="kpis"><div class="kpi"><span>Tramos nuevos${MQ ? ' · ' + esc(MQ) : ''}</span><b>${tot.tr}</b><span>${f0(tot.p)} piezas${tot.ru ? ' · ' + tot.ru + ' recortes usados' : ''}</span></div>
+  el.innerHTML = cfgBar + tabs +`<div class="kpis"><div class="kpi"><span>Tramos nuevos${MQ ? ' · ' + esc(MQ) : ''}</span><b>${tot.tr}</b><span>${f0(tot.p)} piezas${tot.ru ? ' · ' + tot.ru + ' recortes usados' : ''}</span></div>
   <div class="kpi"><span>Aprovechamiento</span><b style="color:var(--${lvAprov(tot.l/tot.c)})">${pct(tot.l/tot.c)}</b></div><div class="kpi"><span>Consumo real</span><b>${u(f2(tot.kg), 'kg')}</b><span>${f2(tot.tra)} TRA</span></div></div>
   <div class="card"><div class="row"><b style="flex:1">${esc(R.id)} ${R.aprobado ? badge('ok', '✓ Aprobado · ' + (R.estado || 'Pendiente')) : R.guardado ? badge('ok', 'Aprobado') : badge('wa', R.compartido ? 'Borrador compartido · sin aprobar' : 'Sin aprobar')}</b>
-  <button id="mPrint" title="Hoja de corte de ${esc(MQ || 'todo el programa')}">🖨 Hoja de corte${MQ ? ' ' + esc(MQ) : ''}</button><button id="mXls">📊 Consumos (Excel)</button><button class="pri" id="mSave" ${R.guardado ? 'disabled' : prog ? '' : 'disabled'} title="${prog ? '' : esc(msgSoloProg()) + '. '}Se guarda el programa completo (GW1 y GW2) y se ve igual en todos los equipos. Los recortes usados quedan reservados y los nuevos se registran Por generar; pasan a Disponible cuando el tramo se marca cortado.">💾 Aprobar y guardar</button></div></div>
+  <button id="mPrint" title="Hoja de corte de ${esc(MQ || 'todo el programa')}">🖨 Hoja de corte${MQ ? ' ' + esc(MQ) : ''}</button><button id="mXls">📊 Consumos (Excel)</button><button class="pri" id="mSave" ${R.guardado ? 'disabled' : prog ? '' : 'disabled'} title="${prog ? '' : esc(msgSoloProg()) + '. '}Se guarda el programa completo (GW1 y GW2) y se ve igual en todos los equipos. Los recortes usados quedan reservados y los nuevos se registran Por generar; pasan a Disponible cuando el tramo se marca cortado.">💾 Aprobar y guardar</button></div>${pisoHtml}</div>
   ${cuadreHtml(cuadrePrograma(R))}
-  ${vis.map(({g, gi}) => `<details class="card" data-gk="${esc(gk(g))}" ${abiertos.has(gk(g)) ? 'open' : ''}><summary>${!maqs.length && g.maquina ? badge('in', g.maquina) + ' ' : ''}<b>${esc(g.label)}</b>${g.completo ? ' ' + badge('ok', '▣ ' + g.dibujo) : ''} ${g.sku ? '' : badge('wa', 'Sin SKU en el catálogo')}${g.nSku > 1 ? badge('wa', `Hay ${g.nSku} SKU: elige en Configuración`) : ''} ${g.largas.length ? badge('er', g.largas.length + ' piezas no caben') : ''}${perfilAparte(g, R) ? ' ' + badge('wa', 'Perfil distinto (' + perfilTxt(g.perfil) + '): va en su propio IGS') : ''}
-    ${dts(dt('Tramos', g.tot.tramos + g.tot.recUsados), dt('Piezas', g.tot.piezas), dt('Aprovechamiento', pct(g.tot.aprov), '', lvAprov(g.tot.aprov)))}</summary>
-    ${agrupar(g.bars).map(x => { const ref = gi + '|' + g.bars.indexOf(x.b); return `<div class="bar"><div class="barhd">${tramosTxt(x.ids, R.id)} ${vecesChip(x.n)}${zonaBar(x.b).ext ? ' ' + badge('in', 'Con extensión') : ''} ${pieBar(x.b)}<span style="flex:1"></span>
-      <button data-ver="${ref}" title="Ver el tramo con el dibujo de cada pieza (barrenos, ranuras y cortes), con zoom">🔍 Ver</button><button data-igs="${ref}" title="IGS con las piezas acomodadas a lo largo del tubo">⬇ IGS</button><button data-hoja="${ref}" title="Hoja de corte de este múltiple">🖨</button></div>${svgBar(x.b, col, {op: true, ops: x.ops, rutas: x.rutas})}</div>`; }).join('')}
+  ${vis.map(({g, gi}) => R.aprobado && S.opOcultar && g.bars.every(b => b.estado === 'Cortado') ? '' : `<details class="card" data-gk="${esc(gk(g))}" ${abiertos.has(gk(g)) ? 'open' : ''}><summary>${!MQ && g.maquina ? badge('in', g.maquina) + ' ' : ''}<b>${esc(g.label)}</b>${g.completo ? ' ' + badge('ok', '▣ ' + g.dibujo) : ''} ${g.sku ? '' : badge('wa', 'Sin SKU en el catálogo')}${g.nSku > 1 ? badge('wa', `Hay ${g.nSku} SKU: elige en Configuración`) : ''} ${g.largas.length ? badge('er', g.largas.length + ' piezas no caben') : ''}${perfilAparte(g, R) ? ' ' + badge('wa', 'Perfil distinto (' + perfilTxt(g.perfil) + '): va en su propio IGS') : ''}
+    ${dts(R.aprobado ? dt('Cortados', `${g.bars.filter(b => b.estado === 'Cortado').length} de ${g.bars.length}`, 'tramos', 'ok') : dt('Tramos', g.tot.tramos + g.tot.recUsados), dt('Piezas', g.tot.piezas), dt('Aprovechamiento', pct(g.tot.aprov), '', lvAprov(g.tot.aprov)))}</summary>
+    ${agrupar(g.bars).map(x => { const ref = gi + '|' + g.bars.indexOf(x.b), ep = R.aprobado ? estadoPiso(x, !MQ) : null;
+      if(ep && S.opOcultar && ep.e === 'Cortado') return '';
+      return `<div class="bar" style="${ep && ep.e === 'Cortado' ? 'opacity:.6' : ''}"><div class="barhd">${tramosTxt(x.ids, R.id)} ${vecesChip(x.n)}${zonaBar(x.b).ext ? ' ' + badge('in', 'Con extensión') : ''}${ep ? ' ' + ep.html : ''} ${pieBar(x.b)}${ep ? ep.recs : ''}<span style="flex:1"></span>
+      <button data-ver="${ref}" title="Ver el tramo con el dibujo de cada pieza (barrenos, ranuras y cortes), con zoom">🔍 Ver</button><button data-igs="${ref}" title="IGS con las piezas acomodadas a lo largo del tubo${ep ? ' (solo lo baja: el estado lo marca la PC de la máquina)' : ''}">⬇ IGS</button><button data-hoja="${ref}" title="Hoja de corte de este múltiple">🖨</button>${ep && ep.enP && prog ? `<button class="pri" data-mfin="${ref}" title="Marca como cortado${x.n > 1 ? 's los tramos en proceso' : ''}, por si el operador no lo cerró">■ Terminar</button>` : ''}</div>${svgBar(x.b, col, {op: true, ops: x.ops, rutas: x.rutas})}</div>`; }).join('')}
     ${g.largas.length ? `<p style="color:var(--er)" class="sm">Más largas que el tramo: ${[...new Set(g.largas.map(p => p.pieza + ' (' + p.ruta + ')'))].map(esc).join(', ')}</p>` : ''}</details>`).join('') || `<div class="card empty">${esc(MQ)} no tiene tramos en este programa.</div>`}
   ${S.fuera.length ? fueraHtml(MQ) : ''}`;
   bindMult();
@@ -2650,9 +2696,18 @@ function bindMult(){
   if($('mVer')) $('mVer').onchange = e => { const v = e.target.value; S.res = v === '__borr' ? S.borrComp : v ? resDeGuardado(v) : leerBorrador(); renderMult(); };
   if(!S.res) return;
   $('mSave').onclick = guardarPrograma; $('mXls').onclick = () => { S.consSel = ''; exportarConsumos(); };
-  const MQ = S.multMaq;
+  const MQ = S.multVis || '';
   $('mPrint').onclick = () => hojaCorte('Programa de corte de tubular ' + S.res.id + (MQ ? ' · ' + MQ : ''), S.res.grupos.filter(g => !MQ || g.maquina === MQ).flatMap(g => g.bars));
-  el.querySelectorAll('[data-mq]').forEach(b => b.onclick = () => { S.multMaq = b.dataset.mq; try{ localStorage.setItem('mt-multmaq', S.multMaq); }catch(e){} renderMult(); });
+  el.querySelectorAll('[data-mq]').forEach(b => b.onclick = () => { if(!b.dataset.mq){ S.multAmbas = true; return renderMult(); }
+    S.multAmbas = false; S.multMaq = b.dataset.mq; try{ localStorage.setItem('mt-multmaq', S.multMaq); }catch(e){} renderMult(); });
+  // avance en piso del programa aprobado (lo que era Corte en piso)
+  const recargar = () => { if(S.res && S.res.aprobado) S.res = resDeGuardado(S.res.id) || S.res; renderAll(); };
+  if($('mOcultar')) $('mOcultar').onclick = () => { S.opOcultar = !S.opOcultar; renderMult(); };
+  if($('mRef')) $('mRef').onclick = async () => { try{ await API.cargar(); }catch(e){ toast(e.message, 'er'); } recargar(); };
+  if($('mCancel')) $('mCancel').onclick = async () => { const id = S.res.id; await cancelarPrograma(id);
+    const p = (S.db.programas || []).find(x => x.id === id); if(!p || p.estado === 'Cancelado') S.res = null; recargar(); };
+  el.querySelectorAll('[data-mfin]').forEach(b => b.onclick = async () => { const [gi, bi] = b.dataset.mfin.split('|').map(Number), g = S.res.grupos[gi], x = agrupar(g.bars).find(x => x.b === g.bars[bi]);
+    await terminarVarios(x.bars.filter(bb => bb.estado === 'En proceso').map(bb => bb.id)); recargar(); });
   el.querySelectorAll('details[data-gk]').forEach(d => d.addEventListener('toggle', () => { d.open ? S.multAbiertos.add(d.dataset.gk) : S.multAbiertos.delete(d.dataset.gk); }));
   if($('mAbrir')) $('mAbrir').onclick = () => el.querySelectorAll('details[data-gk]').forEach(d => d.open = true);
   if($('mCerrar')) $('mCerrar').onclick = () => el.querySelectorAll('details[data-gk]').forEach(d => d.open = false);
@@ -2773,42 +2828,6 @@ function renderCons(){
   ${C.porOP.map(o => `<tr><td>${esc(o.op)}</td><td>${esc(o.ruta)}</td><td class="sm">${esc(o.tipo)}${o.sku ? `<span class="sub">SKU ${esc(o.sku)}</span>` : ''}</td><td class="n">${u(o.n, 'pzas')}</td><td class="n">${u(f0(o.mm), 'mm')}</td><td class="n">${u(f0(o.consumo), 'mm')}</td><td class="n">${u(f4(o.consumo/o.tramo), 'TRA')}</td><td class="n">${o.kgm ? u(f2(o.consumo/1000*o.kgm), 'kg') : '—'}</td></tr>`).join('')}</table></div></details>`;
   $('cXls').onclick = exportarConsumos; bindBC();
   if($('cProg')) $('cProg').onchange = e => { S.consSel = e.target.value; renderCons(); };
-}
-function renderPiso(){
-  const el = $('t-piso'), P = (S.db.programas || []).slice().sort((a, b) => (b.fecha || 0) - (a.fecha || 0)), col = colorMap();
-  if(esOperador() && (S.authErr || (API.on() && !CLAVE))){ el.innerHTML = claveOperadorHtml(); bindClaveOperador(); return; }   // sin clave no hay programas que mostrar
-  if(!P.length) return el.innerHTML = `<div class="card empty">Aún no hay programas guardados. Genera los múltiples y presiona "Aprobar y guardar".</div>`;
-  const ver = S.pisoVer || 'activos', soloMaq = esOperador() ? maqOperador() : '';   // el operador ve solo su máquina
-  const filtroMaq = soloMaq || (S.pisoAmbas ? '' : MAQ || '');   // Ingeniería: una máquina a la vez (o ambas), como pidió Leonardo el 2026-11-20
-  if(soloMaq && MAQ !== soloMaq){ MAQ = soloMaq; saveMaq(); }
-  const lista = P.filter(p => (ver === 'todos' || !['Cortado', 'Cancelado'].includes(p.estado)) && (!filtroMaq || (S.db.tramos || []).some(t => t.programa === p.id && t.maquina === filtroMaq)));
-  el.innerHTML = `<div class="card"><div class="row">${[['activos', 'Pendientes y en proceso'], ['todos', 'Todos']].map(([k, t]) => `<button data-pv="${k}" class="${k === ver ? 'pri' : ''}">${t}</button>`).join('')}
-    <span style="flex:1"></span>${soloMaq ? `<span class="sm">Máquina: <b>${esc(soloMaq)}</b></span>` : `<span class="sm" title="La máquina en la que corta esta pantalla; Ambas muestra las dos">Máquina:</span>${CFG.maquinas.map(m => `<button data-maq="${esc(m)}" class="${m === MAQ && !S.pisoAmbas ? 'pri' : ''}">${esc(m)}</button>`).join('')}<button data-maq="" class="${S.pisoAmbas ? 'pri' : ''}">Ambas</button>`}<button id="pRef" title="Volver a leer del servidor">🔄</button></div>
-    <p class="mut sm" style="margin:8px 0 0" title="Al descargar el IGS de un múltiple quedan En proceso sus tramos iguales con su hora de inicio; al descargar el siguiente en la misma máquina, el anterior se cierra como cortado (lo que esté en proceso en otra máquina no se toca). Usa Terminar para el último del turno.">${MAQ ? `Cortando en <b>${esc(MAQ)}</b> · al bajar el siguiente IGS, el anterior se cierra como cortado` : '<b style="color:var(--er)">Elige en qué máquina estás antes de descargar un IGS.</b>'}</p></div>
-  ${lista.map(p => { const ts = (S.db.tramos || []).filter(t => t.programa === p.id && (!filtroMaq || t.maquina === filtroMaq)).sort((a, b) => String(a.tipo).localeCompare(String(b.tipo)) || a.orden - b.orden), vivos = ts.filter(t => t.estado !== 'Cancelado'), hechos = vivos.filter(t => t.estado === 'Cortado').length;
-    // los tramos iguales (el mismo múltiple) van en un renglón con cuántas veces se corta; se bajan y se cierran juntos
-    const G = agrupar(ts.map(t => Object.assign(barDe(t), {_t: t, estado: t.estado, _k: (t.maquina || '') + '|' + (t.estado === 'Cancelado' ? 'X' : '')})));
-    return `<details class="card" ${!['Cortado', 'Cancelado'].includes(p.estado) ? 'open' : ''}><summary><b>${esc(p.id)}</b> ${badge(p.estado === 'Cortado' ? 'ok' : p.estado === 'En proceso' ? 'wa' : 'in', p.estado || 'Pendiente')} <span class="mut sm">${fecha(+p.fecha)} · ${esc(p.archivo || '')}</span>
-    <div class="prog" title="${hechos} de ${vivos.length} tramos cortados"><i style="width:${vivos.length ? hechos/vivos.length*100 : 0}%"></i></div><span class="sm">${hechos} de ${vivos.length} tramos cortados</span></summary>
-    <div class="tw" style="margin-top:8px;max-height:none"><table><tr><th>Múltiple</th><th>Piezas por tramo</th><th>Recorte a guardar</th><th>Estado</th><th></th></tr>
-    ${G.map(x => { const T = x.bars.map(b => b._t), t = T[0], E = s => T.filter(y => y.estado === s), ids = T.map(y => y.id).join(','), enP = E('En proceso'), cort = E('Cortado').length;
-      const e = t.estado === 'Cancelado' ? 'Cancelado' : cort === T.length ? 'Cortado' : enP.length ? 'En proceso' : 'Pendiente', recs = T.filter(y => y.recorteNuevo);
-      const horas = T.map(y => `${idCorto(y)}: ${y.inicio ? 'inicio ' + fecha(+y.inicio) : 'sin iniciar'}${y.fin ? ' · fin ' + fecha(+y.fin) : ''}`).join('\n');
-      return `<tr><td style="white-space:nowrap">${tramosTxt(T.map(y => y.id))}<span class="sub">${esc(t.tipoLabel)}</span><div style="margin-top:4px">${vecesChip(x.n)}</div>${zonaBar(x.b).ext ? '<span class="sub">con extensión</span>' : ''}${t.origen === 'recorte' ? `<span class="sub">♻ usa el recorte ${esc(t.recorteUsado)}</span>` : ''}</td>
-      <td class="sm" style="min-width:220px">${resumenPiezas(t.piezas)}<span class="sub">${(rs => rs.length > 1 ? 'Modelos ' + esc(rs.join(', ')) + ' · ' : '')([...new Set(x.bars.flatMap(b => b.piezas.map(q => q.ruta)))])}OP ${esc([...new Set(x.bars.flatMap(b => b.piezas.map(q => q.op)))].join(', '))}</span></td>
-      <td class="sm" title="${esc(recs.map(y => y.recorteNuevo).join(', '))}">${recs.length ? `<span style="white-space:nowrap">♻ ${u(f0(recs[0].largoRecorte), 'mm')}${recs.length > 1 ? ` <b>×${recs.length}</b>` : ''}</span><span class="sub">${recs.length > 1 ? 'marca el ID en cada uno' : esc(recs[0].recorteNuevo)}</span>` : '—'}</td>
-      <td title="${esc(horas)}">${badge(e === 'Cortado' ? 'ok' : e === 'En proceso' ? 'wa' : 'in', e)}${t.maquina ? ' ' + badge('in', t.maquina) : ''}${x.n > 1 && cort && cort < x.n ? `<span class="sub">${cort} de ${x.n} cortados</span>` : ''}</td>
-      <td style="white-space:nowrap">${e === 'Cancelado' ? '' : `${e === 'Cortado' ? '' : `<button data-pd="${esc(ids)}" title="Descargar el IGS del múltiple${x.n > 1 ? ' (se corta ' + x.n + ' veces)' : ''}">⬇ IGS</button> `}<button data-ph="${esc(ids)}" title="Hoja de corte">🖨</button>`}${enP.length ? ` <button class="pri" data-pt="${esc(enP.map(y => y.id).join(','))}">■ Terminar</button>` : ''}</td></tr>`; }).join('')}</table></div>
-    ${!soloMaq && esProgramador() && !['Cortado', 'Cancelado'].includes(p.estado) && ts.some(t => t.estado === 'Pendiente') ? `<div class="row" style="margin-top:8px"><span style="flex:1"></span><button data-pc="${esc(p.id)}" title="Cancela los tramos pendientes y libera sus recortes reservados">✖ Cancelar tramos pendientes</button></div>` : ''}</details>`; }).join('') || '<div class="card empty">No hay programas pendientes.</div>'}`;
-  el.querySelectorAll('[data-pv]').forEach(b => b.onclick = () => { S.pisoVer = b.dataset.pv; renderPiso(); });
-  el.querySelectorAll('[data-maq]').forEach(b => b.onclick = () => { if(b.dataset.maq){ MAQ = b.dataset.maq; saveMaq(); S.pisoAmbas = false; } else S.pisoAmbas = true; renderPiso(); });
-  el.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => cancelarPrograma(b.dataset.pc));
-  $('pRef').onclick = async () => { await API.cargar().catch(e => toast(e.message, 'er')); renderAll(); };
-  const tramosDe = s => s.split(',').map(id => S.db.tramos.find(x => x.id === id)).filter(Boolean);
-  el.querySelectorAll('[data-pd]').forEach(b => b.onclick = () => { if(!MAQ) return toast('Elige arriba en qué máquina estás (' + CFG.maquinas.join(' o ') + ')', 'er');
-    const T = tramosDe(b.dataset.pd); descargarTramo(barDe(T[0]), T[0].tipoLabel, T.filter(t => t.estado === 'Pendiente').map(t => t.id)); });
-  el.querySelectorAll('[data-ph]').forEach(b => b.onclick = () => { const T = tramosDe(b.dataset.ph); hojaCorte(T.length > 1 ? T.length + ' tramos iguales' : 'Tramo ' + T[0].id, T.map(barDe)); });
-  el.querySelectorAll('[data-pt]').forEach(b => b.onclick = () => terminarVarios(b.dataset.pt.split(',')));
 }
 function renderRec(){
   const el = $('t-rec'), R = (S.db.recortes || []), fl = S.recF || (S.recF = {estado: 'vigentes', tipo: ''});
@@ -3080,9 +3099,9 @@ const MENU = [
   {g: 'Programar', items: [{k: 'prog', c: '#4a9eff', t: 'Programa de producción', d: 'Programa del día que se subió al OEE (GW1 / GW2), o el Excel: dibujos ligados y su alta en TubesT.'},
     {k: 'lib', c: '#3ecf8e', t: 'Biblioteca de IGS', d: 'Carpeta central TUBO LASER - DIBUJOS POR MODELO: IGS de cada modelo, MULTIPLE, .zzx y lo que se mide en cada IGS.'},
     {k: 'modelo', c: '#2dd4bf', t: 'Múltiples por modelo', d: 'Diseña múltiples reutilizables por modelo con sus piezas sueltas; se validan y se dan de alta una sola vez.'},
-    {k: 'mult', c: '#f5a623', t: 'Múltiples de corte', d: 'Piezas del mismo tubular acomodadas a lo largo de cada tramo para el máximo aprovechamiento.'}]},
-  {g: 'Producción', items: [{k: 'piso', c: '#c084fc', t: 'Corte en piso', d: 'Descarga de IGS por tramo y seguimiento: pendiente, en proceso, cortado.'},
-    {k: 'rec', c: '#fb7185', t: 'Inventario de recortes', d: 'Sobrantes que vale la pena guardar, listos para usarse en los siguientes programas.'}]},
+    {k: 'mult', c: '#f5a623', t: 'Múltiples de corte', d: 'Piezas del mismo tubular acomodadas a lo largo de cada tramo y, ya aprobadas, su avance en piso: pendiente, en proceso, cortado.'}]},
+  // Corte en piso ya no es pestaña: va dentro de Múltiples de corte (Leonardo, 2026-11-20)
+  {g: 'Producción', items: [{k: 'rec', c: '#fb7185', t: 'Inventario de recortes', d: 'Sobrantes que vale la pena guardar, listos para usarse en los siguientes programas.'}]},
   {g: 'Análisis', items: [{k: 'cons', c: '#38bdf8', t: 'Consumos reales', d: 'Consumo por pieza, por tipo de tubular y por OP, incluyendo chuck, separación y desecho.'}]},
   {g: 'Ajustes', items: [{k: 'cfg', c: '#8b8fa8', t: 'Configuración', d: 'Tramo, chuck, separación, recorte mínimo, calibres y conexión con Apps Script.'}]},
   // la otra plataforma: el programa se sube una vez al OEE y aquí se toma de ahí (cada una con su propia base de datos)
@@ -3094,13 +3113,12 @@ function badgeOf(k){
     case 'prog': return S.ops.length ? ['in', S.ops.length] : null;
     case 'lib': { if(!S.lib.length) return null; if(S.lib.filter(f => f.p.planta).length > S.lib.length/2) return ['ok', f0(S.lib.length)]; const {vig, conflictos} = vigentes(); const er = vig.filter(f => evalPieza(f).lv === 'er').length + conflictos.length; return er ? ['er', er] : ['ok', vig.length]; }
     case 'mult': { const mq = esOperador() ? maqOperador() : ''; return S.res ? ['ok', S.res.grupos.filter(g => !mq || g.maquina === mq).reduce((s, g) => s + g.bars.length, 0)] : S.items.length ? ['wa', '!'] : null; }
-    case 'piso': { const mq = esOperador() ? maqOperador() : '', n = (S.db.tramos || []).filter(t => !['Cortado', 'Cancelado'].includes(t.estado) && (!mq || t.maquina === mq)).length; return n ? ['wa', n] : null; }
     case 'rec': { const n = (S.db.recortes || []).filter(r => r.estado === 'Disponible').length; return n ? ['ok', n] : null; }
   }
   return null;
 }
-/* el Operador solo ve sus múltiples aprobados y Corte en piso (y el acceso al OEE); sin sesión del OEE, solo el acceso al OEE */
-// el operador: Múltiples de corte (con el seguimiento de Corte en piso, en una sola pantalla) e Inventario de recortes (Leonardo, 2026-11-20)
+/* el operador: Múltiples de corte (con el seguimiento en piso, en una sola pantalla) e Inventario de recortes (Leonardo, 2026-11-20);
+   sin sesión del OEE, solo el acceso al OEE */
 const menuVisible = () => !S.cuenta ? MENU.filter(g => g.items.some(i => i.url)) : esOperador() ? MENU.map(g => ({g: g.g, items: g.items.filter(i => ['mult', 'rec', 'oee'].includes(i.k))})).filter(g => g.items.length) : MENU;
 function renderSide(){
   const sb = document.querySelector('.sb-info');
@@ -3112,9 +3130,10 @@ function renderSide(){
     b.onkeydown = e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); b.click(); } }; });
   $('progName').textContent = S.progFile || '';
 }
-const RENDER = {prog: renderProg, lib: renderLib, mult: renderMult, modelo: renderModelo, cons: renderCons, piso: renderPiso, rec: renderRec, cfg: renderCfg};
+const RENDER = {prog: renderProg, lib: renderLib, mult: renderMult, modelo: renderModelo, cons: renderCons, rec: renderRec, cfg: renderCfg};
 function showTab(k){
   if(!S.cuenta) return pantallaSinSesion();
+  if(k === 'piso') k = 'mult';   // Corte en piso ahora va dentro de Múltiples de corte (equipos que la tenían abierta)
   const vis = menuVisible().flatMap(g => g.items).filter(i => !i.url);
   const it = vis.find(i => i.k === k) || vis[0]; CUR = it.k;
   $('pageTitle').textContent = it.t; $('pageSub').textContent = it.d;
