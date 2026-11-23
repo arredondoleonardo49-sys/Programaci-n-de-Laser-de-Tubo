@@ -1596,13 +1596,46 @@ function carpetaFallo(e, rapido, suave){
   const n = e && e.name, m = String((e && e.message) || '');
   if(n === 'AbortError' && !rapido) return;   // cerró la ventana sin elegir
   S.cenErr = e === 'denied' ? 'El navegador no dio permiso de leer la carpeta (si no salió la pregunta, en este equipo está bloqueado).'
-    : n === 'AbortError' ? 'El navegador no abrió la ventana para elegir la carpeta (puede estar bloqueada en este equipo).'
+    : n === 'AbortError' || n === 'Bloqueada' ? 'El navegador no abrió la ventana para elegir carpetas: en este equipo está bloqueada.'
     : /gesture|activation/i.test(m) ? 'El navegador pidió volver a dar clic.'
     : n === 'NotAllowedError' || n === 'SecurityError' ? `El navegador no deja que esta página abra carpetas (${m}).`
     : 'No se pudo abrir la carpeta: ' + m;
-  toast(S.cenErr + (window.showDirectoryPicker ? ' Prueba «Elegir la carpeta otra vez» o el «Selector sencillo».' : ''), 'er'); renderAviso();
+  toast(S.cenErr + ' Arrastra la carpeta TUBO LASER - DIBUJOS POR MODELO desde el Explorador de Windows al recuadro punteado.', 'er'); renderAviso();
   if(!suave) renderAll();   // suave: vino del primer clic en la pantalla; redibujar ahí se comería ese clic
 }
+/* ¿se abrió la ventana de carpetas? Al abrirse, la página pierde el foco. Si no lo perdió y no hubo respuesta en 2 s (o el
+   navegador la "canceló" sin mostrarla), la ventana está bloqueada en ese equipo: en la PC de GW2 el clic no abría nada y no
+   salía ningún aviso (2026-11-23) */
+function vigilarVentana(){
+  let perdio = !document.hasFocus(), listo = false; const f = () => { perdio = true; }; window.addEventListener('blur', f);
+  const t = setTimeout(() => { if(!listo && !perdio && document.hasFocus()){ listo = true; window.removeEventListener('blur', f); carpetaFallo({name: 'Bloqueada'}); } }, 2000);
+  return {fin(){ const ya = listo; listo = true; clearTimeout(t); window.removeEventListener('blur', f); return ya; }, mostro: () => perdio};
+}
+/* carpeta arrastrada desde el Explorador de Windows: no necesita la ventana de carpetas (que algunos equipos tienen bloqueada).
+   Con getAsFileSystemHandle (Chrome y Edge) la carpeta se recuerda como si se hubiera elegido; si no, se lee por sus entradas */
+function dirDeEntrada(en){
+  const P = f => new Promise(f), ro = async () => { throw new Error('Carpeta arrastrada: es de solo lectura'); };
+  const fh = e => ({kind: 'file', name: e.name, getFile: () => P((ok, ko) => e.file(ok, ko)), createWritable: ro});
+  const dh = d => ({kind: 'directory', name: d.name, soloLectura: true,
+    getDirectoryHandle: s => P((ok, ko) => d.getDirectory(s, {}, e => ok(dh(e)), ko)),
+    getFileHandle: s => P((ok, ko) => d.getFile(s, {}, e => ok(fh(e)), ko)),
+    async *entries(){ const r = d.createReader(); for(;;){ const lote = await P((ok, ko) => r.readEntries(ok, ko)); if(!lote.length) break; for(const e of lote) yield [e.name, e.isDirectory ? dh(e) : fh(e)]; } },
+    async queryPermission(){ return 'granted'; }, async requestPermission(){ return 'granted'; }});
+  return dh(en);
+}
+const zonaCarpeta = ev => ev.target && ev.target.closest && ev.target.closest('[data-soltar-carpeta]') || (esOperador() && !S.cenDir);
+document.addEventListener('dragover', ev => { if(zonaCarpeta(ev) && [...(ev.dataTransfer && ev.dataTransfer.types || [])].includes('Files')){ ev.preventDefault(); ev.dataTransfer.dropEffect = 'copy'; } });
+document.addEventListener('drop', async ev => {
+  if(!zonaCarpeta(ev) || !ev.dataTransfer) return;
+  const it = [...ev.dataTransfer.items].find(i => i.kind === 'file'); if(!it) return;
+  ev.preventDefault();
+  // las dos se piden en el mismo evento, antes de esperar nada: después ya no se pueden leer
+  const pH = it.getAsFileSystemHandle ? it.getAsFileSystemHandle().catch(() => null) : null, en = it.webkitGetAsEntry ? it.webkitGetAsEntry() : null;
+  const h = pH ? await pH : null;
+  if(h && h.kind === 'directory'){ await DIRDB.guardar(h, 'zzx'); return usarCarpeta(h, true); }
+  if(en && en.isDirectory) return usarCarpeta(dirDeEntrada(en), true);
+  toast('Arrastra la carpeta completa TUBO LASER - DIBUJOS POR MODELO, no un archivo', 'er');
+});
 /* selector de carpetas de siempre: para navegadores sin acceso a carpetas, o con ese acceso bloqueado. No se puede recordar: se
    elige cada vez que se abre la página. La lista de archivos se arma como una carpeta de solo lectura con lo mismo que usa la
    plataforma (getDirectoryHandle, getFileHandle, entries), así ver y bajar los IGS funciona igual */
@@ -1624,14 +1657,16 @@ function dirDeLista(files){
 function elegirCarpetaClasica(){
   let inp = $('inCen');
   if(!inp){ inp = document.createElement('input'); inp.type = 'file'; inp.id = 'inCen'; inp.hidden = true; inp.multiple = true; inp.webkitdirectory = true; document.body.appendChild(inp); }
-  inp.onchange = async () => { const h = dirDeLista(inp.files); inp.value = '';
+  const v = vigilarVentana();
+  inp.oncancel = () => { if(!v.fin() && !v.mostro()) carpetaFallo({name: 'Bloqueada'}); };   // "cancelada" sin mostrarse
+  inp.onchange = async () => { v.fin(); const h = dirDeLista(inp.files); inp.value = '';
     if(!h) return toast('No llegó ningún archivo de esa carpeta', 'er');
     await usarCarpeta(h, true); };
   inp.click();
 }
 function renderAviso(){
   let a = $('recon');
-  if(!a){ a = document.createElement('div'); a.id = 'recon'; a.className = 'card row'; a.style.cssText = 'margin:12px 1.5rem 0;border-color:var(--amber)'; $('content').before(a); }
+  if(!a){ a = document.createElement('div'); a.id = 'recon'; a.className = 'card row'; a.dataset.soltarCarpeta = ''; a.style.cssText = 'margin:12px 1.5rem 0;border-color:var(--amber)'; $('content').before(a); }
   if(!S.cenPend || S.cenDir){ a.style.display = 'none'; return; }
   a.style.display = 'flex';
   a.innerHTML = `<span style="flex:1;min-width:240px">🔌 <b>La carpeta central ${esc(S.cenPend)} está desconectada</b> desde que se recargó la página.<span class="sub">Reconéctala con un clic; no hay que volver a elegirla${esOperador() ? ' y no se lee toda la carpeta: solo los IGS del tramo que bajes' : ''}. En el aviso del navegador elige «Permitir en cada visita» y ya no lo volverá a pedir.</span>${S.cenErr ? `<span class="sub" style="color:var(--red)">${esc(S.cenErr)}</span>` : ''}</span><button class="pri" id="reconBtn" data-conecta>${S.cenErr ? 'Elegir la carpeta otra vez' : 'Reconectar carpeta central'}</button>`;
@@ -1659,8 +1694,11 @@ async function abrirCentral(otra){
     if(h){ let p = 'prompt'; try{ p = await h.queryPermission({mode: md}); }catch(e){}
       if(p !== 'granted') p = await h.requestPermission({mode: md});
       if(p !== 'granted') return carpetaFallo('denied'); }
-    if(!h){ t0 = performance.now(); h = await window.showDirectoryPicker({id: 'central', mode: md}); await DIRDB.guardar(h, 'zzx'); }
-  }catch(e){ return carpetaFallo(e, t0 > 0 && performance.now() - t0 < 600); }
+    if(!h){ const v = vigilarVentana(); t0 = 1;
+      try{ h = await window.showDirectoryPicker({id: 'central', mode: md}); }
+      catch(e){ if(v.fin()) return; throw Object.assign(e, {sinVentana: !v.mostro()}); }   // fin() = ya se avisó que estaba bloqueada
+      v.fin(); await DIRDB.guardar(h, 'zzx'); }
+  }catch(e){ return carpetaFallo(e, t0 > 0 && e.sinVentana); }   // cancelada sin que la ventana llegara a mostrarse = bloqueada
   await usarCarpeta(h, true);
 }
 /* lee la carpeta central completa: la biblioteca de IGS (S.lib) y, por modelo, sus IGS, sus .zzx y su modelo.json (S.cen) */
@@ -2091,7 +2129,7 @@ async function igsPorRuta(fileId){
 async function igsSuelto(p){
   if(S.extra[p.fileId]) return S.extra[p.fileId];
   const fr = await igsPorRuta(p.fileId); if(fr) return fr;
-  if(String(p.fileId).startsWith('L:') && !S.cenDir) throw new Error('Conecta la carpeta central en este equipo (arriba, "Conectar carpeta central"): de ahí se toman los IGS de las piezas.');
+  if(String(p.fileId).startsWith('L:') && !S.cenDir) throw new Error('Conecta la carpeta central en este equipo (recuadro de arriba: botón «Conectar carpeta central» o arrastrando la carpeta desde el Explorador): de ahí se toman los IGS de las piezas.');
   if(String(p.fileId).startsWith('L:') || !API.on()) throw new Error(`No encontré el IGS de ${p.pieza} (${p.ruta}) en la carpeta central: quizá se movió o se renombró.`);
   const d = await API.archivoInfo(p.fileId);
   const f = {id: p.fileId, name: d.nombre, path: '', p: parseNombre(d.nombre, '')};
@@ -2585,11 +2623,15 @@ function bindClaveOperador(){
 /* tarjeta para conectar la carpeta central en la PC de la máquina: si no se pudo, dice por qué y ofrece elegirla de nuevo o con
    el selector sencillo (navegadores sin acceso a carpetas o con ese acceso bloqueado; ese no se recuerda) */
 function tarjetaCarpetaOp(){
-  const fsa = !!window.showDirectoryPicker, err = S.cenErr;
-  return `<div class="card row" style="border-color:var(--${err ? 'red' : 'amber'})"><span style="flex:1;min-width:240px">Para ver el dibujo y bajar el IGS de cada tramo, conecta la carpeta central <b>TUBO LASER - DIBUJOS POR MODELO</b>.
-    ${err ? `<span class="sub" style="color:var(--red)"><b>${esc(err)}</b></span>` : ''}<span class="sub">${fsa ? (err ? 'Elígela otra vez en la ventana de carpetas; si la ventana no abre o no deja elegirla, usa el «Selector sencillo» (ese hay que repetirlo cada vez que se abre la página).' : 'Solo la primera vez en este equipo: después se recuerda.') : 'Este navegador no puede recordar carpetas: hay que elegirla cada vez que se abre la página. En Chrome o Edge se elige una sola vez.'}</span></span>
-    <button class="pri" id="opCarpeta" data-conecta>${err && fsa ? 'Elegir la carpeta otra vez' : 'Conectar carpeta central'}</button>${err && fsa ? '<button id="opClasica" data-conecta title="Selector de carpetas de siempre: el navegador pide confirmar que la página vea los archivos (no se sube nada). No se recuerda: hay que repetirlo cada vez que se abre la página.">Selector sencillo</button>' : ''}</div>`;
+  const fsa = !!window.showDirectoryPicker, err = S.cenErr, arr = typeof DataTransferItem !== 'undefined' && !!DataTransferItem.prototype.getAsFileSystemHandle;
+  return `<div class="card" data-soltar-carpeta style="border-color:var(--${err ? 'red' : 'amber'})"><div class="row"><span style="flex:1;min-width:240px">Para ver el dibujo y bajar el IGS de cada tramo, conecta la carpeta central <b>TUBO LASER - DIBUJOS POR MODELO</b>.
+    ${err ? `<span class="sub" style="color:var(--red)"><b>${esc(err)}</b></span>` : ''}<span class="sub">${fsa ? (err ? 'Arrástrala al recuadro punteado, o prueba otra vez la ventana de carpetas o el «Selector sencillo» (ese hay que repetirlo cada vez que se abre la página).' : 'Solo la primera vez en este equipo: después se recuerda.') : 'Este navegador no puede recordar carpetas: hay que elegirla cada vez que se abre la página. En Chrome o Edge se elige una sola vez.'}</span></span>
+    <button class="pri" id="opCarpeta" data-conecta>${err && fsa ? 'Elegir la carpeta otra vez' : 'Conectar carpeta central'}</button>${err && fsa ? '<button id="opClasica" data-conecta title="Selector de carpetas de siempre: el navegador pide confirmar que la página vea los archivos (no se sube nada). No se recuerda: hay que repetirlo cada vez que se abre la página.">Selector sencillo</button>' : ''}</div>
+    <div style="margin-top:10px;padding:14px;border:2px dashed var(--${err ? 'red' : 'amber'});border-radius:var(--radius-lg);text-align:center">📂 <b>O arrastra aquí la carpeta</b> TUBO LASER - DIBUJOS POR MODELO desde el Explorador de Windows (OneDrive)<span class="sub">No usa la ventana de carpetas${arr ? ' y queda recordada en este equipo' : ''}.</span></div>
+    <p class="mut sm" style="margin:8px 0 0;opacity:.7" title="Para revisar en qué equipo y navegador falla">v${verCorta()} · ${esc(navegadorTxt())} · ventana de carpetas: ${fsa ? 'sí' : 'no'} · arrastrar: ${arr ? 'se recuerda' : 'solo esta vez'}${window.top !== window ? ' · dentro de otra página' : ''}</p></div>`;
 }
+const navegadorTxt = () => { const u = navigator.userAgent, m = (re, n) => { const x = u.match(re); return x ? n + ' ' + x[1] : ''; };
+  return m(/Edg\/(\d+)/, 'Edge') || m(/OPR\/(\d+)/, 'Opera') || m(/Firefox\/(\d+)/, 'Firefox') || m(/Chrome\/(\d+)/, 'Chrome') || m(/Version\/(\d+).*Safari/, 'Safari') || 'otro navegador'; };
 /* estado en piso de un múltiple (sus tramos iguales): pendiente, en proceso o cortado, con las horas de inicio y fin al pasar el
    mouse y los recortes que se guardan con su ID. Lo que era Corte en piso, ahora dentro de Múltiples de corte (Leonardo, 2026-11-20) */
 function estadoPiso(x, conMaq){
