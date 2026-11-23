@@ -1558,53 +1558,110 @@ function lugarCentral(f){
   if(d.length < 3 || !/^IGE?S$/i.test(d[2].trim())) return null;
   return {linea: d[0], modelo: d[1], sub: d.slice(3).join('/'), key: d[0] + '/' + d[1]};
 }
+/* permiso sobre la carpeta central: el operador solo lee los IGS de su tramo (nunca escribe en ella) y pide solo lectura;
+   Ingeniería guarda ahí los múltiples (lectura y escritura). Pedir de más hacía que, con la edición de archivos bloqueada en el
+   navegador o por una política del equipo, el permiso se negara sin ningún aviso (PC de GW2, 2026-11-23) */
+const modoCarpeta = () => esOperador() ? 'read' : 'readwrite';
 /* al recargar la página: si el navegador ya tiene el permiso de la carpeta central, se vuelve a leer sola;
    si no, un aviso arriba la reconecta con un clic (sin volver a elegirla) */
 async function reconectarCentral(){
   if(!window.showDirectoryPicker || S.cenDir) return;
   const h = await DIRDB.leer('zzx'); if(!h) return;
-  let p = 'prompt'; try{ p = await h.queryPermission({mode: 'readwrite'}); }catch(e){}
+  let p = 'prompt'; try{ p = await h.queryPermission({mode: modoCarpeta()}); }catch(e){}
   if(p !== 'granted'){ S.cenPend = h.name; renderAviso(); return; }
-  S.cenDir = h; S.cenPend = ''; renderAviso();
-  if(esOperador()){ renderAll(); return; }   // el operador no lee la biblioteca: solo abre los IGS de su tramo, por su ruta
+  await usarCarpeta(h, false);
+}
+/* carpeta ya con permiso: el operador no lee la biblioteca (solo abre los IGS de su tramo, por su ruta); Ingeniería la lee completa */
+async function usarCarpeta(h, avisar){
+  S.cenDir = h; S.cenPend = ''; S.cenErr = ''; renderAviso();
+  if(esOperador()){ renderAll(); if(avisar) avisarCarpetaOp(h); return; }
   S.libMsg = 'Leyendo la carpeta ' + h.name + '…'; renderAll();
-  if(await leerCentral()) await medirNecesarios(); else renderAll();
+  if(!(await leerCentral())) return renderAll();
+  if(avisar){ const t = cuentaCentral();
+    if(!t.igs) toast(`No encontré IGS en ${h.name}. Elige la carpeta TUBO LASER - DIBUJOS POR MODELO (con las carpetas LÍNEA \\ MODELO \\ IGS).`, 'er');
+    else toast(`${h.name}: ${f0(t.mods)} modelos · ${f0(t.igs)} IGS · ${f0(t.zzx)} .zzx`); }
+  await medirNecesarios();
+}
+/* el operador elige la carpeta una sola vez: se revisa que ahí estén los IGS de su programa (y no otra carpeta de OneDrive) */
+async function avisarCarpetaOp(h){
+  const ids = [...new Set(((S.res && S.res.grupos) || []).flatMap(g => g.bars.flatMap(b => (b.piezas || []).map(p => String(p.fileId)))).filter(id => id.startsWith('L:')))].slice(0, 4);
+  let ok = !ids.length; for(const id of ids) if(!ok) ok = !!(await igsPorRuta(id).catch(() => null));
+  if(ok) return toast('Carpeta central conectada: ya puedes ver el dibujo y bajar el IGS de cada tramo');
+  // otra carpeta: se suelta y la tarjeta vuelve a ofrecer elegirla
+  S.cenDir = null; S.cenErr = `En «${h.name}» no están los IGS de este programa. Elige la carpeta TUBO LASER - DIBUJOS POR MODELO (la que tiene las carpetas de cada línea).`;
+  toast(S.cenErr, 'er'); renderAll();
+}
+/* por qué no se pudo conectar la carpeta: se dice en pantalla (antes, en algunos equipos, el clic no hacía nada y no se sabía por qué) */
+function carpetaFallo(e, rapido, suave){
+  const n = e && e.name, m = String((e && e.message) || '');
+  if(n === 'AbortError' && !rapido) return;   // cerró la ventana sin elegir
+  S.cenErr = e === 'denied' ? 'El navegador no dio permiso de leer la carpeta (si no salió la pregunta, en este equipo está bloqueado).'
+    : n === 'AbortError' ? 'El navegador no abrió la ventana para elegir la carpeta (puede estar bloqueada en este equipo).'
+    : /gesture|activation/i.test(m) ? 'El navegador pidió volver a dar clic.'
+    : n === 'NotAllowedError' || n === 'SecurityError' ? `El navegador no deja que esta página abra carpetas (${m}).`
+    : 'No se pudo abrir la carpeta: ' + m;
+  toast(S.cenErr + (window.showDirectoryPicker ? ' Prueba «Elegir la carpeta otra vez» o el «Selector sencillo».' : ''), 'er'); renderAviso();
+  if(!suave) renderAll();   // suave: vino del primer clic en la pantalla; redibujar ahí se comería ese clic
+}
+/* selector de carpetas de siempre: para navegadores sin acceso a carpetas, o con ese acceso bloqueado. No se puede recordar: se
+   elige cada vez que se abre la página. La lista de archivos se arma como una carpeta de solo lectura con lo mismo que usa la
+   plataforma (getDirectoryHandle, getFileHandle, entries), así ver y bajar los IGS funciona igual */
+function dirDeLista(files){
+  const arr = [...(files || [])]; if(!arr.length) return null;
+  const nodo = name => ({name, dirs: new Map(), files: new Map()}), ro = () => { throw new Error('Carpeta elegida con el selector sencillo: es de solo lectura'); };
+  const raiz = nodo(String(arr[0].webkitRelativePath || '').split('/')[0] || 'Carpeta');
+  arr.forEach(f => { const segs = f.webkitRelativePath ? String(f.webkitRelativePath).split('/').slice(1) : [f.name]; let d = raiz;
+    segs.slice(0, -1).forEach(s => { const k = s.toUpperCase(); if(!d.dirs.has(k)) d.dirs.set(k, nodo(s)); d = d.dirs.get(k); });
+    const nm = segs[segs.length - 1]; if(nm) d.files.set(nm.toUpperCase(), {kind: 'file', name: nm, getFile: async () => f, createWritable: async () => ro()}); });
+  const nf = s => new DOMException(s + ' no existe', 'NotFoundError');
+  const dh = d => ({kind: 'directory', name: d.name, soloLectura: true,
+    async getDirectoryHandle(s){ const c = d.dirs.get(String(s).toUpperCase()); if(!c) throw nf(s); return dh(c); },
+    async getFileHandle(s){ const c = d.files.get(String(s).toUpperCase()); if(!c) throw nf(s); return c; },
+    async *entries(){ for(const c of d.dirs.values()) yield [c.name, dh(c)]; for(const c of d.files.values()) yield [c.name, c]; },
+    async queryPermission(){ return 'granted'; }, async requestPermission(){ return 'granted'; }});
+  return dh(raiz);
+}
+function elegirCarpetaClasica(){
+  let inp = $('inCen');
+  if(!inp){ inp = document.createElement('input'); inp.type = 'file'; inp.id = 'inCen'; inp.hidden = true; inp.multiple = true; inp.webkitdirectory = true; document.body.appendChild(inp); }
+  inp.onchange = async () => { const h = dirDeLista(inp.files); inp.value = '';
+    if(!h) return toast('No llegó ningún archivo de esa carpeta', 'er');
+    await usarCarpeta(h, true); };
+  inp.click();
 }
 function renderAviso(){
   let a = $('recon');
   if(!a){ a = document.createElement('div'); a.id = 'recon'; a.className = 'card row'; a.style.cssText = 'margin:12px 1.5rem 0;border-color:var(--amber)'; $('content').before(a); }
   if(!S.cenPend || S.cenDir){ a.style.display = 'none'; return; }
   a.style.display = 'flex';
-  a.innerHTML = `<span style="flex:1;min-width:240px">🔌 <b>La carpeta central ${esc(S.cenPend)} está desconectada</b> desde que se recargó la página.<span class="sub">Reconéctala con un clic; no hay que volver a elegirla${esOperador() ? ' y no se lee toda la carpeta: solo los IGS del tramo que bajes' : ''}. En el aviso del navegador elige «Permitir en cada visita» y ya no lo volverá a pedir.</span></span><button class="pri" id="reconBtn">Reconectar carpeta central</button>`;
-  $('reconBtn').onclick = () => abrirCentral(false);
+  a.innerHTML = `<span style="flex:1;min-width:240px">🔌 <b>La carpeta central ${esc(S.cenPend)} está desconectada</b> desde que se recargó la página.<span class="sub">Reconéctala con un clic; no hay que volver a elegirla${esOperador() ? ' y no se lee toda la carpeta: solo los IGS del tramo que bajes' : ''}. En el aviso del navegador elige «Permitir en cada visita» y ya no lo volverá a pedir.</span>${S.cenErr ? `<span class="sub" style="color:var(--red)">${esc(S.cenErr)}</span>` : ''}</span><button class="pri" id="reconBtn" data-conecta>${S.cenErr ? 'Elegir la carpeta otra vez' : 'Reconectar carpeta central'}</button>`;
+  $('reconBtn').onclick = () => abrirCentral(!!S.cenErr);
   // el primer clic en cualquier parte de la pantalla también la reconecta (Chrome solo pide el permiso tras un clic), sin abrir el
   // selector de carpetas: así el operador ve sus IGS aunque no note el aviso tras una actualización automática (2026-11-19)
   if(!S.reconArmado){ S.reconArmado = true;
     document.addEventListener('pointerdown', function una(ev){
-      if(ev.target && ev.target.closest && ev.target.closest('#reconBtn')) return;   // el botón ya lo hace
+      // los botones de conectar ya lo hacen: dos pedidos de permiso a la vez se estorbaban y el clic no hacía nada
+      if(ev.target && ev.target.closest && ev.target.closest('[data-conecta]')) return;
       document.removeEventListener('pointerdown', una, true); S.reconArmado = false;
       if(S.cenPend && !S.cenDir) reconectarConGesto(); }, true); }
 }
 async function reconectarConGesto(){
   const h = await DIRDB.leer('zzx'); if(!h) return;
-  try{ if((await h.requestPermission({mode: 'readwrite'})) !== 'granted') return; }catch(e){ return; }
+  let p; try{ p = await h.requestPermission({mode: modoCarpeta()}); }catch(e){ return; }
+  if(p !== 'granted') return carpetaFallo('denied', false, true);
   await reconectarCentral();
 }
+/* otra = elegirla de nuevo con la ventana de carpetas (también sirve cuando el permiso de la que se recordaba no se pudo dar) */
 async function abrirCentral(otra){
-  if(!window.showDirectoryPicker) return $('inDir').click();   // navegador sin acceso a carpetas: selector clásico (solo lectura)
-  let h = otra ? null : await DIRDB.leer('zzx');
+  if(!window.showDirectoryPicker) return elegirCarpetaClasica();   // navegador sin acceso a carpetas: antes buscaba un selector que el operador no tiene y el clic no hacía nada
+  const md = modoCarpeta(); let h = otra ? null : await DIRDB.leer('zzx'), t0 = 0;
   try{
-    if(h && (await h.queryPermission({mode: 'readwrite'})) !== 'granted' && (await h.requestPermission({mode: 'readwrite'})) !== 'granted') h = null;
-    if(!h){ h = await window.showDirectoryPicker({id: 'central', mode: 'readwrite'}); await DIRDB.guardar(h, 'zzx'); }
-  }catch(e){ if(e.name !== 'AbortError') toast('No se pudo abrir la carpeta: ' + e.message, 'er'); return; }
-  S.cenDir = h; S.cenPend = ''; renderAviso();
-  if(esOperador()){ toast('Carpeta central conectada: ya puedes bajar el IGS de cada tramo'); renderAll(); return; }   // sin leer toda la biblioteca
-  S.libMsg = 'Leyendo la carpeta ' + h.name + '…'; renderLib();
-  if(!(await leerCentral())) return;
-  const t = cuentaCentral();
-  if(!t.igs) toast(`No encontré IGS en ${h.name}. Elige la carpeta TUBO LASER - DIBUJOS POR MODELO (con las carpetas LÍNEA \\ MODELO \\ IGS).`, 'er');
-  else toast(`${h.name}: ${f0(t.mods)} modelos · ${f0(t.igs)} IGS · ${f0(t.zzx)} .zzx`);
-  await medirNecesarios();
+    if(h){ let p = 'prompt'; try{ p = await h.queryPermission({mode: md}); }catch(e){}
+      if(p !== 'granted') p = await h.requestPermission({mode: md});
+      if(p !== 'granted') return carpetaFallo('denied'); }
+    if(!h){ t0 = performance.now(); h = await window.showDirectoryPicker({id: 'central', mode: md}); await DIRDB.guardar(h, 'zzx'); }
+  }catch(e){ return carpetaFallo(e, t0 > 0 && performance.now() - t0 < 600); }
+  await usarCarpeta(h, true);
 }
 /* lee la carpeta central completa: la biblioteca de IGS (S.lib) y, por modelo, sus IGS, sus .zzx y su modelo.json (S.cen) */
 async function leerCentral(){
@@ -2525,6 +2582,14 @@ function bindClaveOperador(){
     catch(e){ m.textContent = e.auth === 'clave' ? 'La clave no es correcta' : 'No se pudo leer el servidor: ' + e.message; m.style.color = 'var(--red)'; } };
   $('opClaveOk').onclick = ok; $('opClave').onkeydown = e => { if(e.key === 'Enter') ok(); };
 }
+/* tarjeta para conectar la carpeta central en la PC de la máquina: si no se pudo, dice por qué y ofrece elegirla de nuevo o con
+   el selector sencillo (navegadores sin acceso a carpetas o con ese acceso bloqueado; ese no se recuerda) */
+function tarjetaCarpetaOp(){
+  const fsa = !!window.showDirectoryPicker, err = S.cenErr;
+  return `<div class="card row" style="border-color:var(--${err ? 'red' : 'amber'})"><span style="flex:1;min-width:240px">Para ver el dibujo y bajar el IGS de cada tramo, conecta la carpeta central <b>TUBO LASER - DIBUJOS POR MODELO</b>.
+    ${err ? `<span class="sub" style="color:var(--red)"><b>${esc(err)}</b></span>` : ''}<span class="sub">${fsa ? (err ? 'Elígela otra vez en la ventana de carpetas; si la ventana no abre o no deja elegirla, usa el «Selector sencillo» (ese hay que repetirlo cada vez que se abre la página).' : 'Solo la primera vez en este equipo: después se recuerda.') : 'Este navegador no puede recordar carpetas: hay que elegirla cada vez que se abre la página. En Chrome o Edge se elige una sola vez.'}</span></span>
+    <button class="pri" id="opCarpeta" data-conecta>${err && fsa ? 'Elegir la carpeta otra vez' : 'Conectar carpeta central'}</button>${err && fsa ? '<button id="opClasica" data-conecta title="Selector de carpetas de siempre: el navegador pide confirmar que la página vea los archivos (no se sube nada). No se recuerda: hay que repetirlo cada vez que se abre la página.">Selector sencillo</button>' : ''}</div>`;
+}
 /* estado en piso de un múltiple (sus tramos iguales): pendiente, en proceso o cortado, con las horas de inicio y fin al pasar el
    mouse y los recortes que se guardan con su ID. Lo que era Corte en piso, ahora dentro de Múltiples de corte (Leonardo, 2026-11-20) */
 function estadoPiso(x, conMaq){
@@ -2560,7 +2625,7 @@ function renderMultOperador(){
     <button id="opOcultar" title="Ocultar o ver los múltiples que ya se cortaron">${S.opOcultar ? '👁 Ver cortados' : '◌ Ocultar cortados'}</button><button id="mPrint">🖨 Hoja de corte</button><button id="opRef" title="Volver a leer del servidor">🔄</button><button id="mAbrir" title="Abrir todas las tarjetas">⊞</button><button id="mCerrar" title="Contraer todas las tarjetas">⊟</button></div>
     <div class="row" style="margin-top:8px" title="${esc(ayuda)}"><div class="prog" style="max-width:320px"><i style="width:${bars.length ? est('Cortado')/bars.length*100 : 0}%"></i></div>
     ${dts(dt('Cortados', `${est('Cortado')} de ${bars.length}`, 'tramos', 'ok'), est('En proceso') ? dt('En proceso', est('En proceso'), '', 'wa') : '', dt('Aprovechamiento', pct(cs ? lp/cs : 0), '', lvAprov(cs ? lp/cs : 0)))}</div></div>
-  ${S.cenDir ? '' : `<div class="card row" style="border-color:var(--amber)"><span style="flex:1">Para bajar el IGS de cada tramo, conecta la carpeta central <b>TUBO LASER - DIBUJOS POR MODELO</b>. Solo la primera vez en este equipo: después se recuerda.</span><button class="pri" id="opCarpeta">Conectar carpeta central</button></div>`}
+  ${S.cenDir ? '' : tarjetaCarpetaOp()}
   ${gs.map(({g, gi}, k) => S.opOcultar && g.bars.every(b => b.estado === 'Cortado') ? '' : `<details class="card" data-gk="${esc(gk(g))}" ${abiertos.has(gk(g)) ? 'open' : ''}><summary><b>${esc(g.label)}</b>
     ${dts(dt('Cortados', `${g.bars.filter(b => b.estado === 'Cortado').length} de ${g.bars.length}`, 'tramos', 'ok'), dt('Aprovechamiento', pct(g.tot.aprov), '', lvAprov(g.tot.aprov)))}</summary>
     ${GA[k].map((x, xi) => { const ep = estadoPiso(x), ref = gi + '|' + xi;
@@ -2574,7 +2639,8 @@ function renderMultOperador(){
   $('mPrint').onclick = () => hojaCorte('Programa de corte de tubular ' + res.id + ' · ' + maq, bars);
   $('opRef').onclick = async () => { try{ await API.cargar(); }catch(e){ toast(e.message, 'er'); } S.res = null; renderAll(); };
   if($('opVer')) $('opVer').onchange = e => { S.res = resDeGuardado(e.target.value); renderMultOperador(); };
-  if($('opCarpeta')) $('opCarpeta').onclick = () => abrirCentral(false);
+  if($('opCarpeta')) $('opCarpeta').onclick = () => abrirCentral(!!S.cenErr);
+  if($('opClasica')) $('opClasica').onclick = () => elegirCarpetaClasica();
   $('mAbrir').onclick = () => el.querySelectorAll('details[data-gk]').forEach(d => d.open = true);
   $('mCerrar').onclick = () => el.querySelectorAll('details[data-gk]').forEach(d => d.open = false);
   el.querySelectorAll('details[data-gk]').forEach(d => d.addEventListener('toggle', () => { d.open ? S.multAbiertos.add(d.dataset.gk) : S.multAbiertos.delete(d.dataset.gk); }));
