@@ -488,15 +488,16 @@ const IGES = (() => {
   }
   /* ---- cuerpo del tubo y croquis sueltos (2026-11-24) ----
      SolidWorks exporta, además del cuerpo (superficies), los croquis (asociatividad plana 402 forma 16 con sus curvas) y aristas
-     sueltas. La pieza se mide solo por su cuerpo y del múltiple se quitan los croquis que salen del cuerpo: el plano de la mampara
-     armada a 1.2 m del tubo, círculos de referencia más allá de los extremos… Si no, alargan la pieza (hueco entre piezas), cambian
-     la sección leída o caen sobre la pieza vecina. Las curvas sueltas dentro del cuerpo se quedan como las dibujó Ingeniería */
+     sueltas. La pieza se mide solo por su cuerpo y en el múltiple va solo el sólido: se quitan todos los croquis y curvas sueltas
+     (Leonardo, 2026-11-24). Fuera del cuerpo (el plano de la mampara armada a 1.2 m del tubo, círculos más allá de los extremos)
+     alargaban la pieza, cambiaban la sección leída o caían sobre la pieza vecina; dentro (línea al centro de la cara, puntos de Ø1)
+     no son cortes de la pieza */
   const CURVAS = new Set([100, 102, 104, 106, 110, 112, 116, 126, 130]);
   function cuerpo(m){
     if(m._cuerpo) return m._cuerpo;
     const roots = rootsOf(m).filter(e => e.status.slice(0, 2) !== '01');
     const body = roots.filter(e => !CURVAS.has(e.type)), sueltas = roots.filter(e => CURVAS.has(e.type));
-    const r = {roots, body, sueltas, quitar: new Set(), polys: null, lo: null, hi: null, fuera: 0};
+    const r = {roots, body, sueltas, quitar: new Set(), polys: null, lo: null, hi: null, fuera: 0, croquis: 0};
     // una cara sin su curva en el espacio del modelo dejaría el cuerpo incompleto: entonces se mide como antes (todos los puntos)
     const sinCurva = m.ents.some(e => e.type === 142 && !(parseInt(e.t[4]) || 0));
     if(body.length && !sinCurva){
@@ -506,10 +507,11 @@ const IGES = (() => {
         polys.forEach(pl => pl.p.forEach(q => { for(let k = 0; k < 3; k++){ if(q[k] < lo[k]) lo[k] = q[k]; if(q[k] > hi[k]) hi[k] = q[k]; } }));
         Object.assign(r, {polys, lo, hi});
         const sale = q => q.some((v, k) => v < lo[k] - 1 || v > hi[k] + 1);
-        sueltas.forEach(e => { if(wire(m, [e]).some(pl => pl.p.some(sale))) r.quitar.add(e.de); });
-        r.fuera = r.quitar.size;
+        // las de fuera se cuentan aparte: son las que hay que pedir a Ingeniería que corrija
+        sueltas.forEach(e => { if(wire(m, [e]).some(pl => pl.p.some(sale))) r.fuera++; r.quitar.add(e.de); });
+        r.croquis = r.quitar.size;
         if(r.quitar.size){
-          // el croquis que tiene curvas fuera del cuerpo no es de la pieza: se quita completo
+          // el grupo del croquis (402) se va con sus curvas
           const esSuelta = new Set(sueltas.map(e => e.de));
           m.ents.forEach(g => { if(g.type !== 402) return; const mem = (spec(g) || []).map(k => Math.abs(parseInt(g.t[k]) || 0));
             if(mem.some(d => r.quitar.has(d))){ r.quitar.add(g.de); mem.forEach(d => { if(esSuelta.has(d)) r.quitar.add(d); }); } });
@@ -624,7 +626,7 @@ const IGES = (() => {
     });
     feats.sort((p, q) => p.x - q.x);
     // M0: cómo se colocó la pieza en el tubo (sirve para pasar la regla de cara A de los ejes del IGS a las caras del tubo)
-    return {ok: true, len: L, secA: W, secB: H, wall, round, ends, feats, polys, M0: M, units: a.units, types: a.types, combinable: a.combinable, unsup: a.unsup, croquis: cuerpo(a.model).fuera};
+    return {ok: true, len: L, secA: W, secB: H, wall, round, ends, feats, polys, M0: M, units: a.units, types: a.types, combinable: a.combinable, unsup: a.unsup, croquis: cuerpo(a.model).croquis, croquisFuera: cuerpo(a.model).fuera};
   }
   function measure(m, nominal){
     // con cuerpo (superficies): sus aristas reales, sin croquis sueltos ni los puntos de control de las curvas (que salen del
@@ -3447,7 +3449,7 @@ function dibujarVisor(){
     <span>Pared</span><span>${r.wall != null ? f2(r.wall) + ' mm' : '—'} ${okW == null ? '' : okW ? badge('ok', '✓ cal ' + f.p.cal) : badge('er', 'cal ' + f.p.cal + ' = ' + f2(t) + ' mm')}</span>
     <span>Extremo izq.</span><span>${endTxt(r.ends[0])}</span><span>Extremo der.</span><span>${endTxt(r.ends[1])}</span>
     <span>Barrenos y cortes</span><span>${r.feats.length}</span>
-    ${r.croquis ? `<span>Croquis sueltos</span><span>${badge('in', r.croquis + ' curvas fuera del tubo')} <span class="sm mut">Son del croquis, no de la pieza: no se miden ni van en el múltiple. Pide a Ingeniería el IGS sin croquis.</span></span>` : ''}
+    ${r.croquis ? `<span>Croquis sueltos</span><span>${r.croquisFuera ? badge('er', r.croquisFuera + ' fuera del tubo') + ' ' : ''}<span class="sm mut">${r.croquis} curvas sueltas (croquis y aristas repetidas): no se miden ni van en el múltiple, que lleva solo el sólido.${r.croquisFuera ? ' Las de fuera del tubo alargaban la pieza o cambiaban su sección: pide a Ingeniería el IGS sin croquis.' : ''}</span></span>` : ''}
     <span>Unidades</span><span>${esc(r.units)}</span>
     <span>Entidades</span><span class="sm">${esc(Object.entries(r.types).map(([k, v]) => k + '×' + v).join(', '))}</span>
     <span>IGS combinado</span><span>${r.combinable ? badge('ok', 'Compatible') : badge('er', 'No soportado: ' + Object.keys(r.unsup).join(', '))}</span></div></div>
