@@ -556,7 +556,8 @@ const IGES = (() => {
         caras, pasado, caraTxt: caras.length ? (pasado ? 'Pasado · ' + caraTxt(caras[0]) : caras[0][0] === 'R' ? caraTxt(caras[0]) : caraTxt(caras[0]) + ' (' + (caras[0].endsWith('+') ? (caras[0][0] === 'Z' ? 'superior' : 'derecha') : (caras[0][0] === 'Z' ? 'inferior' : 'izquierda')) + ')') : 'interior'});
     });
     feats.sort((p, q) => p.x - q.x);
-    return {ok: true, len: L, secA: W, secB: H, wall, round, ends, feats, polys, units: a.units, types: a.types, combinable: a.combinable, unsup: a.unsup};
+    // M0: cómo se colocó la pieza en el tubo (sirve para pasar la regla de cara A de los ejes del IGS a las caras del tubo)
+    return {ok: true, len: L, secA: W, secB: H, wall, round, ends, feats, polys, M0: M, units: a.units, types: a.types, combinable: a.combinable, unsup: a.unsup};
   }
   function measure(m, nominal){
     const pts = points(m);
@@ -1008,11 +1009,11 @@ const API = {
     S.authErr = false; return d;
   },
   async cargar(){
-    if(!this.on()){ try{ S.db = JSON.parse(localStorage.getItem('mt-db') || 'null') || {programas: [], tramos: [], recortes: []}; }catch(e){} return; }
+    if(!this.on()){ try{ S.db = JSON.parse(localStorage.getItem('mt-db') || 'null') || {programas: [], tramos: [], recortes: []}; }catch(e){} leerCarasA(); return; }
     const d = await this.jsonp({action: 'estado'});
     S.db = {programas: d.programas || [], tramos: (d.tramos || []).map(t => Object.assign(t, {piezas: typeof t.piezas === 'string' ? JSON.parse(t.piezas || '[]') : t.piezas})), recortes: d.recortes || []};
     S.db.recortes.forEach(r => r.largo = +r.largo);
-    leerBorradorComp(); aplicarCfgCompartida(); completarProgramador();
+    leerCarasA(); leerBorradorComp(); aplicarCfgCompartida(); completarProgramador();
   },
   /* upsert de filas por id; ts '__NOW__' lo pone el servidor. Con Apps Script, cada bloque se aplica aquí solo si el servidor lo confirmó */
   async upsert(tabla, filas){
@@ -1036,7 +1037,7 @@ function setConn(){ const c = $('conn'); if(API.on()){ c.className = 'conn ok'; 
    Todos los equipos deben generar los mismos múltiples: tramo, chuck, refrentado, separación, criterio, catálogo y las
    piezas sueltas / IGS elegidos a mano se guardan en el servidor y cada equipo los toma al conectarse. Se guardan como un
    renglón especial de la hoja de programas (id CFG-COMPARTIDA) para no cambiar el Apps Script; ese renglón no es un programa. */
-const CFG_COMP_ID = 'CFG-COMPARTIDA', CFG_COMP_CAMPOS = ['programadores', 'maq', 'tramo', 'chuck', 'extension', 'extPct', 'refr', 'kerf', 'minRem', 'modo', 'ventana', 'usarRecortes', 'tolSeccion', 'densidad', 'calibres', 'catalogo', 'skuPref'];
+const CFG_COMP_ID = 'CFG-COMPARTIDA', CFG_COMP_CAMPOS = ['caraARegla', 'programadores','maq', 'tramo', 'chuck', 'extension', 'extPct', 'refr', 'kerf', 'minRem', 'modo', 'ventana', 'usarRecortes', 'tolSeccion', 'densidad', 'calibres', 'catalogo', 'skuPref'];
 /* Configuración compartida v2 (Leonardo, 2026-11-19: «ajusté parámetros por máquina y a Tovar le salen los anteriores»).
    Causa: el paquete se subía completo y ganaba el último. Una pantalla con una versión anterior de la plataforma (sin "parámetros
    por máquina") subía su paquete sin ese campo y borraba lo que otro había puesto; dos personas cambiando cosas distintas se pisaban.
@@ -1044,6 +1045,7 @@ const CFG_COMP_ID = 'CFG-COMPARTIDA', CFG_COMP_CAMPOS = ['programadores', 'maq',
    mezcla campo por campo: lo que cambió en este equipo gana y lo demás se toma del servidor (también los parámetros de cada máquina
    y cada tubular con extensión). Cada pantalla relee el servidor cada minuto y adopta lo nuevo; se ve quién y cuándo lo cambió. */
 const CFG_V2_ID = 'CFG-COMPARTIDA-2';
+const CARAS_ID = 'CARAS-A';   // renglón especial con la cara A de cada pieza (ver «Costura y cara A»)
 const copia = v => v === undefined ? undefined : JSON.parse(JSON.stringify(v));
 const paqueteObj = () => { const cfg = {}; CFG_COMP_CAMPOS.forEach(k => { if(k in CFG && CFG[k] !== undefined) cfg[k] = copia(CFG[k]); }); return {cfg, suelta: copia(SUELTA), pzm: copia(PZM), elec: copia(ELEC)}; };
 const firmaPaq = p => JSON.stringify({cfg: p.cfg || {}, suelta: p.suelta || {}, pzm: p.pzm || {}, elec: p.elec || {}});
@@ -1095,7 +1097,7 @@ async function compartirCfg(primera, forzar){
   }catch(e){ toast('No se pudo compartir la configuración: ' + e.message + '. Se vuelve a intentar al rato.', 'er'); }
   S.cfgSubiendo = false;
 }
-const esEspecial = p => p.id === CFG_COMP_ID || p.id === CFG_V2_ID || String(p.id).startsWith(BORR_ID + '-');
+const esEspecial = p => p.id === CFG_COMP_ID || p.id === CFG_V2_ID || p.id === CARAS_ID || String(p.id).startsWith(BORR_ID + '-');
 const quitarCfgDeProgramas = () => { S.db.programas = (S.db.programas || []).filter(p => !esEspecial(p)); };
 /* al leer el servidor: este equipo adopta la configuración compartida; si tiene cambios sin subir, se mezclan y se suben */
 function aplicarCfgCompartida(){
@@ -2087,7 +2089,7 @@ async function guardarPrograma(){
   const tramos = [], recNuevos = [], recUsados = [];
   R.grupos.forEach(g => g.bars.forEach((b, i) => {
     tramos.push({id: b.id, programa: R.id, tipo: g.tipo, tipoLabel: g.label, orden: i + 1, largo: b.P, origen: b.origen, recorteUsado: b.recorteId || '', recorteNuevo: b.recorteNuevo || '', largoRecorte: b.recorte, consumo: b.consumo, aprov: b.aprov, estado: 'Pendiente', inicio: '', fin: '', maquina: b.maquina || '',
-      piezas: b.piezas.map(p => Object.assign({x: +p.x.toFixed(1), L: +p.L.toFixed(1), op: p.op, ruta: p.ruta, pieza: p.pieza, fileId: p.fileId, consumo: +p.consumo.toFixed(1)}, p.pzs > 1 ? {pzs: p.pzs} : {}, p.completo ? {completo: true} : {}))});
+      piezas: b.piezas.map(p => Object.assign({x: +p.x.toFixed(1), L: +p.L.toFixed(1), op: p.op, ruta: p.ruta, pieza: p.pieza, fileId: p.fileId, consumo: +p.consumo.toFixed(1)}, p.pzs > 1 ? {pzs: p.pzs} : {}, p.completo ? {completo: true} : {}, normRot(p.rot) ? {rot: normRot(p.rot)} : {}))});
     if(b.recorteId) recUsados.push({id: b.recorteId, estado: 'Reservado', programa: R.id, tramo: b.id});
     if(b.recorteNuevo) recNuevos.push({id: b.recorteNuevo, tipo: g.tipo, tipoLabel: g.label, tipoCorto: g.corto, largo: b.recorte, estado: 'Por generar', origen: b.id, programa: R.id, ubicacion: '', alta: '__NOW__'});
   }));
@@ -2143,26 +2145,38 @@ async function igsTramo(bar, label){
     const a = IGES.analyze(txt, nom); if(!a.ok) throw new Error(p.pieza + ': ' + a.error);
     if(!a.combinable) throw new Error(p.pieza + ': tiene entidades no soportadas (' + Object.keys(a.unsup).join(', ') + ')');
     const k = a.model.unitFlag === 1 ? 25.4 : 1; if(k !== 1) throw new Error(p.pieza + ': el IGS está en pulgadas; pídelo en mm');
-    items.push({model: a.model, M: IGES.placement(a, p.x)});
+    items.push({model: a.model, M: girarM(IGES.placement(a, p.x), p.rot)});   // girada sobre el eje del tubo si el operador la giró
   }
   return IGES.combine(items, {maxCoord: bar.P, file: bar.id + '.igs', product: bar.id, title: `${bar.id} ${label || ''} tramo ${bar.P} mm`.slice(0, 72)});
 }
 /* tramo de un dibujo completo (MULTIPLE de Ingeniería): se entrega el IGS original, así se reutiliza su alta en TubesT */
 const esCompleto = bar => bar.completo || (bar.piezas.length > 0 && bar.piezas.every(p => p.completo) && new Set(bar.piezas.map(p => p.fileId)).size === 1);
 async function descargarTramo(bar, label, registrar){
+  if(!costuraOk(bar)) return;   // cara A sobre la costura del lote: se avisa antes de cortar
   try{
     await esperarCarpeta();
     if(esCompleto(bar)){
-      const p0 = bar.piezas[0], f = S.lib.find(x => x.id === p0.fileId) || await igsSuelto(p0), txt = await textoDe(f), k = bar.piezas.length;   // igsSuelto también busca por ruta
-      dl(f.name.replace(/\.gz$/i, ''), txt, 'application/iges');
-      toast(`${f.name}: dibujo completo · córtalo ${k} ${k === 1 ? 'vez' : 'veces'} en este tramo (usa su .zzx si ya está dado de alta)`, 'in');
+      const p0 = bar.piezas[0], f = S.lib.find(x => x.id === p0.fileId) || await igsSuelto(p0), txt = await textoDe(f), k = bar.piezas.length, rot = normRot(p0.rot);   // igsSuelto también busca por ruta
+      if(rot){
+        // girado: ya no es el dibujo que se dio de alta; se arma el mismo IGS girado sobre el eje del tubo
+        const md = f.p.med || p0.med, a = IGES.analyze(txt, md ? [md.a, md.b] : null); if(!a.ok) throw new Error(p0.pieza + ': ' + a.error);
+        if(!a.combinable) throw new Error(p0.pieza + ': tiene entidades no soportadas (' + Object.keys(a.unsup).join(', ') + ')');
+        const nom = f.name.replace(/\.gz$/i, '').replace(/\.(igs|iges)$/i, '') + ` GIRADO ${rot}.igs`;
+        dl(nom, IGES.combine([{model: a.model, M: girarM(IGES.placement(a, 0), rot)}], {maxCoord: Math.max(a.len, 1), file: nom, product: bar.id, title: `${bar.id} ${nom}`.slice(0, 72)}), 'application/iges');
+        toast(`${nom}: girado ${rot}° · córtalo ${k} ${k === 1 ? 'vez' : 'veces'}. Es otro dibujo: dalo de alta en TubesT (no uses el .zzx del original)`, 'wa');
+      } else {
+        dl(f.name.replace(/\.gz$/i, ''), txt, 'application/iges');
+        toast(`${f.name}: dibujo completo · córtalo ${k} ${k === 1 ? 'vez' : 'veces'} en este tramo (usa su .zzx si ya está dado de alta)`, 'in');
+      }
     } else { toast('Armando IGS de ' + bar.id + '…', 'in'); const txt = await igsTramo(bar, label); dl(bar.id + '.igs', txt, 'application/iges'); }
     if(registrar) await iniciarVarios(Array.isArray(registrar) ? registrar : [bar.id]); }
   catch(e){ toast(e.message, 'er'); }
 }
 /* ======================= Dibujo de las piezas (barrenos, ranuras y cortes) ======================= */
 /* geometría de cada IGS, leída una sola vez: sirve para dibujar la pieza dentro de la barra y para el visor del tramo */
-const GEO = new Map(), GEO_SYM = new Map(), GEO_PEND = new Set();
+const GEO = new Map(), GEO_SYM = new Map(), GEO_PEND = new Set(), GEO_R = new Map();   // GEO_R: la ya leída, para usarla sin esperar
+/* símbolo de cada pieza en la barra: uno por IGS y giro (una pieza girada se ve distinta en planta) */
+const symKey = p => p.fileId ? p.fileId + (normRot(p.rot) ? '#R' + normRot(p.rot) : '') : '';
 function geoDe(fileId){
   if(GEO.has(fileId)) return GEO.get(fileId);
   // el operador no lee la biblioteca: el IGS se abre por su ruta en la carpeta central (o del servidor, si se subió ahí)
@@ -2171,7 +2185,7 @@ function geoDe(fileId){
       return {r, k: (MEAS[medKey(f)] || {}).k || 1, name: f.name}; }catch(e){ return null; } })();
   // lo que no se pudo leer no se recuerda: al abrir la página la carpeta central se reconecta después de dibujar los múltiples,
   // y el dibujo de las piezas y 🔍 Ver se quedaban sin IGS aunque la carpeta ya estuviera conectada (operadores, 2026-11-20)
-  pr.then(g => { if(!g && GEO.get(fileId) === pr) GEO.delete(fileId); });
+  pr.then(g => { if(!g && GEO.get(fileId) === pr) GEO.delete(fileId); else if(g) GEO_R.set(fileId, g); });
   GEO.set(fileId, pr); return pr;
 }
 /* el primer clic de la pantalla reconecta la carpeta central: si ese clic fue en 🔍 Ver o ⬇ IGS, se espera a que termine */
@@ -2181,12 +2195,14 @@ async function esperarCarpeta(){ for(let t = 0; !S.cenDir && S.cenPend && t < 50
    alargada. Ahora cada barreno o ranura va en su lugar a lo largo de la pieza, pero ensanchado con la misma escala del alto,
    hasta donde quepa sin encimarse con el de junto ni salirse de la pieza (Leonardo, 2026-11-20: «que no se vea tan deformado»). */
 const BAR_H = 58;
-function simboloGeo(g){
+function simboloGeo(g, rot){
   // barrenos y cortes en rojo oscuro, extremos en gris oscuro: se distinguen sobre cualquier color de pieza
   const L = g.r.len || 1, W = g.r.secA || 1, E = Math.max(1, (BAR_H - 4)*(CFG.tramo || 6100)/(1000*W));
+  // pieza girada sobre el eje del tubo: en planta se ven los barrenos de la cara que quedó arriba
+  const polys = normRot(rot) ? g.r.polys.map(pl => Object.assign({}, pl, {p: pl.p.map(q => rotPt(q, rot))})) : g.r.polys;
   // un barreno viene en varios trazos (mitades del círculo, cara de arriba y de abajo): los trazos que se tocan a lo largo del
   // tubo forman un solo rasgo y se ensanchan juntos alrededor de su centro
-  const ps = g.r.polys.filter(pl => pl.feat).map(pl => { const xs = pl.p.map(q => q[0]); return {pl, x0: Math.min(...xs), x1: Math.max(...xs)}; }).sort((a, b) => a.x0 - b.x0);
+  const ps = polys.filter(pl => pl.feat).map(pl => { const xs = pl.p.map(q => q[0]); return {pl, x0: Math.min(...xs), x1: Math.max(...xs)}; }).sort((a, b) => a.x0 - b.x0);
   const fs = []; ps.forEach(p => { const f = fs[fs.length - 1]; if(f && p.x0 <= f.x1 + 0.3){ f.x1 = Math.max(f.x1, p.x1); f.pls.push(p.pl); } else fs.push({x0: p.x0, x1: p.x1, pls: [p.pl]}); });
   fs.forEach(f => { f.cx = (f.x0 + f.x1)/2; f.w = f.x1 - f.x0; });
   // primero los que tienen menos lugar (junto a los extremos); cada uno toma el espacio que le dejan los ya acomodados
@@ -2196,16 +2212,17 @@ function simboloGeo(g){
     f.e = Math.max(1, e); });
   const xy = (x, y) => (x/L*1000).toFixed(1) + ',' + (-y/W*100).toFixed(1);
   const df = fs.map(f => f.pls.map(pl => pl.p.map((q, i) => (i ? 'L' : 'M') + xy(f.cx + (q[0] - f.cx)*f.e, q[1])).join('')).join('')).join('');
-  const de = g.r.polys.filter(pl => pl.end && !pl.feat).map(pl => pl.p.map((q, i) => (i ? 'L' : 'M') + xy(q[0], q[1])).join('')).join('');
+  const de = polys.filter(pl => pl.end && !pl.feat).map(pl => pl.p.map((q, i) => (i ? 'L' : 'M') + xy(q[0], q[1])).join('')).join('');
   return (de ? `<path d="${de}" fill="none" stroke="#2c2c2a" stroke-width="1" vector-effect="non-scaling-stroke"/>` : '') + (df ? `<path d="${df}" fill="none" stroke="#a32d2d" stroke-width="1.3" vector-effect="non-scaling-stroke"/>` : '');
 }
 let geoCorriendo = false;
 async function cargarGeoPendientes(){
   if(geoCorriendo || !GEO_PEND.size) return; geoCorriendo = true;
   const ids = [...GEO_PEND]; GEO_PEND.clear(); let nuevos = 0, i = 0;
-  const worker = async () => { while(i < ids.length){ const id = ids[i++]; const g = await geoDe(id); if(GEO_SYM.has(id)) continue;
-    if(!g && !S.cenDir && String(id).startsWith('L:')) continue;   // sin carpeta central todavía: se dibuja en cuanto se conecte
-    GEO_SYM.set(id, g ? {n: GEO_SYM.size, svg: simboloGeo(g)} : null); nuevos++; } };
+  const worker = async () => { while(i < ids.length){ const id = ids[i++], m = String(id).match(/^(.*)#R(\d+)$/), fid = m ? m[1] : id, rot = m ? +m[2] : 0;
+    const g = await geoDe(fid); if(GEO_SYM.has(id)) continue;
+    if(!g && !S.cenDir && String(fid).startsWith('L:')) continue;   // sin carpeta central todavía: se dibuja en cuanto se conecte
+    GEO_SYM.set(id, g ? {n: GEO_SYM.size, svg: simboloGeo(g, rot)} : null); nuevos++; } };
   await Promise.all([worker(), worker(), worker(), worker()]);
   let defs = $('geoDefs'); if(!defs){ defs = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); defs.id = 'geoDefs'; defs.setAttribute('width', '0'); defs.setAttribute('height', '0'); defs.style.position = 'absolute'; document.body.appendChild(defs); }
   defs.innerHTML = [...GEO_SYM.values()].filter(Boolean).map(s => `<symbol id="gs-${s.n}" viewBox="0 -50 1000 100" preserveAspectRatio="none">${s.svg}</symbol>`).join('');
@@ -2213,36 +2230,138 @@ async function cargarGeoPendientes(){
   if(nuevos && CFG.verGeo !== false) renderAll();
   if(GEO_PEND.size) cargarGeoPendientes();
 }
-/* visor de un tramo: todas sus piezas acomodadas con su geometría, con zoom (Planta, Frente, Sección) */
-async function abrirVisorTramo(bar, label, colorOf){
-  toast('Leyendo las piezas de ' + (bar.id || 'el tramo') + '…', 'in');
+/* ======================= Costura y cara A (Leonardo, 2026-11-24) =======================
+   La cara A (la que queda a la vista en el mueble) no debe llevar la costura del tubular, y la costura cambia de lugar según el
+   lote. La plataforma recuerda la cara A de cada pieza (se marca una vez en la vista 3D; si Ingeniería define una regla de dibujo,
+   esa va por omisión), el operador indica de qué lado quedó la costura del lote que cargó y cada pieza del múltiple se puede girar
+   sobre el eje del tubo (180° en rectangular; de 90 en 90 en cuadrado y redondo). El giro se guarda en el programa aprobado: el
+   IGS de ese múltiple sale girado para todos. Caras en el marco del tubo (IGES.placement): X = eje, Y = lado mayor, Z = lado menor. */
+const CARAS4 = ['Z+', 'Y-', 'Z-', 'Y+'], CARA_TXT = {'Z+': 'Arriba', 'Z-': 'Abajo', 'Y-': 'Frente', 'Y+': 'Atrás'};
+const vecCara = c => ({'Y+': [1, 0], 'Y-': [-1, 0], 'Z+': [0, 1], 'Z-': [0, -1]})[c] || [0, 0];
+const caraDeVec = (y, z) => Math.abs(y) > Math.abs(z) ? (y > 0 ? 'Y+' : 'Y-') : (z > 0 ? 'Z+' : 'Z-');
+const normRot = r => ((Math.round((+r || 0)/90)*90) % 360 + 360) % 360;
+/* giro alrededor del eje del tubo: (y, z) → (y·cos − z·sen, y·sen + z·cos), exacto en múltiplos de 90° */
+const girarYZ = (y, z, rot) => { switch(normRot(rot)){ case 90: return [-z, y]; case 180: return [-y, -z]; case 270: return [z, -y]; default: return [y, z]; } };
+const rotPt = (q, rot) => { if(!normRot(rot)) return q; const [y, z] = girarYZ(q[1], q[2], rot); return [q[0], y, z]; };
+const caraGirada = (c, rot) => { if(!c) return ''; const [y, z] = vecCara(c), [a, b] = girarYZ(y, z, rot); return caraDeVec(a, b); };
+/* matriz de colocación (3×4) girada sobre el eje del tubo (la sección ya quedó centrada en Y = Z = 0) */
+function girarM(M, rot){ const r = normRot(rot); if(!r) return M; const c = Math.round(Math.cos(r*Math.PI/180)), s = Math.round(Math.sin(r*Math.PI/180)), r1 = M.slice(4, 8), r2 = M.slice(8, 12);
+  return M.slice(0, 4).concat(r1.map((v, i) => c*v - s*r2[i]), r1.map((v, i) => s*v + c*r2[i])); }
+/* rectangular: solo 180° (a 90° no entra la sección); cuadrado y redondo: de 90 en 90 */
+const formaTipo = tipo => String(tipo || '').split('-')[0];   // RED, CUAD o RECT (ver tipoDe)
+const pasoGiro = (g, tipo) => { const f = formaTipo(tipo); return f === 'RECT' ? 180 : f === 'CUAD' || f === 'RED' ? 90 : !g ? 180 : Math.abs(g.r.secA - g.r.secB) < 0.6 ? 90 : 180; };
+/* cara A recordada por pieza: línea, modelo y dibujo (no la ruta completa: la rutina de orden mueve los IGS dentro del modelo) */
+const hash36 = s => { let h = 0x811c9dc5; for(let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(36); };
+function claveCara(fileId){ const s = String(fileId || ''); if(!s.startsWith('L:')) return hash36(s);
+  const segs = s.slice(2).split('/'); return hash36(norm(segs[1] || '') + '/' + norm(segs[2] || '') + '|' + claveDibujo(segs[segs.length - 1])); }
+function leerCarasA(){
+  if(!API.on()){ S.carasA = leerJSON('mt-caras-a', {}) || {}; return; }
+  const row = (S.db.programas || []).find(p => p.id === CARAS_ID); if(!row){ S.carasA = S.carasA || {}; return; }
+  try{ S.carasA = JSON.parse(String(row.resumen || '{}')).caras || {}; }catch(e){}
+}
+/* guarda la cara A de una pieza: se relee el servidor y solo se cambia esa pieza (dos equipos marcando piezas distintas no se pisan) */
+async function guardarCaraA(fileId, cara){
+  const k = claveCara(fileId), poner = m => { if(cara) m[k] = cara; else delete m[k]; return m; };
+  if(!API.on()){ S.carasA = poner(Object.assign({}, S.carasA || {})); try{ localStorage.setItem('mt-caras-a', JSON.stringify(S.carasA)); }catch(e){} return; }
+  const d = await API.jsonp({action: 'estado'}), row = (d.programas || []).find(p => p.id === CARAS_ID); let srv = {};
+  try{ srv = row ? JSON.parse(String(row.resumen || '{}')).caras || {} : {}; }catch(e){}
+  const txt = JSON.stringify({v: 1, caras: poner(srv)}); if(txt.length > 48000) throw new Error('ya no caben más caras A en el servidor');
+  await API.upsert('programas', [{id: CARAS_ID, fecha: '__NOW__', archivo: 'No borrar: cara A de cada pieza (Láser Tubo)', estado: 'Configuración', resumen: txt}]);
+  S.carasA = srv; quitarCfgDeProgramas();
+}
+/* regla de Ingeniería (Configuración): la cara A va hacia un eje del IGS; se pasa a la cara del tubo con la colocación de la pieza */
+function caraRegla(g){ const rg = CFG.caraARegla, ax = {'+X': [1, 0, 0], '-X': [-1, 0, 0], '+Y': [0, 1, 0], '-Y': [0, -1, 0], '+Z': [0, 0, 1], '-Z': [0, 0, -1]}[rg];
+  if(!ax || !g || !g.r.M0) return ''; const M = g.r.M0, v = [0, 4, 8].map(o => M[o]*ax[0] + M[o + 1]*ax[1] + M[o + 2]*ax[2]);
+  return Math.abs(v[0]) > 0.5 ? '' : caraDeVec(v[1], v[2]); }   // si la regla apunta al eje del tubo, no aplica
+/* cara A de la pieza (sin girar): la marcada gana; si no, la de la regla */
+function caraA(p, g){ const m = (S.carasA || {})[claveCara(p.fileId)]; if(m) return {c: m, src: 'marcada'};
+  const c = caraRegla(g || GEO_R.get(p.fileId)); return c ? {c, src: 'regla'} : null; }
+/* costura del lote cargado: la indica el operador por máquina y tubular; se recuerda en ese equipo */
+const costuraDe = (maq, tipo) => (leerJSON('mt-costura', {}) || {})[(maq || '') + '|' + (tipo || '')] || '';
+function ponerCostura(maq, tipo, c){ const m = leerJSON('mt-costura', {}) || {}, k = (maq || '') + '|' + (tipo || ''); if(c) m[k] = c; else delete m[k]; try{ localStorage.setItem('mt-costura', JSON.stringify(m)); }catch(e){} }
+/* piezas cuya cara A (ya girada) queda sobre la costura del lote */
+function alertasCostura(bar, maq, tipo){ const cs = costuraDe(bar.maquina || maq, bar.tipo || tipo); if(!cs) return [];
+  return bar.piezas.map((p, i) => { const a = caraA(p); return a && caraGirada(a.c, p.rot) === cs ? i : -1; }).filter(i => i >= 0); }
+function chipsCostura(bar, g){ const n = bar.piezas.filter(p => normRot(p.rot)).length, al = alertasCostura(bar, g && g.maquina, g && g.tipo), cs = costuraDe(bar.maquina || (g && g.maquina), bar.tipo || (g && g.tipo));
+  return (n ? ` <span class="bmini" title="Piezas giradas sobre el eje del tubo: el IGS de este múltiple ya sale girado">⟳ ${n} ${n === 1 ? 'girada' : 'giradas'}</span>` : '')
+    + (al.length ? ` <span class="bmini" style="color:var(--red);font-weight:600" title="Con la costura de este lote (${CARA_TXT[cs]}), la cara A de ${al.length} pieza(s) queda sobre la costura: ábrelo en 🔍 Ver y gíralas">⚠ Cara A sobre la costura</span>` : ''); }
+/* antes de bajar el IGS: si la cara A de alguna pieza queda sobre la costura, se pregunta */
+function costuraOk(bar){ const al = alertasCostura(bar); if(!al.length) return true;
+  return confirm(`⚠ La cara A de ${al.length === 1 ? '1 pieza' : al.length + ' piezas'} (${[...new Set(al.map(i => bar.piezas[i].pieza))].join(', ')}) queda sobre la costura del lote (${CARA_TXT[costuraDe(bar.maquina, bar.tipo)]}).\n\nGíralas en 🔍 Ver antes de cortar. ¿Bajar el IGS de todas formas?`); }
+/* gira piezas del múltiple en todos sus tramos iguales que no se han cortado; en un programa aprobado se guarda en el servidor */
+async function girarPiezas(bars, cambios){
+  const vivos = bars.filter(b => b.estado !== 'Cortado'); if(!vivos.length) throw new Error('Esos tramos ya se cortaron');
+  const antes = vivos.map(b => b.piezas.map(p => p.rot));
+  vivos.forEach(b => cambios.forEach(([i, r]) => { const p = b.piezas[i]; if(!p) return; r = normRot(r); if(r) p.rot = r; else delete p.rot; }));
+  try{ if(S.res && S.res.aprobado) await API.upsert('tramos', vivos.map(b => ({id: b.id, piezas: b.piezas}))); else guardarBorrador(); }
+  catch(e){ vivos.forEach((b, j) => b.piezas.forEach((p, i) => { if(antes[j][i]) p.rot = antes[j][i]; else delete p.rot; })); throw e; }
+}
+const puedeMarcarCara = () => esOperador() || esProgramador();
+
+/* visor de un tramo: todas sus piezas acomodadas con su geometría, en 3D o en planta, frente y sección, con zoom.
+   o.bars = los tramos iguales del múltiple (el giro de una pieza va a todos); o.maquina / o.tipo cuando el tramo no los trae */
+async function abrirVisorTramo(bar, label, colorOf, o){
+  o = o || {}; toast('Leyendo las piezas de ' + (bar.id || 'el tramo') + '…', 'in');
   await esperarCarpeta();
-  const geos = await Promise.all(bar.piezas.map(p => geoDe(p.fileId)));
+  const grupo = o.bars && o.bars.length ? o.bars : null, vivo = grupo ? grupo.find(b => b.estado !== 'Cortado') || grupo[0] : bar;
+  const geos = await Promise.all(vivo.piezas.map(p => geoDe(p.fileId)));
   if(!geos.some(Boolean)) return toast(S.cenDir ? 'No pude leer los IGS de este tramo en la carpeta central' : 'Conecta la carpeta central (aviso de arriba) para ver el dibujo de las piezas', 'er');
-  S.visor = {tramo: {bar, label, geos, col: colorOf || colorMap()}, vista: 'XY'}; dibujarVisorTramo(); $('toast') && ($('toast').style.display = 'none');
+  S.visor = {tramo: {bar: vivo, bars: grupo, label, geos, col: colorOf || colorMap(), maq: vivo.maquina || o.maquina || '', tipo: vivo.tipo || o.tipo || '', cam: null, marca: -1}, vista: '3D'};
+  dibujarVisorTramo(); $('toast') && ($('toast').style.display = 'none');
 }
 function dibujarVisorTramo(){
-  const {bar, label, geos, col} = S.visor.tramo, V = S.visor.vista;
+  const t = S.visor.tramo, {bar, label, geos, col} = t, V = S.visor.vista;
   let mo = $('visor'); if(!mo){ mo = document.createElement('div'); mo.id = 'visor'; mo.className = 'modal'; document.body.appendChild(mo); mo.addEventListener('click', e => { if(e.target === mo) cerrarVisor(); }); }
-  // piezas en su lugar del tramo, en mm (los IGS en pulgadas se convierten con k)
+  // piezas en su lugar del tramo, en mm (los IGS en pulgadas se convierten con k), con su giro sobre el eje del tubo
   const polys = []; let W = 0, Hs = 0;
   bar.piezas.forEach((p, i) => { const g = geos[i]; if(!g) return; const k = g.k;
-    g.r.polys.forEach(pl => polys.push({p: pl.p.map(q => [p.x + q[0]*k, q[1]*k, q[2]*k]), feat: pl.feat, end: pl.end}));
+    g.r.polys.forEach(pl => polys.push({p: pl.p.map(q => { const r = rotPt(q, p.rot); return [p.x + r[0]*k, r[1]*k, r[2]*k]; }), feat: pl.feat, end: pl.end}));
     W = Math.max(W, g.r.secA*k); Hs = Math.max(Hs, g.r.secB*k); });
   const g0 = geos.find(Boolean), gN = [...geos].reverse().find(Boolean);
   const r = {len: bar.P, secA: W || 25, secB: Hs || 25, polys, feats: [], ends: [g0.r.ends[0], gN.r.ends[1]], wall: g0.r.wall};
-  const usado = bar.usado, zb = zonaBar(bar), ch = zb.ch;
-  mo.innerHTML = `<div class="card" role="dialog" aria-label="Visor del tramo"><div class="row" style="margin-bottom:6px;align-items:flex-start"><div style="flex:1;min-width:240px"><b style="font-size:15px">📐 Tramo ${esc(bar.id)}</b> <span class="mut">${esc(label || bar.tipoLabel || '')}${bar.maquina ? ' · ' + esc(bar.maquina) : ''}</span>
+  const usado = bar.usado, zb = zonaBar(bar), ch = zb.ch, en3D = V === '3D';
+  const cs = costuraDe(t.maq, t.tipo), al = alertasCostura(bar, t.maq, t.tipo), puedeG = !!t.bars && puedeMarcarCara() && t.bars.some(b => b.estado !== 'Cortado'), puedeM = puedeMarcarCara();
+  const caraCel = (p, i) => { const g = geos[i], a = caraA(p, g), fin = a ? caraGirada(a.c, p.rot) : '';
+    if(t.marca === i) return `<span class="row" style="gap:3px">${CARAS4.map(c => `<button data-pca="${i}|${c}" class="${fin === c ? 'pri' : ''}" title="La cara A de esta pieza está ${CARA_TXT[c].toLowerCase()}, como se ve ahora en el 3D">${CARA_TXT[c]}</button>`).join('')}${a && a.src === 'marcada' ? `<button data-pca="${i}|-" title="Quitar la marca de esta pieza">Quitar</button>` : ''}<button data-pca="${i}|x" title="Cancelar">✕</button></span>`;
+    return `${a ? `<b style="color:var(--${fin === cs ? 'red' : 'green'})">${fin === cs ? '⚠ ' : ''}A: ${CARA_TXT[fin]}</b>${a.src === 'regla' ? ' <span class="mut sm" title="Por la regla de Ingeniería (Configuración); márcala si no es así">regla</span>' : ''}` : '<span class="mut">sin marcar</span>'}${puedeM && g ? ` <button data-mca="${i}" title="Marcar de qué lado está la cara A de esta pieza, como se ve ahora en el 3D. Se recuerda para esta pieza en todos los programas">✎</button>` : ''}`; };
+  const giroCel = (p, i) => { const g = geos[i], rr = normRot(p.rot), paso = pasoGiro(g, t.tipo);
+    return `${rr ? `<b>${rr}°</b>` : '<span class="mut">0°</span>'}${puedeG && g ? ` <button data-gir="${i}" title="Girar la pieza ${paso}° sobre el eje del tubo${paso === 180 ? ' (rectangular: solo 180°)' : ''}. Se guarda en el programa y el IGS de este múltiple sale girado${esCompleto(bar) ? '. Es un dibujo completo: gira todo el dibujo' : ''}">⟳ ${paso}°</button>` : ''}`; };
+  const cosRow = `<div class="row sm" style="gap:4px 6px;margin:2px 0 8px"><span title="De qué lado quedó la costura del tubular que se cargó (cambia según el lote). Se recuerda en este equipo para ${esc(t.maq)} · ${esc(label || '')}">🧵 <b>Costura del lote</b>${t.maq ? ' · ' + esc(t.maq) : ''}:</span>${['', ...CARAS4].map(c => `<button data-cos="${c}" class="${cs === c ? 'pri' : ''}">${c ? CARA_TXT[c] : 'Sin indicar'}</button>`).join('')}</div>
+    ${al.length ? `<div class="card row" style="border-color:var(--red);padding:8px 12px;margin:0 0 8px"><span style="flex:1;min-width:220px"><b style="color:var(--red)">⚠ La cara A de ${al.length === 1 ? '1 pieza queda' : al.length + ' piezas quedan'} sobre la costura (${CARA_TXT[cs]}).</b> ${al.length === 1 ? 'Gírala' : 'Gíralas'} antes de bajar el IGS.</span>${puedeG ? `<button class="pri" id="vCorregir">⟳ Girar ${al.length === 1 ? 'esa pieza' : 'esas piezas'}</button>` : ''}</div>` : ''}`;
+  mo.innerHTML = `<div class="card" role="dialog" aria-label="Visor del tramo"><div class="row" style="margin-bottom:6px;align-items:flex-start"><div style="flex:1;min-width:240px"><b style="font-size:15px">📐 Tramo ${esc(bar.id)}</b> <span class="mut">${esc(label || bar.tipoLabel || '')}${t.maq ? ' · ' + esc(t.maq) : ''}</span>
     ${pieBar(bar)}</div>
-    <span class="tabs row" style="gap:4px">${[['XY', 'Planta'], ['XZ', 'Frente'], ['YZ', 'Sección']].map(([k, tx]) => `<button data-vv="${k}" class="${k === V ? 'pri' : ''}">${tx}</button>`).join('')}</span>
+    <span class="tabs row" style="gap:4px">${[['3D', '3D'], ['XY', 'Planta'], ['XZ', 'Frente'], ['YZ', 'Sección']].map(([k, tx]) => `<button data-vv="${k}" class="${k === V ? 'pri' : ''}">${tx}</button>`).join('')}</span>
     <button id="vFit" title="Ver todo el tramo (doble clic en el dibujo)">⤢</button><button id="vClose" aria-label="Cerrar">✕</button></div>
-  <svg id="vSvg" class="vlight" style="width:100%;height:36vh"></svg>
-  <div class="row sm" style="margin:8px 0 0;gap:6px 16px;color:var(--text2)"><span><b style="color:#d0341c">━</b> barrenos y cortes</span><span><b style="color:#1a5fb4">━</b> corte de los extremos</span><span><b style="color:#5f5e5a">▨</b> ${nomZona(zb)}</span><span><b style="color:#7aa83f">▨</b> recorte</span>
-    <span style="flex:1"></span><span class="mut">Clic en una pieza de la tabla para acercarte · rueda = zoom · arrastrar = mover · ⤢ = todo el tramo</span></div>
-  <div class="tw" style="margin-top:10px;max-height:none"><table><tr><th>#</th><th>Pieza</th><th>Modelo</th><th>OP</th></tr>
-  ${bar.piezas.map((p, i) => `<tr data-zp="${i}" style="cursor:zoom-in" title="Acercar a esta pieza · ${esc(geos[i] ? geos[i].name : '')} · desde ${f1(p.x)} mm · largo ${f1(p.L)} mm"><td style="white-space:nowrap"><i style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${col(p)};vertical-align:-1px"></i> ${i + 1} 🔍</td><td><b>${esc(p.pieza)}</b>${geos[i] ? '' : ' ' + badge('er', 'No se pudo leer')}</td><td class="sm">${esc(p.ruta)}</td><td class="sm">${esc(p.op)}</td></tr>`).join('')}</table></div></div>`;
+  ${cosRow}
+  ${en3D ? `<div style="position:relative"><canvas id="v3d" style="width:100%;height:46vh;display:block;border-radius:var(--radius-lg);background:#f6f5f1;cursor:grab;touch-action:none"></canvas>
+    <div class="row" style="position:absolute;left:8px;bottom:8px;gap:4px"><button id="v3Prev" title="Pieza anterior">◀</button><button id="v3Next" title="Pieza siguiente">▶</button><button id="v3Menos" title="Alejar">－</button><button id="v3Mas" title="Acercar">＋</button></div></div>`
+    : '<svg id="vSvg" class="vlight" style="width:100%;height:36vh"></svg>'}
+  <div class="row sm" style="margin:8px 0 0;gap:6px 16px;color:var(--text2)"><span><b style="color:#d0341c">━</b> barrenos y cortes</span><span><b style="color:#1a5fb4">━</b> corte de los extremos</span><span><b style="color:#5f5e5a">▨</b> ${nomZona(zb)}</span><span><b style="color:#7aa83f">▨</b> recorte</span>${en3D ? '<span><b style="color:#2ea043">▨</b> cara A</span><span><b style="color:#d0341c">┅</b> costura</span>' : ''}
+    <span style="flex:1"></span><span class="mut">${en3D ? 'Arrastrar = girar la vista · Shift o clic derecho = mover · rueda = zoom · ◀ ▶ o clic en la tabla = pieza por pieza · ⤢ = todo el tramo' : 'Clic en una pieza de la tabla para acercarte · rueda = zoom · arrastrar = mover · ⤢ = todo el tramo'}</span></div>
+  <div class="tw" style="margin-top:10px;max-height:none"><table><tr><th>#</th><th>Pieza</th><th>Modelo</th><th>OP</th><th title="Cara que queda a la vista en el mueble: no debe llevar la costura">Cara A</th><th title="Giro de la pieza sobre el eje del tubo">Giro</th></tr>
+  ${bar.piezas.map((p, i) => `<tr data-zp="${i}" style="cursor:zoom-in" title="Acercar a esta pieza · ${esc(geos[i] ? geos[i].name : '')} · desde ${f1(p.x)} mm · largo ${f1(p.L)} mm"><td style="white-space:nowrap"><i style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${col(p)};vertical-align:-1px"></i> ${i + 1} 🔍</td><td><b>${esc(p.pieza)}</b>${geos[i] ? '' : ' ' + badge('er', 'No se pudo leer')}</td><td class="sm">${esc(p.ruta)}</td><td class="sm">${esc(p.op)}</td><td class="sm" style="white-space:nowrap">${caraCel(p, i)}</td><td class="sm" style="white-space:nowrap">${giroCel(p, i)}</td></tr>`).join('')}</table></div></div>`;
   mo.querySelectorAll('[data-vv]').forEach(b => b.onclick = () => { S.visor.vista = b.dataset.vv; dibujarVisorTramo(); });
-  $('vClose').onclick = cerrarVisor; $('vFit').onclick = () => { const s = $('vSvg'); setVB(s, Object.assign({}, s._home)); };
+  $('vClose').onclick = cerrarVisor;
+  $('vFit').onclick = () => { if(en3D){ t.cam = cam3DTodo(t, $('v3d').getBoundingClientRect().width); dibujar3D(); } else { const s = $('vSvg'); setVB(s, Object.assign({}, s._home)); } };
+  // costura, giro y cara A: se guardan y se redibuja el visor y, atrás, la lista de múltiples (avisos y dibujo de las piezas)
+  const redibujar = () => { renderAll(); if(S.visor) dibujarVisorTramo(); };
+  mo.querySelectorAll('[data-cos]').forEach(b => b.onclick = () => { ponerCostura(t.maq, t.tipo, b.dataset.cos); redibujar(); });
+  const girar = async cambios => { try{ await girarPiezas(t.bars, cambios); toast(S.res && S.res.aprobado ? 'Giro guardado: el IGS de este múltiple sale girado en todos los equipos' : 'Giro listo: se guarda al aprobar el programa'); }catch(e){ toast('No se pudo guardar el giro: ' + e.message, 'er'); } redibujar(); };
+  mo.querySelectorAll('[data-gir]').forEach(b => b.onclick = e => { e.stopPropagation(); const i = +b.dataset.gir, p = bar.piezas[i], nr = normRot((p.rot || 0) + pasoGiro(geos[i], t.tipo));
+    girar((esCompleto(bar) ? bar.piezas.map((q, j) => j) : [i]).map(j => [j, nr])); });
+  if($('vCorregir')) $('vCorregir').onclick = () => girar(al.map(i => [i, normRot((bar.piezas[i].rot || 0) + 180)]));   // 180°: la cara A pasa al lado contrario de la costura
+  mo.querySelectorAll('[data-mca]').forEach(b => b.onclick = e => { e.stopPropagation(); t.marca = +b.dataset.mca; dibujarVisorTramo(); });
+  mo.querySelectorAll('[data-pca]').forEach(b => b.onclick = async e => { e.stopPropagation(); const [si, c] = b.dataset.pca.split('|'), i = +si, p = bar.piezas[i]; t.marca = -1;
+    if(c === 'x') return dibujarVisorTramo();
+    // lo que se ve ahora en 3D ya trae el giro: se guarda la cara de la pieza sin girar
+    try{ await guardarCaraA(p.fileId, c === '-' ? '' : caraGirada(c, 360 - normRot(p.rot))); toast(c === '-' ? 'Se quitó la marca de cara A de ' + p.pieza : `Cara A de ${p.pieza}: ${CARA_TXT[c]}. Se recuerda para esta pieza en todos los programas`); }
+    catch(err){ toast('No se pudo guardar la cara A: ' + err.message, 'er'); }
+    redibujar(); });
+  if(en3D){
+    iniciar3D();
+    mo.querySelectorAll('[data-zp]').forEach(tr => tr.onclick = () => { const cv = $('v3d'); t.cam = cam3DPieza(t, +tr.dataset.zp, cv.getBoundingClientRect().width, t.cam.az, t.cam.el); dibujar3D(); cv.scrollIntoView({block: 'nearest'}); });
+    return;
+  }
   // colores de plano sobre fondo claro: líneas oscuras, barrenos en rojo y extremos en azul, para que no se pierdan con el color de la pieza
   const svg = $('vSvg'); dibujarVista(svg, r, V, {tx: '#2c2c2a', feat: '#d0341c', end: '#1a5fb4', dim: '#1a5fb4', mut: '#5f5e5a', w: 1.1, wf: 1.8});
   if(V !== 'YZ'){
@@ -2262,6 +2381,119 @@ function dibujarVisorTramo(){
     const s = $('vSvg'), p = bar.piezas[+tr.dataset.zp], bx = s.getBoundingClientRect(), m = Math.max(p.L*.06, 20), w = p.L + 2*m, h = w*(bx.height/(bx.width || 1));
     setVB(s, {x: p.x - m, y: -h/2 - r.secA*.4, w, h}); s.scrollIntoView({block: 'nearest'}); });
 }
+/* ---- vista 3D del tramo (Leonardo, 2026-11-24: «previsualizar los múltiples en 3D, no tal cual TubesT») ----
+   El tubo translúcido, cada pieza con su tinte y sus aristas (barrenos y cortes en rojo, extremos en azul), la cara A de cada pieza
+   (verde; roja si queda sobre la costura) y la costura del lote. Sin bibliotecas: proyección ortográfica en un canvas.
+   Cámara: az = giro alrededor del eje vertical, el = altura; X del tubo a la derecha, Arriba (Z+) hacia arriba, Frente (Y−) al operador */
+function escena3D(t){
+  // redondo según el tubular del programa: un cuadrado con esquinas redondeadas tiene muchos arcos y la geometría lo confundía
+  const {bar, geos} = t, forma = formaTipo(t.tipo || bar.tipo); let W = 0, H = 0, round = forma === 'RED';
+  const piezas = bar.piezas.map((p, i) => { const g = geos[i]; if(!g) return null; const k = g.k;
+    W = Math.max(W, g.r.secA*k); H = Math.max(H, g.r.secB*k); if(!forma) round = round || g.r.round;
+    return {p, i, g, polys: g.r.polys.map(pl => ({t: pl.feat ? 'f' : pl.end ? 'e' : 'l', p: pl.p.map(q => { const r = rotPt(q, p.rot); return [p.x + r[0]*k, r[1]*k, r[2]*k]; })}))}; });
+  return {piezas, W: W || 25, H: H || 25, round};
+}
+function proy3D(cam, w, h){
+  const ca = Math.cos(cam.az), sa = Math.sin(cam.az), ce = Math.cos(cam.el), se = Math.sin(cam.el);
+  const R = [ca, sa, 0], F = [-sa*ce, ca*ce, -se], U = [R[1]*F[2] - R[2]*F[1], R[2]*F[0] - R[0]*F[2], R[0]*F[1] - R[1]*F[0]];
+  return {F, p: (x, y, z) => { const X = x - cam.fx; return [w/2 + cam.px + cam.s*(X*R[0] + y*R[1] + z*R[2]), h/2 + cam.py - cam.s*(X*U[0] + y*U[1] + z*U[2])]; }};
+}
+/* pieza enfocada: vista en diagonal (el largo se acorta y la sección se ve más grande); la pieza cabe a lo ancho y a lo alto */
+function cam3DPieza(t, i, w, az, el){ const E = t.esc || escena3D(t), p = t.bar.piezas[i] || t.bar.piezas[0], cv = $('v3d'), h = cv ? cv.getBoundingClientRect().height || 400 : 400, m = Math.max(E.W, E.H);
+  az = az == null ? -0.6 : az; el = el == null ? 0.35 : el;
+  const s = Math.min(0.74*(w || 800)/(p.L*Math.abs(Math.cos(az)) + 3*m), 0.72*h/(p.L*Math.abs(Math.sin(az)*Math.sin(el)) + 3.5*m));
+  return {az, el, fx: p.x + p.L/2, px: -70, py: 12, s, sel: i}; }   // un poco a la izquierda y abajo: arriba a la derecha va el recuadro de la sección
+function cam3DTodo(t, w){ return {az: 0, el: 0.5, fx: t.bar.P/2, px: 0, py: 0, s: 0.94*(w || 800)/t.bar.P, sel: -1}; }
+let raf3D = 0;
+const pedir3D = () => { if(raf3D) return; raf3D = 1; (document.hidden ? f => setTimeout(f, 16) : requestAnimationFrame)(() => { raf3D = 0; dibujar3D(); }); };
+function iniciar3D(){
+  const t = S.visor.tramo, cv = $('v3d'); if(!cv) return;
+  t.esc = escena3D(t);
+  const w = () => cv.getBoundingClientRect().width || 800;
+  if(!t.cam){ const i0 = t.bar.piezas.findIndex((p, i) => t.geos[i]); t.cam = cam3DPieza(t, Math.max(0, i0), w()); }
+  let drag = null;
+  cv.onpointerdown = e => { try{ cv.setPointerCapture(e.pointerId); }catch(err){} drag = {x: e.clientX, y: e.clientY, pan: e.shiftKey || e.button === 1 || e.button === 2}; cv.style.cursor = 'grabbing'; };
+  cv.onpointermove = e => { if(!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+    if(drag.pan){ t.cam.px += dx; t.cam.py += dy; } else { t.cam.az -= dx*0.008; t.cam.el = Math.max(-1.5, Math.min(1.5, t.cam.el + dy*0.008)); } pedir3D(); };
+  cv.onpointerup = cv.onpointercancel = () => { drag = null; cv.style.cursor = 'grab'; };
+  cv.oncontextmenu = e => e.preventDefault();
+  cv.onwheel = e => { e.preventDefault(); const r = cv.getBoundingClientRect(), f = Math.exp(-e.deltaY*0.0015), mx = e.clientX - r.left - r.width/2 - t.cam.px, my = e.clientY - r.top - r.height/2 - t.cam.py;
+    t.cam.s *= f; t.cam.px -= mx*(f - 1); t.cam.py -= my*(f - 1); pedir3D(); };
+  cv.ondblclick = () => { t.cam = cam3DTodo(t, w()); pedir3D(); };
+  const ir = d => { const ok = t.bar.piezas.map((p, i) => i).filter(i => t.geos[i]); if(!ok.length) return;
+    const k = ok.indexOf(t.cam.sel), n = ok[((k < 0 ? (d > 0 ? -1 : 0) : k) + d + ok.length) % ok.length];
+    t.cam = cam3DPieza(t, n, w(), t.cam.az, t.cam.el); dibujar3D(); };
+  $('v3Prev').onclick = () => ir(-1); $('v3Next').onclick = () => ir(1);
+  // zoom con botones (pantallas táctiles sin rueda)
+  const zoom = f => { t.cam.s *= f; t.cam.px *= f; t.cam.py *= f; dibujar3D(); };
+  $('v3Mas').onclick = () => zoom(1.4); $('v3Menos').onclick = () => zoom(1/1.4);
+  if(!S.res3D){ S.res3D = true; window.addEventListener('resize', () => { if($('v3d')) pedir3D(); }); }
+  dibujar3D();
+}
+function dibujar3D(){
+  const t = S.visor && S.visor.tramo, cv = $('v3d'); if(!t || !cv || !t.cam) return;
+  const dpr = window.devicePixelRatio || 1, bx = cv.getBoundingClientRect(), w = bx.width || 800, h = bx.height || 400;
+  if(cv.width !== Math.round(w*dpr) || cv.height !== Math.round(h*dpr)){ cv.width = Math.round(w*dpr); cv.height = Math.round(h*dpr); }
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+  const E = t.esc || (t.esc = escena3D(t)), cam = t.cam, {bar, col} = t, pr = proy3D(cam, w, h), P = pr.p, F = pr.F;
+  const W2 = E.W/2, H2 = E.H/2, cs = costuraDe(t.maq, t.tipo), ch = zonaBar(bar).ch, m = Math.max(W2, H2);
+  // superficie del tubo: 4 caras (rectangular) o 24 franjas (redondo); cada una con su normal y la cara a la que pertenece
+  const fr = E.round ? Array.from({length: 24}, (_, k) => { const a0 = (k - .5)*Math.PI/12, a1 = (k + .5)*Math.PI/12, am = k*Math.PI/12;
+      return {n: [Math.cos(am), Math.sin(am)], a: [W2*Math.cos(a0), W2*Math.sin(a0)], b: [W2*Math.cos(a1), W2*Math.sin(a1)], c: caraDeVec(Math.cos(am), Math.sin(am))}; })
+    : [['Z+', [W2, H2], [-W2, H2]], ['Y-', [-W2, H2], [-W2, -H2]], ['Z-', [-W2, -H2], [W2, -H2]], ['Y+', [W2, -H2], [W2, H2]]].map(([c, a, b]) => ({n: vecCara(c), a, b, c}));
+  const vis = f => f.n[0]*F[1] + f.n[1]*F[2] < 0;   // la cara mira a la cámara
+  const quad = (f, x0, x1, k) => [[x0, f.a[0]*k, f.a[1]*k], [x1, f.a[0]*k, f.a[1]*k], [x1, f.b[0]*k, f.b[1]*k], [x0, f.b[0]*k, f.b[1]*k]].map(q => P(q[0], q[1], q[2]));
+  const poly = (pts, fill, stroke, lw, alpha) => { ctx.globalAlpha = alpha == null ? 1 : alpha; ctx.beginPath(); pts.forEach((q, i) => i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])); ctx.closePath();
+    if(fill){ ctx.fillStyle = fill; ctx.fill(); } if(stroke){ ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1; ctx.stroke(); } ctx.globalAlpha = 1; };
+  const texto = (s, x, y, c, b, size) => { ctx.font = `${b ? 600 : 400} ${size || 12}px "IBM Plex Sans",system-ui,sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round'; ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(255,255,255,.92)'; ctx.strokeText(s, x, y); ctx.fillStyle = c; ctx.fillText(s, x, y); };
+  const delante = fr.filter(vis), atras = fr.filter(f => !vis(f));
+  // 1) caras de atrás, tenues; 2) cada pieza con el tinte de su color, el recorte y la zona del chuck (caras de enfrente)
+  atras.forEach(f => poly(quad(f, 0, bar.P, 1), 'rgba(120,120,115,.07)', E.round ? null : 'rgba(60,60,55,.22)', 1));
+  bar.piezas.forEach(p => delante.forEach(f => poly(quad(f, p.x, p.x + p.L, 1), col(p), null, 1, .30)));
+  if(bar.recorte) delante.forEach(f => poly(quad(f, bar.usado, bar.P - ch, 1), '#7aa83f', null, 1, .28));
+  delante.forEach(f => poly(quad(f, bar.P - ch, bar.P, 1), '#5f5e5a', null, 1, .42));
+  // 3) aristas de cada pieza
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  E.piezas.forEach(pz => { if(!pz) return; const sel = cam.sel === pz.i;
+    [['l', 'rgba(44,44,42,.55)', 1], ['e', '#1a5fb4', 1.4], ['f', '#d0341c', 1.7]].forEach(([tp, c, lw]) => { ctx.strokeStyle = c; ctx.lineWidth = lw*(sel ? 1.25 : 1); ctx.beginPath();
+      pz.polys.forEach(pl => { if(pl.t !== tp) return; pl.p.forEach((q, i) => { const s = P(q[0], q[1], q[2]); i ? ctx.lineTo(s[0], s[1]) : ctx.moveTo(s[0], s[1]); }); }); ctx.stroke(); }); });
+  // 4) aristas del tubo encima, y dónde empieza y termina cada pieza
+  if(!E.round) delante.forEach(f => poly(quad(f, 0, bar.P, 1), null, 'rgba(60,60,55,.5)', 1));
+  else { const sil = fr.filter((f, k) => vis(f) !== vis(fr[(k + 1) % fr.length])); sil.forEach(f => { const a = P(0, f.b[0], f.b[1]), b = P(bar.P, f.b[0], f.b[1]); ctx.strokeStyle = 'rgba(60,60,55,.5)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }); }
+  ctx.setLineDash([4, 3]); ctx.strokeStyle = 'rgba(44,44,42,.6)'; ctx.lineWidth = 1;
+  bar.piezas.forEach(p => [p.x, p.x + p.L].forEach(x => { ctx.beginPath(); delante.forEach(f => { const a = P(x, f.a[0], f.a[1]), b = P(x, f.b[0], f.b[1]); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); }); ctx.stroke(); }));
+  ctx.setLineDash([]);
+  // 5) cara A de cada pieza (verde; roja si queda sobre la costura) y la costura del lote
+  E.piezas.forEach(pz => { if(!pz) return; const a = caraA(pz.p, pz.g); if(!a) return; const fin = caraGirada(a.c, pz.p.rot), mal = fin === cs, v = vecCara(fin);
+    fr.filter(f => f.c === fin).forEach(f => poly(quad(f, pz.p.x + .5, pz.p.x + pz.p.L - .5, 1.01), mal ? '#d0341c' : '#2ea043', null, 1, vis(f) ? (mal ? .55 : .42) : .16));
+    const vf = v[0]*F[1] + v[1]*F[2] < 0, c = P(pz.p.x + pz.p.L/2, v[0]*(W2 + .5), v[1]*(H2 + .5));
+    if(pz.p.L*cam.s > 14) texto(mal ? 'A ⚠' : 'A', c[0], c[1], mal ? '#a32d2d' : '#1e6b30', true, vf ? 13 : 10); });
+  if(cs){ const v = vecCara(cs), y = v[0]*W2*1.02, z = v[1]*H2*1.02, a = P(0, y, z), b = P(bar.P, y, z), vf = v[0]*F[1] + v[1]*F[2] < 0;
+    ctx.save(); ctx.globalAlpha = vf ? 1 : .45; ctx.strokeStyle = '#d0341c'; ctx.lineWidth = 3; ctx.setLineDash([12, 6]); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); ctx.restore(); }
+  // 6) nombres de las caras junto a la pieza enfocada y nombre de cada pieza arriba
+  if(cam.s*m > 12){ const ps = bar.piezas[cam.sel], xl = ps ? ps.x : cam.fx;
+    CARAS4.forEach(c => { const v = vecCara(c); if(!(v[0]*F[1] + v[1]*F[2] < 0)) return; const q = P(xl, v[0]*(W2 + m*.75), v[1]*(H2 + m*.75));
+      texto(CARA_TXT[c] + (c === cs ? ' · costura' : ''), q[0], q[1], c === cs ? '#a32d2d' : '#5f5e5a', c === cs, 11); }); }
+  bar.piezas.forEach((p, i) => { const a = P(p.x, 0, 0), b = P(p.x + p.L, 0, 0); if(Math.hypot(b[0] - a[0], b[1] - a[1]) < 46) return;
+    const q = P(p.x + p.L/2, 0, H2 + m*1.15); texto((i + 1) + '. ' + (p.pieza.length > 28 ? p.pieza.slice(0, 27) + '…' : p.pieza), q[0], q[1], '#1f1f1d', cam.sel === i, cam.sel === i ? 13 : 11.5); });
+  // 7) recuadro de la sección (viendo el tubo a lo largo, desde el inicio): las cuatro caras, la cara A de la pieza enfocada y la
+  //    costura. Es la referencia fija para el operador aunque la vista 3D esté girada
+  const B = 132, ox = w - B - 8, oy = 8, cx = ox + B/2, cy = oy + B/2 + 6, k = 56/Math.max(E.W, E.H), sx = y => cx - y*k, sy = z => cy - z*k;   // a la derecha queda Frente
+  ctx.globalAlpha = .94; ctx.fillStyle = '#ffffff'; ctx.strokeStyle = 'rgba(60,60,55,.35)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(ox, oy, B, B + 12, 8) : ctx.rect(ox, oy, B, B + 12); ctx.fill(); ctx.stroke(); ctx.globalAlpha = 1;
+  const pz = E.piezas[cam.sel], aA = pz ? caraA(pz.p, pz.g) : null, finA = aA ? caraGirada(aA.c, pz.p.rot) : '';
+  texto(pz ? `Sección · pieza ${cam.sel + 1}` : 'Sección', cx, oy + 11, '#5f5e5a', true, 10.5);
+  const lado = (c, color, lw, dash) => { ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = lw; if(dash) ctx.setLineDash(dash); ctx.beginPath();
+    if(E.round){ const v = vecCara(c), th = Math.atan2(-v[1], -v[0]); ctx.arc(cx, cy, W2*k, th - Math.PI/4, th + Math.PI/4); }
+    else { const [a, b] = {'Z+': [[-W2, H2], [W2, H2]], 'Z-': [[-W2, -H2], [W2, -H2]], 'Y-': [[-W2, H2], [-W2, -H2]], 'Y+': [[W2, H2], [W2, -H2]]}[c]; ctx.moveTo(sx(a[0]), sy(a[1])); ctx.lineTo(sx(b[0]), sy(b[1])); }
+    ctx.stroke(); ctx.restore(); };
+  ctx.strokeStyle = '#2c2c2a'; ctx.lineWidth = 1.5; ctx.beginPath(); if(E.round) ctx.arc(cx, cy, W2*k, 0, 2*Math.PI); else ctx.rect(sx(W2), sy(H2), E.W*k, E.H*k); ctx.stroke();
+  if(finA) lado(finA, finA === cs ? '#d0341c' : '#2ea043', 6);
+  if(cs) lado(cs, '#d0341c', 2.5, [5, 3]);
+  CARAS4.forEach(c => { const v = vecCara(c), d = v[0] ? W2*k + 14 : H2*k + 9, tx = cx - v[0]*d, ty = cy - v[1]*d;
+    texto(CARA_TXT[c], tx, ty, c === cs ? '#a32d2d' : c === finA ? '#1e6b30' : '#5f5e5a', c === cs || c === finA, 10); });
+  if(finA){ const v = vecCara(finA); texto('A', cx - v[0]*(E.round ? W2 : W2)*k*.55, cy - v[1]*(E.round ? W2 : H2)*k*.55, finA === cs ? '#a32d2d' : '#1e6b30', true, 13); }
+}
 function svgBar(b, colorOf, opts){
   // dentro de la barra va el nombre de la pieza y su modelo, sin el largo (Leonardo, 2026-11-18). Las piezas iguales seguidas se
   // rotulan juntas ("6× PATA"); si el rótulo no cabe completo, va en la leyenda de abajo. El largo se ve al pasar el mouse.
@@ -2273,8 +2505,8 @@ function svgBar(b, colorOf, opts){
     <pattern id="hD" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="var(--hd1)"/><line x1="0" y1="0" x2="0" y2="7" stroke="var(--hd2)" stroke-width="2"/></pattern></defs>`;
   const halo = 'paint-order="stroke" stroke="rgba(255,255,255,.88)" stroke-width="3.5" stroke-linejoin="round"';
   const runs = [];
-  b.piezas.forEach((p, i) => { const x = p.x*sc, w = p.L*sc, c = colorOf(p), gs = geo ? GEO_SYM.get(p.fileId) : null, ops = opsDe(i), rutas = rutasDe(i);
-    if(geo && gs === undefined && p.fileId) GEO_PEND.add(p.fileId);
+  b.piezas.forEach((p, i) => { const x = p.x*sc, w = p.L*sc, c = colorOf(p), sk = symKey(p), gs = geo ? GEO_SYM.get(sk) : null, ops = opsDe(i), rutas = rutasDe(i);
+    if(geo && gs === undefined && p.fileId) GEO_PEND.add(sk);
     s += `<rect x="${x}" y="2" width="${Math.max(w, 1)}" height="${H - 4}" fill="${c}" stroke="#2c2c2a" stroke-width=".8"><title>${esc(p.pieza)} · modelo ${esc(rutas.join(', '))}${ops.length ? ' · OP ' + esc(ops.join(', ')) : ''} · ${f1(p.L)} mm</title></rect>`;
     // barrenos, ranuras y extremos de la pieza (su IGS en planta, estirado a la barra)
     if(gs) s += `<use href="#gs-${gs.n}" x="${x}" y="2" width="${Math.max(w, 1)}" height="${H - 4}" opacity=".5" pointer-events="none"/>`;
@@ -2314,7 +2546,7 @@ const vecesChip = (n, extra) => n > 1 ? `<span class="veces" title="${n} tramos 
 /* tramos iguales (mismas piezas en el mismo lugar, sin importar la OP) = el mismo múltiple que se corta varias veces.
    Los que salen de un recorte del inventario no se juntan: cada uno usa un recorte distinto */
 function agrupar(bars){ const out = [];
-  bars.forEach(b => { const sig = (b._k || '') + '|' + b.origen + '|' + (b.origen === 'recorte' ? b.recorteId || b.id : '') + '|' + Math.round(b.P) + '|' + b.piezas.map(p => (p.fileId || p.ruta + '§' + p.pieza) + '§' + Math.round(p.L) + '§' + Math.round(p.x)).join(',');   // mismo IGS en el mismo lugar, aunque sea de otro modelo
+  bars.forEach(b => { const sig = (b._k || '') + '|' + b.origen + '|' + (b.origen === 'recorte' ? b.recorteId || b.id : '') + '|' + Math.round(b.P) + '|' + b.piezas.map(p => (p.fileId || p.ruta + '§' + p.pieza) + '§' + Math.round(p.L) + '§' + Math.round(p.x) + (normRot(p.rot) ? '§R' + normRot(p.rot) : '')).join(',');   // mismo IGS en el mismo lugar, aunque sea de otro modelo
     const e = out.find(x => x.sig === sig); if(e){ e.n++; e.ids.push(b.id); e.bars.push(b); } else out.push({sig, b, n: 1, ids: [b.id], bars: [b]}); });
   out.forEach(x => { x.ops = i => [...new Set(x.bars.map(bb => bb.piezas[i] && bb.piezas[i].op).filter(Boolean))]; x.rutas = i => [...new Set(x.bars.map(bb => bb.piezas[i] && bb.piezas[i].ruta).filter(Boolean))]; });
   return out; }
@@ -2672,7 +2904,7 @@ function renderMultOperador(){
     ${dts(dt('Cortados', `${g.bars.filter(b => b.estado === 'Cortado').length} de ${g.bars.length}`, 'tramos', 'ok'), dt('Aprovechamiento', pct(g.tot.aprov), '', lvAprov(g.tot.aprov)))}</summary>
     ${GA[k].map((x, xi) => { const ep = estadoPiso(x), ref = gi + '|' + xi;
       if(S.opOcultar && ep.e === 'Cortado') return '';
-      return `<div class="bar" style="${ep.e === 'Cortado' ? 'opacity:.6' : ''}"><div class="barhd">${tramosTxt(x.ids, R.id)} ${vecesChip(x.n)}${zonaBar(x.b).ext ? ' ' + badge('in', 'Con extensión') : ''} ${ep.html} ${pieBar(x.b)}${ep.recs}<span style="flex:1"></span>
+      return `<div class="bar" style="${ep.e === 'Cortado' ? 'opacity:.6' : ''}"><div class="barhd">${tramosTxt(x.ids, R.id)} ${vecesChip(x.n)}${zonaBar(x.b).ext ? ' ' + badge('in', 'Con extensión') : ''} ${ep.html} ${pieBar(x.b)}${ep.recs}${chipsCostura(x.b, g)}<span style="flex:1"></span>
       <button data-ver="${ref}" title="Ver el tramo con el dibujo de cada pieza, con zoom">🔍 Ver</button>${ep.pend ? `<button data-opigs="${ref}" class="${ep.enP ? '' : 'pri'}" title="Baja el IGS y marca En proceso en ${esc(maq)} ${x.n > 1 ? 'los ' + ep.pend + ' tramos iguales que faltan' : 'el tramo'}">⬇ IGS</button>` : ''}${ep.enP ? `<button class="pri" data-opfin="${ref}" title="Marca como cortado${x.n > 1 ? 's los tramos en proceso' : ''}">■ Terminar</button>` : ''}<button data-hoja="${ref}" title="Hoja de corte de este múltiple">🖨</button></div>${svgBar(x.b, col, {op: true, ops: x.ops, rutas: x.rutas})}</div>`; }).join('')}</details>`).join('')}
   ${S.cuenta && S.cuenta.equipo ? `<p class="mut sm" style="margin:14px 0 0;text-align:right">🖥 Equipo de operador de <b>${esc(maq)}</b> · <a href="#" id="opSalirEq" title="Solo Ingeniería: pide la clave de acceso del servidor">Quitar el modo operador</a></p>` : ''}`;
   const res = S.res;
@@ -2687,7 +2919,7 @@ function renderMultOperador(){
   $('mCerrar').onclick = () => el.querySelectorAll('details[data-gk]').forEach(d => d.open = false);
   el.querySelectorAll('details[data-gk]').forEach(d => d.addEventListener('toggle', () => { d.open ? S.multAbiertos.add(d.dataset.gk) : S.multAbiertos.delete(d.dataset.gk); }));
   const deRef = s => { const [gi, xi] = s.split('|').map(Number), k = gs.findIndex(x => x.gi === gi); return {g: res.grupos[gi], x: GA[k][xi]}; };
-  el.querySelectorAll('[data-ver]').forEach(b => b.onclick = () => { const {g, x} = deRef(b.dataset.ver); abrirVisorTramo(x.b, g.label); });
+  el.querySelectorAll('[data-ver]').forEach(b => b.onclick = () => { const {g, x} = deRef(b.dataset.ver); abrirVisorTramo(x.b, g.label, null, {bars: x.bars, maquina: g.maquina, tipo: g.tipo}); });
   el.querySelectorAll('[data-hoja]').forEach(b => b.onclick = () => { const {x} = deRef(b.dataset.hoja); hojaCorte(x.n > 1 ? x.n + ' tramos iguales' : 'Tramo ' + x.b.id, x.bars); });
   el.querySelectorAll('[data-opigs]').forEach(b => b.onclick = async () => { const {g, x} = deRef(b.dataset.opigs), ids = x.bars.filter(bb => (bb.estado || 'Pendiente') === 'Pendiente').map(bb => bb.id);
     await descargarTramo(x.b, g.label, ids); S.res = resDeGuardado(res.id); renderMultOperador(); });
@@ -2745,7 +2977,7 @@ function renderMult(){
     ${dts(R.aprobado ? dt('Cortados', `${g.bars.filter(b => b.estado === 'Cortado').length} de ${g.bars.length}`, 'tramos', 'ok') : dt('Tramos', g.tot.tramos + g.tot.recUsados), dt('Piezas', g.tot.piezas), dt('Aprovechamiento', pct(g.tot.aprov), '', lvAprov(g.tot.aprov)))}</summary>
     ${agrupar(g.bars).map(x => { const ref = gi + '|' + g.bars.indexOf(x.b), ep = R.aprobado ? estadoPiso(x, !MQ) : null;
       if(ep && S.opOcultar && ep.e === 'Cortado') return '';
-      return `<div class="bar" style="${ep && ep.e === 'Cortado' ? 'opacity:.6' : ''}"><div class="barhd">${tramosTxt(x.ids, R.id)} ${vecesChip(x.n)}${zonaBar(x.b).ext ? ' ' + badge('in', 'Con extensión') : ''}${ep ? ' ' + ep.html : ''} ${pieBar(x.b)}${ep ? ep.recs : ''}<span style="flex:1"></span>
+      return `<div class="bar" style="${ep && ep.e === 'Cortado' ? 'opacity:.6' : ''}"><div class="barhd">${tramosTxt(x.ids, R.id)} ${vecesChip(x.n)}${zonaBar(x.b).ext ? ' ' + badge('in', 'Con extensión') : ''}${ep ? ' ' + ep.html : ''} ${pieBar(x.b)}${ep ? ep.recs : ''}${chipsCostura(x.b, g)}<span style="flex:1"></span>
       <button data-ver="${ref}" title="Ver el tramo con el dibujo de cada pieza (barrenos, ranuras y cortes), con zoom">🔍 Ver</button><button data-igs="${ref}" title="IGS con las piezas acomodadas a lo largo del tubo${ep ? ' (solo lo baja: el estado lo marca la PC de la máquina)' : ''}">⬇ IGS</button><button data-hoja="${ref}" title="Hoja de corte de este múltiple">🖨</button>${ep && ep.enP && prog ? `<button class="pri" data-mfin="${ref}" title="Marca como cortado${x.n > 1 ? 's los tramos en proceso' : ''}, por si el operador no lo cerró">■ Terminar</button>` : ''}</div>${svgBar(x.b, col, {op: true, ops: x.ops, rutas: x.rutas})}</div>`; }).join('')}
     ${g.largas.length ? `<p style="color:var(--er)" class="sm">Más largas que el tramo: ${[...new Set(g.largas.map(p => p.pieza + ' (' + p.ruta + ')'))].map(esc).join(', ')}</p>` : ''}</details>`).join('') || `<div class="card empty">${esc(MQ)} no tiene tramos en este programa.</div>`}
   ${S.fuera.length ? fueraHtml(MQ) : ''}`;
@@ -2822,7 +3054,8 @@ function bindMult(){
   el.querySelectorAll('[data-igs]').forEach(b => b.onclick = () => { const [gi, bi] = b.dataset.igs.split('|').map(Number), g = S.res.grupos[gi]; descargarTramo(g.bars[bi], g.label, false); });
   el.querySelectorAll('[data-hoja]').forEach(b => b.onclick = () => { const [gi, bi] = b.dataset.hoja.split('|').map(Number), g = S.res.grupos[gi], x = agrupar(g.bars).find(x => x.b === g.bars[bi]);
     hojaCorte(x && x.n > 1 ? x.n + ' tramos iguales' : 'Tramo ' + g.bars[bi].id, x ? x.bars : [g.bars[bi]]); });
-  el.querySelectorAll('[data-ver]').forEach(b => b.onclick = () => { const [gi, bi] = b.dataset.ver.split('|').map(Number), g = S.res.grupos[gi]; abrirVisorTramo(g.bars[bi], g.label); });
+  el.querySelectorAll('[data-ver]').forEach(b => b.onclick = () => { const [gi, bi] = b.dataset.ver.split('|').map(Number), g = S.res.grupos[gi], b0 = g.bars[bi], x = agrupar(g.bars).find(x => x.b === b0);
+    abrirVisorTramo(b0, g.label, null, {bars: x ? x.bars : [b0], maquina: g.maquina, tipo: g.tipo}); });
 }
 /* ======================= Comparación contra Business Central ======================= */
 let BC = (() => { try{ return JSON.parse(localStorage.getItem('mt-bc') || 'null'); }catch(e){ return null; } })();
@@ -3035,6 +3268,11 @@ function tubularesConocidos(){ const m = new Map();
   Object.values(TIPOS()).forEach(t => { if(t.key && !m.has(t.key)) m.set(t.key, t.label || t.key); });
   maqsCfg().forEach(q => Object.keys(pmDe(q).ext).forEach(k => { if(!m.has(k)) m.set(k, k); }));
   return [...m].map(([key, label]) => ({key, label})).sort((a, b) => a.label.localeCompare(b.label, 'es', {numeric: true})); }
+/* cara A: regla de dibujo de Ingeniería (por omisión) y cuántas piezas ya la tienen marcada (Leonardo, 2026-11-24) */
+function cardCaraA(){ const v = CFG.caraARegla || '', n = Object.keys(S.carasA || {}).length;
+  return `<details class="card"><summary><b>🅰 Cara A y costura</b> <span class="mut sm">${v ? 'Regla: la cara A va hacia ' + v + ' en los IGS' : 'Sin regla: la cara A se marca en la vista 3D'} · ${n} ${n === 1 ? 'pieza marcada' : 'piezas marcadas'}</span></summary>
+    <p class="mut sm" style="margin:10px 0">La cara A (la que queda a la vista en el mueble) no debe llevar la costura del tubular. Cada pieza recuerda su cara A cuando se marca en 🔍 Ver › 3D (columna «Cara A»). Si Ingeniería dibuja todos los IGS con la cara A hacia el mismo eje, elígelo aquí: se usa en las piezas que no estén marcadas. El operador indica en 🔍 Ver de qué lado quedó la costura del lote y gira las piezas que lo necesiten.</p>
+    <label class="cfl"><span>En los IGS, la cara A va hacia</span><select id="cCaraA" ${esProgramador() ? '' : 'disabled title="' + esc(msgSoloProg()) + '"'}>${[['', 'Sin regla (se marca en 3D)'], ['+Z', '+Z del IGS'], ['-Z', '−Z del IGS'], ['+Y', '+Y del IGS'], ['-Y', '−Y del IGS'], ['+X', '+X del IGS'], ['-X', '−X del IGS']].map(([k, tx]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${tx}</option>`).join('')}</select></label></details>`; }
 function cardMaquinas(){
   const M = maqsCfg(), P = Object.fromEntries(M.map(m => [m, pmDe(m)])), T = CFG.tramo, tub = tubularesConocidos(), enProg = new Set(S.items.map(i => i.tipo));
   const fila = (k, t, step, tip) => `<tr title="${esc(tip || '')}"><td>${t}</td>${M.map(m => `<td class="n"><input type="number" step="${step || 1}" data-mq="${esc(m)}" data-mk="${k}" value="${P[m][k]}" style="width:90px"></td>`).join('')}</tr>`;
@@ -3063,7 +3301,7 @@ function renderCfg(){
   el.innerHTML = `${comp}${cardProgramadores()}${cardEquipoOp()}<details class="card" open><summary><b>📏 Tramo y corte</b></summary><div class="grid2" style="margin-top:10px">
     ${num('tramo', 'Largo del tramo nuevo (mm)')}${num('minRem', 'Recorte útil mínimo para guardar (mm)')}${num('tolSeccion', 'Tolerancia sección nombre vs IGS (mm)', 0.1)}${num('densidad', 'Densidad del acero (g/cm³)', 0.01)}</div>
     <p class="mut sm">El chuck, el refrentado, la separación y la extensión van por máquina (abajo). Un sobrante se guarda como recorte si, al restarle el chuck (o la extensión) y el refrentado de la máquina, quedan al menos ${f0(CFG.minRem)} mm aprovechables.</p></details>
-  ${cardMaquinas()}
+  ${cardMaquinas()}${cardCaraA()}
   <details class="card"><summary><b>📐 Espesor por calibre (mm)</b></summary><div class="grid2" style="margin-top:10px">${Object.entries(CFG.calibres).map(([c, v]) => `<label class="cfl"><span>Calibre ${c}</span><input type="number" step="0.01" data-cal="${c}" value="${v}"></label>`).join('')}</div></details>
   ${catHtml()}
   <details class="card" open><summary><b>☁ Conexión con Drive (Apps Script)</b></summary><div style="margin-top:10px">
@@ -3090,6 +3328,7 @@ function renderCfg(){
     if(confirm(`¿Quitar el SKU ${c.sku || '(sin SKU)'} · ${c.desc} del catálogo?`)){ CFG.catalogo.splice(+b.dataset.catdel, 1); saveCfg(); renderCfg(); } });
   $('catAdd').onclick = () => { CFG.catalogo.push({sku: '', desc: 'Tubular ', peso: 0}); saveCfg(); renderCfg(); };
   el.querySelectorAll('[data-pref]').forEach(s => s.onchange = () => { CFG.skuPref[s.dataset.pref] = s.value; saveCfg(); toast('Guardado'); });
+  if($('cCaraA')) $('cCaraA').onchange = e => { CFG.caraARegla = e.target.value; saveCfg(); renderCfg(); toast(e.target.value ? 'Regla de cara A guardada: se usa en las piezas sin marcar' : 'Sin regla: la cara A se marca en la vista 3D'); };
   if($('cVer')) $('cVer').onclick = () => { const i = $('cClave'), ver = i.type === 'password'; i.type = ver ? 'text' : 'password'; $('cVer').textContent = ver ? '🙈' : '👁'; };
   $('cSave').onclick = async () => { CFG.apiUrl = $('cUrl').value.trim() || API_URL; CLAVE = $('cClave').value.trim(); saveCfg(); saveClave(); setConn(); renderCfg();
     if(CFG.apiUrl){ try{ await API.cargar(); renderAll(); toast('Conectado'); }catch(e){ toast(e.message, 'er'); renderCfg(); } } };
