@@ -465,7 +465,7 @@ const IGES = (() => {
     }
     return null;
   }
-  function wire(m){
+  function wire(m, raices){
     const polys = [], seen = new Set();
     const visit = (de, M) => {
       if(!de) return; const e = m.byDe[de]; if(!e) return;
@@ -478,7 +478,7 @@ const IGES = (() => {
         else visit(c, MM);
       }
     };
-    rootsOf(m).filter(e => e.status.slice(0, 2) !== '01').forEach(e => visit(e.de, IDM()));
+    (raices || rootsOf(m).filter(e => e.status.slice(0, 2) !== '01')).forEach(e => visit(e.de, IDM()));
     // quita duplicados (la misma arista vista desde dos caras). Va también el centro de la arista: las dos mitades de un
     // barreno empiezan y terminan en los mismos puntos y, sin él, una mitad se tomaba por repetida (barreno a la mitad)
     const k = q => q.map(v => v.toFixed(2)).join(',');
@@ -486,10 +486,77 @@ const IGES = (() => {
     const uniq = new Map(); polys.forEach(pl => { const n = pl.p.length, c = '@' + cen(pl.p), a = k(pl.p[0]) + '>' + k(pl.p[n - 1]) + '#' + n + c, b = k(pl.p[n - 1]) + '>' + k(pl.p[0]) + '#' + n + c; if(!uniq.has(a) && !uniq.has(b)) uniq.set(a, pl); });
     return [...uniq.values()];
   }
+  /* ---- cuerpo del tubo y croquis sueltos (2026-11-24) ----
+     SolidWorks exporta, además del cuerpo (superficies), los croquis (asociatividad plana 402 forma 16 con sus curvas) y aristas
+     sueltas. La pieza se mide solo por su cuerpo y del múltiple se quitan los croquis que salen del cuerpo: el plano de la mampara
+     armada a 1.2 m del tubo, círculos de referencia más allá de los extremos… Si no, alargan la pieza (hueco entre piezas), cambian
+     la sección leída o caen sobre la pieza vecina. Las curvas sueltas dentro del cuerpo se quedan como las dibujó Ingeniería */
+  const CURVAS = new Set([100, 102, 104, 106, 110, 112, 116, 126, 130]);
+  function cuerpo(m){
+    if(m._cuerpo) return m._cuerpo;
+    const roots = rootsOf(m).filter(e => e.status.slice(0, 2) !== '01');
+    const body = roots.filter(e => !CURVAS.has(e.type)), sueltas = roots.filter(e => CURVAS.has(e.type));
+    const r = {roots, body, sueltas, quitar: new Set(), polys: null, lo: null, hi: null, fuera: 0};
+    // una cara sin su curva en el espacio del modelo dejaría el cuerpo incompleto: entonces se mide como antes (todos los puntos)
+    const sinCurva = m.ents.some(e => e.type === 142 && !(parseInt(e.t[4]) || 0));
+    if(body.length && !sinCurva){
+      const polys = wire(m, body);
+      if(polys.length >= 4){
+        const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+        polys.forEach(pl => pl.p.forEach(q => { for(let k = 0; k < 3; k++){ if(q[k] < lo[k]) lo[k] = q[k]; if(q[k] > hi[k]) hi[k] = q[k]; } }));
+        Object.assign(r, {polys, lo, hi});
+        const sale = q => q.some((v, k) => v < lo[k] - 1 || v > hi[k] + 1);
+        sueltas.forEach(e => { if(wire(m, [e]).some(pl => pl.p.some(sale))) r.quitar.add(e.de); });
+        r.fuera = r.quitar.size;
+        if(r.quitar.size){
+          // el croquis que tiene curvas fuera del cuerpo no es de la pieza: se quita completo
+          const esSuelta = new Set(sueltas.map(e => e.de));
+          m.ents.forEach(g => { if(g.type !== 402) return; const mem = (spec(g) || []).map(k => Math.abs(parseInt(g.t[k]) || 0));
+            if(mem.some(d => r.quitar.has(d))){ r.quitar.add(g.de); mem.forEach(d => { if(esSuelta.has(d)) r.quitar.add(d); }); } });
+          // y lo que solo usaban las curvas quitadas (segmentos de una curva compuesta…), nunca algo que use el cuerpo
+          const refs = new Map(); m.ents.forEach(e => (spec(e) || []).forEach(k => { const v = Math.abs(parseInt(e.t[k]) || 0); if(v){ if(!refs.has(v)) refs.set(v, []); refs.get(v).push(e.de); } }));
+          const raiz = new Set(roots.map(e => e.de));
+          for(let crecio = true; crecio;){ crecio = false;
+            m.ents.forEach(e => { if(r.quitar.has(e.de) || raiz.has(e.de) || e.type === 124) return; const de = refs.get(e.de);
+              if(de && de.every(p => r.quitar.has(p))){ r.quitar.add(e.de); crecio = true; } }); }
+        }
+      }
+    }
+    return m._cuerpo = r;
+  }
+  /* alambre de lo que va en el múltiple: sin los croquis que salen del cuerpo */
+  function wireLimpio(m){ const c = cuerpo(m); return c.quitar.size ? wire(m, c.roots.filter(e => !c.quitar.has(e.de))) : wire(m); }
+  /* copia del modelo sin esas entidades, con los DE renumerados y los punteros corregidos (para escribir el múltiple) */
+  function sinEntidades(m, quitar){
+    const keep = m.ents.filter(e => !quitar.has(e.de)), nuevo = new Map(); keep.forEach((e, i) => nuevo.set(e.de, 2*i + 1));
+    const mp = v => { const a = Math.abs(v); return a && nuevo.has(a) ? Math.sign(v)*nuevo.get(a) : 0; };
+    const ents = keep.map(e => { const t = e.t.slice(); (spec(e) || []).forEach(k => { const v = parseInt(t[k]); if(v) t[k] = String(mp(v)); });
+      const d = e.d.slice(); [0, 1, 2].forEach(i => { if(d[i] < 0) d[i] = mp(d[i]); }); [3, 4, 5].forEach(i => { if(d[i]) d[i] = mp(d[i]); });
+      return Object.assign({}, e, {de: nuevo.get(e.de), t, d, color: e.color < 0 ? mp(e.color) : e.color}); });
+    const byDe = {}; ents.forEach(e => byDe[e.de] = e);
+    return Object.assign({}, m, {ents, byDe, _cuerpo: null});
+  }
+  /* tubo redondo: eje de su superficie de revolución exterior (la de mayor radio, cuyo diámetro llena las otras dos direcciones).
+     Sirve para piezas más cortas que su diámetro (anillos como la BASE CIRCULAR de 900/901), donde el lado más largo no es el eje */
+  function ejeRevolucion(m, ext){
+    if(!m.ents.some(e => e.type === 120)) return -1;
+    const {map} = modelMap(m); let best = null;
+    m.ents.forEach(e => { if(e.type !== 120) return;
+      const L = m.byDe[parseInt(e.t[1])], G = m.byDe[parseInt(e.t[2])]; if(!L || L.type !== 110 || !G) return;
+      const ML = (map.get(L.de) || map.get(e.de) || {M: IDM()}).M, MG = (map.get(G.de) || map.get(e.de) || {M: IDM()}).M;
+      const p0 = app(ML, [num(L.t[1]), num(L.t[2]), num(L.t[3])]), p1 = app(ML, [num(L.t[4]), num(L.t[5]), num(L.t[6])]);
+      const d = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]], n = Math.hypot(d[0], d[1], d[2]); if(!n) return;
+      const u = d.map(v => v/n), k = u.findIndex(v => Math.abs(v) > 0.999); if(k < 0) return;
+      const g0 = ownPts(G)[0]; if(!g0) return; const q = app(MG, g0), w = [q[0] - p0[0], q[1] - p0[1], q[2] - p0[2]];
+      const rr = Math.hypot(w[1]*u[2] - w[2]*u[1], w[2]*u[0] - w[0]*u[2], w[0]*u[1] - w[1]*u[0]);
+      if(!best || rr > best.r) best = {r: rr, k}; });
+    if(!best) return -1;
+    return [0, 1, 2].filter(j => j !== best.k).every(j => Math.abs(ext[j] - 2*best.r) <= 1) ? best.k : -1;
+  }
   /* medición completa de una pieza de tubo: alambre orientado (eje = X desde 0), pared, extremos y barrenos */
   function inspect(text, nominal, forma){
     const a = analyze(text, nominal); if(!a.ok) return {ok: false, error: a.error};
-    const M = placement(a, 0), polys = wire(a.model).map(pl => Object.assign(pl, {p: pl.p.map(q => app(M, q))}));
+    const M = placement(a, 0), polys = wireLimpio(a.model).map(pl => Object.assign(pl, {p: pl.p.map(q => app(M, q))}));
     const L = a.len, W = a.secA, H = a.secB, round = forma === 'RED' || Math.abs(W - H) < 0.3 && polys.filter(p => p.arc).length > polys.length*0.4;
     // pared: aristas longitudinales (paralelas al eje y largas); distancia a la cara exterior
     const lon = polys.filter(pl => { const p0 = pl.p[0], p1 = pl.p[pl.p.length - 1], dx = Math.abs(p1[0] - p0[0]); return dx > 0.3*L && Math.hypot(p1[1] - p0[1], p1[2] - p0[2]) < 0.02*dx; });
@@ -557,24 +624,32 @@ const IGES = (() => {
     });
     feats.sort((p, q) => p.x - q.x);
     // M0: cómo se colocó la pieza en el tubo (sirve para pasar la regla de cara A de los ejes del IGS a las caras del tubo)
-    return {ok: true, len: L, secA: W, secB: H, wall, round, ends, feats, polys, M0: M, units: a.units, types: a.types, combinable: a.combinable, unsup: a.unsup};
+    return {ok: true, len: L, secA: W, secB: H, wall, round, ends, feats, polys, M0: M, units: a.units, types: a.types, combinable: a.combinable, unsup: a.unsup, croquis: cuerpo(a.model).fuera};
   }
   function measure(m, nominal){
-    const pts = points(m);
-    if(!pts.length) return {ok: false, error: 'No se encontró geometría en espacio de modelo'};
-    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
-    pts.forEach(p => { for(let k = 0; k < 3; k++){ if(p[k] < lo[k]) lo[k] = p[k]; if(p[k] > hi[k]) hi[k] = p[k]; } });
+    // con cuerpo (superficies): sus aristas reales, sin croquis sueltos ni los puntos de control de las curvas (que salen del
+    // dibujo y engordaban la sección, p. ej. 53.8 en un tubo de 50.8). Sin cuerpo: todos los puntos, como antes
+    const c = cuerpo(m); let lo, hi, npts;
+    if(c.polys){ lo = c.lo.slice(); hi = c.hi.slice(); npts = c.polys.reduce((s, pl) => s + pl.p.length, 0); }
+    else {
+      const pts = points(m);
+      if(!pts.length) return {ok: false, error: 'No se encontró geometría en espacio de modelo'};
+      lo = [Infinity, Infinity, Infinity]; hi = [-Infinity, -Infinity, -Infinity]; npts = pts.length;
+      pts.forEach(p => { for(let k = 0; k < 3; k++){ if(p[k] < lo[k]) lo[k] = p[k]; if(p[k] > hi[k]) hi[k] = p[k]; } });
+    }
     const ext = [0, 1, 2].map(k => hi[k] - lo[k]);
-    let axis = ext.indexOf(Math.max(...ext));
+    let axis = ext.indexOf(Math.max(...ext)), porNominal = false;
     if(nominal && nominal.length === 2){
       // eje = la dirección que no corresponde a la sección nominal
       const tol = 1.5, nn = nominal.slice().sort((a, b) => b - a);
       const tryAx = [0, 1, 2].filter(a => { const s = [0, 1, 2].filter(k => k !== a).map(k => ext[k]).sort((x, y) => y - x); return Math.abs(s[0] - nn[0]) <= tol && Math.abs(s[1] - nn[1]) <= tol; });
-      if(tryAx.length === 1) axis = tryAx[0];
+      if(tryAx.length === 1){ axis = tryAx[0]; porNominal = true; }
       else if(tryAx.length > 1) axis = tryAx.sort((a, b) => ext[b] - ext[a])[0];
     }
+    // tubo redondo: manda el eje de su cilindro exterior (una pieza corta, como un anillo, mide más de diámetro que de largo)
+    if(!porNominal){ const kr = ejeRevolucion(m, ext); if(kr >= 0) axis = kr; }
     const others = [0, 1, 2].filter(k => k !== axis).sort((a, b) => ext[b] - ext[a] || a - b);
-    return {ok: true, lo, hi, ext, axis, len: ext[axis], secA: ext[others[0]], secB: ext[others[1]], axY: others[0], axZ: others[1], npts: pts.length};
+    return {ok: true, lo, hi, ext, axis, len: ext[axis], secA: ext[others[0]], secB: ext[others[1]], axY: others[0], axZ: others[1], npts};
   }
   function analyze(text, nominal){
     const m = parse(text);
@@ -614,9 +689,11 @@ const IGES = (() => {
     const pd = ',', rd = ';', D = [], Pl = [];
     let base = 0; const all = [];
     const extra = [];
-    const total = items.reduce((s, it) => s + it.model.ents.length, 0);
+    // cada pieza va sin los croquis que salen de su cuerpo (caerían en la pieza vecina o fuera del tubo)
+    const mods = items.map(it => { const c = cuerpo(it.model); return c.quitar.size ? sinEntidades(it.model, c.quitar) : it.model; });
+    const total = mods.reduce((s, m) => s + m.ents.length, 0);
     items.forEach((it, pi) => {
-      const m = it.model, off = 2*base;
+      const m = mods[pi], off = 2*base;
       const {map, conflict} = modelMap(m);
       if(conflict.length) throw new Error('Geometría compartida con distinta transformación');
       const mats = new Map();
@@ -662,7 +739,7 @@ const IGES = (() => {
     out.push('S' + String(S.length).padStart(7, '0') + 'G' + String(Gl.length).padStart(7, '0') + 'D' + String(D.length).padStart(7, '0') + 'P' + String(Pl.length).padStart(7, '0') + ' '.repeat(40) + 'T0000001');
     return out.join('\r\n') + '\r\n';
   }
-  return {parse, analyze, measure, placement, combine, spec, holl, inspect, wire};
+  return {parse, analyze, measure, placement, combine, spec, holl, inspect, wire, cuerpo};
 })();
 
 
@@ -978,7 +1055,7 @@ function parsePlanta(name, path, r){
 
 /* ======================= Estado ======================= */
 const S = {ops: [], progFile: '', lib: [], extra: {}, meas: {}, raw: {}, res: null, items: [], fuera: [], db: {programas: [], tramos: [], recortes: []}, libSrc: '', libMsg: ''};
-let MEAS = (() => { try{ const m = JSON.parse(localStorage.getItem('mt-meas') || '{}'); Object.keys(m).forEach(k => { if(!k.startsWith('v5|')) delete m[k]; }); return m; }catch(e){ return {}; } })();   // sin medidas de versiones anteriores
+let MEAS = (() => { try{ const m = JSON.parse(localStorage.getItem('mt-meas') || '{}'); Object.keys(m).forEach(k => { if(!k.startsWith('v6|')) delete m[k]; }); return m; }catch(e){ return {}; } })();   // sin medidas de versiones anteriores
 const saveMeas = () => { try{ localStorage.setItem('mt-meas', JSON.stringify(MEAS)); }catch(e){} };
 
 /* ======================= Backend (Apps Script o local) ======================= */
@@ -1362,7 +1439,7 @@ function vigentes(){
   }
   return {vig, conflictos};
 }
-function medKey(f){ return 'v5|' + f.id + '|' + (f.modified || f.size || ''); }   // v5: radio de las esquinas (2026-11-19); v4: barrenos completos
+function medKey(f){ return 'v6|' + f.id + '|' + (f.modified || f.size || ''); }   // v6: se mide el cuerpo, sin croquis sueltos, y el eje de los anillos (2026-11-24); v5: radio de las esquinas (2026-11-19); v4: barrenos completos
 const endTxt = e => !e ? '—' : e.recto ? 'Recto' : e.inglete ? `Inglete ${e.angulo}°` : `Especial (${f1(e.prof ?? e.profundidad)} mm)`;
 function evalPieza(f){
   const p = f.p, m = MEAS[medKey(f)];
@@ -1413,7 +1490,7 @@ async function medir(lista){
     try{ const txt = await textoDe(f); const nom = f.p.med ? [f.p.med.a, f.p.med.b] : null; const a = IGES.inspect(txt, nom, f.p.med && f.p.med.forma);
       const um = IGES.parse(txt).unitFlag, k = um === 1 ? 25.4 : um === 4 ? 1000 : um === 10 ? 10 : 1;
       MEAS[medKey(f)] = a.ok ? {ok: true, len: a.len*k, secA: a.secA*k, secB: a.secB*k, combinable: a.combinable, unsup: a.unsup, units: a.units, k,
-        wall: a.wall != null ? +(a.wall*k).toFixed(2) : null, rad: (r => r != null ? +(r*k).toFixed(2) : null)(radioDe(a)), ends: a.ends.map(e => ({recto: e.recto, inglete: !!e.inglete, angulo: e.angulo, prof: +(e.profundidad*k).toFixed(1)})), nFeat: a.feats.length, round: !!a.round} : {error: a.error};
+        wall: a.wall != null ? +(a.wall*k).toFixed(2) : null, rad: (r => r != null ? +(r*k).toFixed(2) : null)(radioDe(a)), ends: a.ends.map(e => ({recto: e.recto, inglete: !!e.inglete, angulo: e.angulo, prof: +(e.profundidad*k).toFixed(1)})), nFeat: a.feats.length, round: !!a.round, croquis: a.croquis || 0} : {error: a.error};
     }catch(e){ MEAS[medKey(f)] = {error: 'No se pudo leer: ' + e.message}; }
     n++; S.libMsg = `Leyendo IGS ${n}/${tot}…`; if(n % 3 === 0 || n === tot) renderLib(); } };
   await Promise.all([worker(), worker(), worker(), worker()]);
@@ -3370,6 +3447,7 @@ function dibujarVisor(){
     <span>Pared</span><span>${r.wall != null ? f2(r.wall) + ' mm' : '—'} ${okW == null ? '' : okW ? badge('ok', '✓ cal ' + f.p.cal) : badge('er', 'cal ' + f.p.cal + ' = ' + f2(t) + ' mm')}</span>
     <span>Extremo izq.</span><span>${endTxt(r.ends[0])}</span><span>Extremo der.</span><span>${endTxt(r.ends[1])}</span>
     <span>Barrenos y cortes</span><span>${r.feats.length}</span>
+    ${r.croquis ? `<span>Croquis sueltos</span><span>${badge('in', r.croquis + ' curvas fuera del tubo')} <span class="sm mut">Son del croquis, no de la pieza: no se miden ni van en el múltiple. Pide a Ingeniería el IGS sin croquis.</span></span>` : ''}
     <span>Unidades</span><span>${esc(r.units)}</span>
     <span>Entidades</span><span class="sm">${esc(Object.entries(r.types).map(([k, v]) => k + '×' + v).join(', '))}</span>
     <span>IGS combinado</span><span>${r.combinable ? badge('ok', 'Compatible') : badge('er', 'No soportado: ' + Object.keys(r.unsup).join(', '))}</span></div></div>
