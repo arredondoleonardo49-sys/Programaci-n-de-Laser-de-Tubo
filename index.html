@@ -569,7 +569,11 @@ const IGES = (() => {
     const pos = []; axL.forEach(pl => { const q = pl.p[0], g = pos.find(g => Math.abs(g.y - q[1]) < 0.05 && Math.abs(g.z - q[2]) < 0.05);
       if(g){ g.pls.push(pl); g.len += dxDe(pl); } else pos.push({y: q[1], z: q[2], pls: [pl], len: dxDe(pl)}); });
     const esquina = g => round || (Math.abs(g.y) > W/2 - 5 && Math.abs(g.z) > H/2 - 5);
-    const lonSet0 = new Set(pos.filter(g => g.len > 0.3*L && esquina(g)).flatMap(g => g.pls));
+    // en una esquina también es arista el tramo recto más largo que dos veces la sección, aunque no sume el 30 %: en un IGS de varias
+    // piezas, una con la cara interior dibujada distinta deja sus aristas en otra posición (1155-COMPLETO, 2026-11-25). Las muescas y
+    // los destajes cortos siguen siendo cortes
+    const largoEsq = Math.max(30, 2*Math.max(W, H));
+    const lonSet0 = new Set(pos.filter(esquina).flatMap(g => g.len > 0.3*L ? g.pls : g.pls.filter(pl => dxDe(pl) > largoEsq)));
     const lon = axL.filter(pl => dxDe(pl) > 0.3*L || lonSet0.has(pl));
     const dist = lon.map(pl => { const q = pl.p[0]; return round ? W/2 - Math.hypot(q[1], q[2]) : Math.min(W/2 - Math.abs(q[1]), H/2 - Math.abs(q[2])); }).filter(d => d > 0.2 && d < Math.min(W, H)/2 - 0.2).sort((x, y) => x - y);
     const wall = dist.length ? +dist[0].toFixed(2) : null;
@@ -1086,7 +1090,7 @@ function parsePlanta(name, path, r){
 
 /* ======================= Estado ======================= */
 const S = {ops: [], progFile: '', lib: [], extra: {}, meas: {}, raw: {}, res: null, items: [], fuera: [], db: {programas: [], tramos: [], recortes: []}, libSrc: '', libMsg: ''};
-let MEAS = (() => { try{ const m = JSON.parse(localStorage.getItem('mt-meas') || '{}'); Object.keys(m).forEach(k => { if(!k.startsWith('v7|')) delete m[k]; }); return m; }catch(e){ return {}; } })();   // sin medidas de versiones anteriores
+let MEAS = (() => { try{ const m = JSON.parse(localStorage.getItem('mt-meas') || '{}'); Object.keys(m).forEach(k => { if(!k.startsWith('v8|')) delete m[k]; }); return m; }catch(e){ return {}; } })();   // sin medidas de versiones anteriores
 const saveMeas = () => { try{ localStorage.setItem('mt-meas', JSON.stringify(MEAS)); }catch(e){} };
 
 /* ======================= Backend (Apps Script o local) ======================= */
@@ -1470,7 +1474,7 @@ function vigentes(){
   }
   return {vig, conflictos};
 }
-function medKey(f){ return 'v7|' + f.id + '|' + (f.modified || f.size || ''); }   // v7: aristas del tubo partidas en tramos (2026-11-25); v6: se mide el cuerpo, sin croquis sueltos, y el eje de los anillos (2026-11-24); v5: radio de las esquinas (2026-11-19); v4: barrenos completos
+function medKey(f){ return 'v8|' + f.id + '|' + (f.modified || f.size || ''); }   // v8: aristas largas en las esquinas (2026-11-25); v7: aristas del tubo partidas en tramos (2026-11-25); v6: se mide el cuerpo, sin croquis sueltos, y el eje de los anillos (2026-11-24); v5: radio de las esquinas (2026-11-19); v4: barrenos completos
 const endTxt = e => !e ? '—' : e.recto ? 'Recto' : e.inglete ? `Inglete ${e.angulo}°` : `Especial (${f1(e.prof ?? e.profundidad)} mm)`;
 function evalPieza(f){
   const p = f.p, m = MEAS[medKey(f)];
