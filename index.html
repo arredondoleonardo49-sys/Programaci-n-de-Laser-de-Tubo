@@ -136,7 +136,7 @@ details.card>summary>.dts{flex-basis:100%;margin:2px 0 0 18px}
 .veces{display:inline-flex;align-items:baseline;gap:5px;padding:2px 12px;border-radius:999px;background:rgba(74,158,255,.16);border:1px solid rgba(74,158,255,.6);color:var(--blue);font-size:13px;font-weight:600;white-space:nowrap}
 .veces b{font-size:19px;font-family:var(--mono);line-height:1.1;font-weight:600}
 .veces.uno{background:transparent;border-color:var(--border);color:var(--text2);font-weight:500}.veces.uno b{font-size:14px;font-weight:500}
-.bmini{font-size:12px;color:var(--text2);white-space:nowrap}.bmini b{font-family:var(--mono);font-weight:500}.bmini b.ok{color:var(--green)}.bmini b.wa{color:var(--amber)}.bmini b.er{color:var(--red)}.bmini .rec{color:var(--green)}
+.bmini{font-size:12px;color:var(--text2);white-space:nowrap}.bmini b{font-family:var(--mono);font-weight:500}.bmini b.ok{color:var(--green)}.bmini b.wa{color:var(--amber)}.bmini b.er{color:var(--red)}.bmini .rec{color:var(--green)}.bmini .stk{color:var(--blue);font-weight:600}
 .bleg{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12px;margin:5px 0 0;color:var(--text2)}.bleg i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:-1px;border:1px solid rgba(0,0,0,.35)}.bleg b{color:var(--text);font-weight:500}.bleg .op{font-family:var(--mono);color:var(--blue)}
 :is(.main,.modal) td .mut.sm,:is(.main,.modal) td>.mut{color:var(--text2)}
 .vlight{background:#f4f4f1;border-radius:var(--radius);border:1px solid var(--border)}
@@ -561,7 +561,16 @@ const IGES = (() => {
     const M = placement(a, 0), polys = wireLimpio(a.model).map(pl => Object.assign(pl, {p: pl.p.map(q => app(M, q))}));
     const L = a.len, W = a.secA, H = a.secB, round = forma === 'RED' || Math.abs(W - H) < 0.3 && polys.filter(p => p.arc).length > polys.length*0.4;
     // pared: aristas longitudinales (paralelas al eje y largas); distancia a la cara exterior
-    const lon = polys.filter(pl => { const p0 = pl.p[0], p1 = pl.p[pl.p.length - 1], dx = Math.abs(p1[0] - p0[0]); return dx > 0.3*L && Math.hypot(p1[1] - p0[1], p1[2] - p0[2]) < 0.02*dx; });
+    const axL = polys.filter(pl => { const p0 = pl.p[0], p1 = pl.p[pl.p.length - 1], dx = Math.abs(p1[0] - p0[0]); return dx > 1 && Math.hypot(p1[1] - p0[1], p1[2] - p0[2]) < 0.02*dx; });
+    const dxDe = pl => Math.abs(pl.p[pl.p.length - 1][0] - pl.p[0][0]);
+    // una arista del tubo partida en tramos (muescas para doblar, las piezas de un múltiple) también es arista: se juntan los tramos
+    // que van en la misma posición (y, z) y, si suman más del 30 % del largo y están en una esquina del tubo, son aristas, no cortes.
+    // Antes cada tramo corto se tomaba como «ranura / corte» y se pintaba en rojo (LATERAL 2023, 1006 BARRA, múltiple 602; 2026-11-25)
+    const pos = []; axL.forEach(pl => { const q = pl.p[0], g = pos.find(g => Math.abs(g.y - q[1]) < 0.05 && Math.abs(g.z - q[2]) < 0.05);
+      if(g){ g.pls.push(pl); g.len += dxDe(pl); } else pos.push({y: q[1], z: q[2], pls: [pl], len: dxDe(pl)}); });
+    const esquina = g => round || (Math.abs(g.y) > W/2 - 5 && Math.abs(g.z) > H/2 - 5);
+    const lonSet0 = new Set(pos.filter(g => g.len > 0.3*L && esquina(g)).flatMap(g => g.pls));
+    const lon = axL.filter(pl => dxDe(pl) > 0.3*L || lonSet0.has(pl));
     const dist = lon.map(pl => { const q = pl.p[0]; return round ? W/2 - Math.hypot(q[1], q[2]) : Math.min(W/2 - Math.abs(q[1]), H/2 - Math.abs(q[2])); }).filter(d => d > 0.2 && d < Math.min(W, H)/2 - 0.2).sort((x, y) => x - y);
     const wall = dist.length ? +dist[0].toFixed(2) : null;
     // extremos: aristas conectadas a las aristas longitudinales en cada extremo
@@ -784,8 +793,8 @@ const OPT = (() => {
     return first ? [first].concat(sel) : sel;
   }
   function layout(bar, c){
-    // ordena: piezas largas primero (más estables en el chuck), conserva prioridad como desempate
-    bar.piezas.sort((a, b) => b.L - a.L || a.prio - b.prio);
+    // ordena: piezas largas primero (más estables en el chuck), conserva prioridad como desempate; las de stock, al final (en lo que era el sobrante)
+    bar.piezas.sort((a, b) => (a.op === 'STOCK') - (b.op === 'STOCK') || b.L - a.L || a.prio - b.prio);
     let x = c.refr; bar.piezas.forEach((p, i) => { if(i) x += c.kerf; p.x = x; x += p.L; });
     bar.usado = x; bar.sobra = bar.P - x;            // incluye la zona del chuck
     bar.ch = bar.solo && c.chVal != null ? c.chVal : c.chuck; bar.chExt = bar.solo || !!c.chExt;   // zona sin cortar con que se armó
@@ -800,7 +809,7 @@ const OPT = (() => {
   function run(items, recortes, c0){
     // se acomoda por grupo (it.grupo: máquina + tubular, y el dibujo si es completo); sin grupo, por tubular
     const tipos = {}; items.forEach(it => { const g = it.grupo || it.tipo; (tipos[g] = tipos[g] || []).push(it); });
-    const res = [], recUsados = new Set();
+    const res = [], recUsados = new Set(), stockUsado = {}; let stockN = 0;
     for(const [grupo, list] of Object.entries(tipos)){
       const tipo = list[0].tipo;
       // cada tubular usa el largo de tramo de su SKU (c0.tramoDe); sin catálogo, el general
@@ -849,12 +858,23 @@ const OPT = (() => {
         if(!movio) break;
       }
       bars.forEach(b => b.piezas.forEach(p => { delete p._bar; }));
+      // piezas de stock en el sobrante (Leonardo, 2026-11-24): lo que queda libre en cada tramo (el recorte verde) se llena con
+      // piezas que se manejan de stock, del mismo tubular y perfil (c0.stockDe). Un grupo que va con su propio IGS no se combina
+      const st = c0.stockDe && !list[0].completo ? c0.stockDe(list[0]) : [];
+      if(st.length) bars.forEach(b => { if(b.solo) return;
+        const cap = capOf(b.P, c) - b.piezas.reduce((s, p) => s + p.L + c.kerf, 0); if(cap < 1) return;
+        const pool = [];
+        st.forEach(s => { const resto = s.max > 0 ? s.max - (stockUsado[s.sku] || 0) : Infinity, n = Math.min(resto, Math.floor((cap + 1e-6)/(s.L + c.kerf)), 200);
+          for(let i = 0; i < n; i++) pool.push(Object.assign({}, s.item, {uid: 'S' + (stockN++), _k: c.kerf})); });
+        if(!pool.length) return;
+        const sel = knap(pool, cap); sel.forEach(p => { stockUsado[p.sku] = (stockUsado[p.sku] || 0) + 1; });
+        b.piezas = b.piezas.concat(sel); });
       bars.forEach(b => layout(b, c));
       bars.sort((a, b) => (a.origen === 'recorte' ? 0 : 1) - (b.origen === 'recorte' ? 0 : 1) || Math.min(...a.piezas.map(p => p.prio)) - Math.min(...b.piezas.map(p => p.prio)));
       const nuevos = bars.filter(b => b.origen === 'nuevo');
       const tot = {
         tramos: nuevos.length, recUsados: bars.length - nuevos.length,
-        piezas: bars.reduce((s, b) => s + b.piezas.length, 0),
+        piezas: bars.reduce((s, b) => s + b.piezas.length, 0), stock: bars.reduce((s, b) => s + b.piezas.filter(p => p.op === 'STOCK').length, 0),
         largoPiezas: bars.reduce((s, b) => s + b.piezas.reduce((t, p) => t + p.L, 0), 0),
         consumo: bars.reduce((s, b) => s + b.consumo, 0),
         recGenerados: bars.filter(b => b.recorte).length, largoRec: bars.reduce((s, b) => s + b.recorte, 0),
@@ -891,9 +911,18 @@ const DEF = {version: 1, tramo: 6100, chuck: 400, refr: 5, kerf: 3, minRem: 500,
     {sku: '10509171', desc: 'Tubular 3/4 x 3/4 Cal 20', peso: 2.954}, {sku: '10509201', desc: 'Tubular 2 x 1 Cal 18', peso: 8.134},
     {sku: '10509204', desc: 'Tubular 2 x 2 Cal 18', peso: 11.029}, {sku: '10509210', desc: 'Tubular 1 1/4 x 1 1/4 Cal 18', peso: 6.686},
     {sku: '10509219', desc: 'Tubular 3 x 1 Cal 18', peso: 11.029}],
-  skuPref: {}};
+  skuPref: {},
+  /* piezas que se manejan de stock (Leonardo, 2026-11-24): llenan el sobrante de los tramos del mismo tubular y perfil.
+     Por SKU de BC: descripción, IGS (ruta dentro de la carpeta central), calibre del tubular del que se corta (Leonardo, 2026-11-25),
+     máximo por programa (0 = sin límite) y si está activa */
+  usarStock: true,
+  stock: {
+    '22401021': {desc: '803 BARRA LATERAL', ruta: 'TOP50/803/IGS/803 BARRA LATERAL 1PZ.IGS', cal: '20', max: 0, activo: true},
+    '22120004': {desc: 'ALMA ANZIO', ruta: 'FOLIOS/FB-4278/IGS/2 PZAS F4278-ESTRUCTURA ALMA ESCRITORIO ANZIO.IGS', cal: '18', max: 0, activo: true},
+    '22120008': {desc: 'ALMA SENCILLA AIR', ruta: 'LINEA VETTA/1300/IGS/1300-ALMA SENCILLA.IGS', cal: '18', max: 0, activo: true},
+    '22120009': {desc: 'ALMA DOBLE AIR', ruta: 'LINEA VETTA/1300/IGS/1300-ALMA DOBLE.IGS', cal: '18', max: 0, activo: true}}};
 let CFG = (() => { let c; try{ c = Object.assign({}, DEF, JSON.parse(localStorage.getItem('mt-cfg') || '{}')); }catch(e){ c = Object.assign({}, DEF); } if(!c.apiUrl) c.apiUrl = API_URL;
-  c.catalogo = JSON.parse(JSON.stringify(c.catalogo || [])); c.skuPref = Object.assign({}, c.skuPref); return c; })();
+  c.catalogo = JSON.parse(JSON.stringify(c.catalogo || [])); c.skuPref = Object.assign({}, c.skuPref); c.stock = JSON.parse(JSON.stringify(c.stock || {})); return c; })();
 const saveCfg = () => { CAT = null; try{ localStorage.setItem('mt-cfg', JSON.stringify(CFG)); }catch(e){} programarCompartir(); };
 /* ======================= Parámetros por máquina (Leonardo, 2026-11-18) =======================
    Cada GW tiene su chuck, refrentado y separación (CFG.maq). La extensión aprovecha el 98 % del tramo pese al chuck
@@ -1057,7 +1086,7 @@ function parsePlanta(name, path, r){
 
 /* ======================= Estado ======================= */
 const S = {ops: [], progFile: '', lib: [], extra: {}, meas: {}, raw: {}, res: null, items: [], fuera: [], db: {programas: [], tramos: [], recortes: []}, libSrc: '', libMsg: ''};
-let MEAS = (() => { try{ const m = JSON.parse(localStorage.getItem('mt-meas') || '{}'); Object.keys(m).forEach(k => { if(!k.startsWith('v6|')) delete m[k]; }); return m; }catch(e){ return {}; } })();   // sin medidas de versiones anteriores
+let MEAS = (() => { try{ const m = JSON.parse(localStorage.getItem('mt-meas') || '{}'); Object.keys(m).forEach(k => { if(!k.startsWith('v7|')) delete m[k]; }); return m; }catch(e){ return {}; } })();   // sin medidas de versiones anteriores
 const saveMeas = () => { try{ localStorage.setItem('mt-meas', JSON.stringify(MEAS)); }catch(e){} };
 
 /* ======================= Backend (Apps Script o local) ======================= */
@@ -1116,7 +1145,7 @@ function setConn(){ const c = $('conn'); if(API.on()){ c.className = 'conn ok'; 
    Todos los equipos deben generar los mismos múltiples: tramo, chuck, refrentado, separación, criterio, catálogo y las
    piezas sueltas / IGS elegidos a mano se guardan en el servidor y cada equipo los toma al conectarse. Se guardan como un
    renglón especial de la hoja de programas (id CFG-COMPARTIDA) para no cambiar el Apps Script; ese renglón no es un programa. */
-const CFG_COMP_ID = 'CFG-COMPARTIDA', CFG_COMP_CAMPOS = ['caraARegla', 'programadores','maq', 'tramo', 'chuck', 'extension', 'extPct', 'refr', 'kerf', 'minRem', 'modo', 'ventana', 'usarRecortes', 'tolSeccion', 'densidad', 'calibres', 'catalogo', 'skuPref'];
+const CFG_COMP_ID = 'CFG-COMPARTIDA', CFG_COMP_CAMPOS = ['caraARegla', 'programadores','maq', 'tramo', 'chuck', 'extension', 'extPct', 'refr', 'kerf', 'minRem', 'modo', 'ventana', 'usarRecortes', 'tolSeccion', 'densidad', 'calibres', 'catalogo', 'skuPref', 'usarStock', 'stock'];
 /* Configuración compartida v2 (Leonardo, 2026-11-19: «ajusté parámetros por máquina y a Tovar le salen los anteriores»).
    Causa: el paquete se subía completo y ganaba el último. Una pantalla con una versión anterior de la plataforma (sin "parámetros
    por máquina") subía su paquete sin ese campo y borraba lo que otro había puesto; dos personas cambiando cosas distintas se pisaban.
@@ -1441,7 +1470,7 @@ function vigentes(){
   }
   return {vig, conflictos};
 }
-function medKey(f){ return 'v6|' + f.id + '|' + (f.modified || f.size || ''); }   // v6: se mide el cuerpo, sin croquis sueltos, y el eje de los anillos (2026-11-24); v5: radio de las esquinas (2026-11-19); v4: barrenos completos
+function medKey(f){ return 'v7|' + f.id + '|' + (f.modified || f.size || ''); }   // v7: aristas del tubo partidas en tramos (2026-11-25); v6: se mide el cuerpo, sin croquis sueltos, y el eje de los anillos (2026-11-24); v5: radio de las esquinas (2026-11-19); v4: barrenos completos
 const endTxt = e => !e ? '—' : e.recto ? 'Recto' : e.inglete ? `Inglete ${e.angulo}°` : `Especial (${f1(e.prof ?? e.profundidad)} mm)`;
 function evalPieza(f){
   const p = f.p, m = MEAS[medKey(f)];
@@ -1549,6 +1578,7 @@ async function medirNecesarios(){
   if(S.formato === 'laser'){ ligarDibujos(); const ids = new Set();
     // de un MULTIPLE se mide su pieza suelta (es la que se acomoda), no el múltiple
     S.ops.forEach(o => { const x = S.match[o.idx]; if(!x || !x.f) return; if(esMultipleYa(x.f)){ const s = sueltaDe(o, x.f); if(s.f) ids.add(s.f.id); else { ids.add(x.f.id); (s.top || []).forEach(c => ids.add(c.id)); } } else ids.add(x.f.id); });
+    stockLista().forEach(s => { const f = stockArchivo(s); if(f) ids.add(f.id); });   // las piezas de stock (llenan los sobrantes)
     need = S.lib.filter(f => ids.has(f.id)); }
   else { const {vig} = vigentes(); const rutas = new Set(S.ops.map(o => norm(o.ruta))); need = vig.filter(f => !S.ops.length || rutas.has(norm(f.p.ruta))); }
   // carpeta recordada: la fecha del archivo se lee al usarlo, así no se vuelve a medir lo que no cambió
@@ -2125,6 +2155,29 @@ function explotarLaser(){
       med, cal, pzs, completo, validado: esMult, solo: cb === 'solo', perfil, maquina: o.maquina, grupo: o.maquina + '|' + t.key + (completo ? '|' + f.id : '') + '|' + perfil, ...(sm ? {deMultiple: o.dibujo} : {})});
   });
 }
+/* ======================= Piezas de stock para llenar sobrantes (Leonardo, 2026-11-24) =======================
+   Piezas que se manejan de stock (SKU de BC, lista en Configuración) llenan el sobrante (el recorte verde) de los tramos del mismo
+   tubular y del mismo perfil dibujado (pared y radio: así TubesT no toma sus aristas como corte). Van con OP «STOCK» y el SKU en el
+   modelo, al final del tramo, no cuentan en el cuadre con el programa y se ven con su propio color. */
+const OP_STOCK = 'STOCK', COLOR_STOCK = '#b9c6d2', esStock = p => !!p && p.op === OP_STOCK;
+const nRuta = s => String(s || '').replace(/\\/g, '/').normalize('NFC').toUpperCase().replace(/\s+/g, ' ').trim();
+const stockLista = () => Object.entries(CFG.stock || {}).map(([sku, s]) => Object.assign({sku}, s));
+/* su IGS en la biblioteca: la ruta es dentro de la carpeta central (sin el nombre de la carpeta, que cambia en cada equipo) */
+function stockArchivo(s){ const r = nRuta(s.ruta); if(!r) return null; return S.lib.find(f => nRuta(String(f.path || '').split('/').slice(1).join('/')) === r) || null; }
+async function candidatosStock(){
+  if(CFG.usarStock === false) return [];
+  const L = stockLista().filter(s => s.activo !== false).map(s => Object.assign(s, {f: stockArchivo(s)})).filter(s => s.f);
+  const falta = L.map(s => s.f).filter(f => !MEAS[medKey(f)]); if(falta.length) await medir(falta);
+  return L.map(s => { const m = MEAS[medKey(s.f)]; return m && m.ok && m.combinable && m.len > 0 ? Object.assign(s, {m, L: m.len, perfil: perfilDe(m)}) : null; }).filter(Boolean);
+}
+/* las que sirven para un grupo: misma sección y mismo calibre que el tubular del programa (el calibre se escribe en la lista: el
+   dibujo no lo dice, Ingeniería dibuja casi todo con pared 1.2) y mismo perfil dibujado que sus piezas (regla de TubesT) */
+function stockPara(cands, it0){
+  if(!it0 || !it0.med || it0.completo) return [];
+  return cands.filter(s => s.cal && String(it0.cal) === String(s.cal) && Math.abs(s.m.secA - it0.med.b) <= CFG.tolSeccion && Math.abs(s.m.secB - it0.med.a) <= CFG.tolSeccion && s.perfil === it0.perfil)
+    .map(s => ({sku: s.sku, L: s.L, max: +s.max || 0, item: {tipo: it0.tipo, tipoLabel: it0.tipoLabel, tipoCorto: it0.tipoCorto, L: s.L, prio: 1e9, op: OP_STOCK, ruta: 'SKU ' + s.sku, pieza: s.desc || s.f.p.pieza, fileId: s.f.id,
+      med: it0.med, cal: it0.cal, pzs: 1, completo: false, perfil: s.perfil, maquina: it0.maquina, grupo: it0.grupo, sku: s.sku}}));
+}
 const TIPOS = () => { const t = {}; S.items.forEach(i => t[i.tipo] = t[i.tipo] || {key: i.tipo, label: i.tipoLabel, corto: i.tipoCorto, med: i.med, cal: i.cal}); (S.db.recortes || []).forEach(r => { if(!t[r.tipo]) t[r.tipo] = {key: r.tipo, label: r.tipoLabel || r.tipo, corto: r.tipoCorto || r.tipo}; }); return t; };
 
 /* ======================= Optimización ======================= */
@@ -2139,7 +2192,11 @@ async function generar(){
   if(!ap && bc && !confirm(`Ya hay un borrador compartido${bc.autor ? ' de ' + bc.autor : ''} (${esc(bc.archivo || bc.id)}${bc.ts ? ', ' + fecha(bc.ts) : ''}).\n\nSi generas otro, se reemplaza también en el equipo del otro programador. ¿Generar de todos modos?`)) return;
   const recDisp = (S.db.recortes || []).filter(r => r.estado === 'Disponible').map(r => ({id: r.id, tipo: r.tipo, largo: +r.largo}));
   const c = {tramo: CFG.tramo, tramoDe, porGrupo: paramsGrupo(), chuck: 0, refr: CFG.refr, kerf: CFG.kerf, minRem: CFG.minRem, modo: CFG.modo, ventana: CFG.ventana};
+  // piezas de stock: llenan el sobrante de los tramos del mismo tubular y perfil (Leonardo, 2026-11-24)
+  const stockC = await candidatosStock(); c.stockDe = it0 => stockPara(stockC, it0);
   const res = OPT.run(S.items, CFG.usarRecortes === false ? [] : recDisp, c);
+  delete c.stockDe;
+  const nStock = res.reduce((s, g) => s + (g.tot.stock || 0), 0);
   // el ID es por minuto: si ya hay un programa con ese ID se agrega b, c… para no sobrescribirlo al guardar
   const base = 'MT-' + hoyId(), T = TIPOS(); let pid = base;
   for(let k = 1; (S.db.programas || []).some(p => p.id === pid) || (bc && bc.id === pid); k++) pid = base + String.fromCharCode(97 + k);
@@ -2151,7 +2208,7 @@ async function generar(){
       b.id = `${pid}-${t.corto}-${nn}`; b.tipoLabel = t.label; b.maquina = g.maquina; b.completo = g.completo;
       if(b.recorte) b.recorteNuevo = 'R' + t.corto + '-' + sello + nn; }); });
   S.res = {id: pid, fecha: Date.now(), cfg: c, grupos: res, archivo: S.progFile, guardado: false}; S.consSel = null; guardarBorrador();
-  showTab('mult'); toast('Múltiples generados' + (API.on() ? ' · compartiendo con los programadores…' : ''));
+  showTab('mult'); toast('Múltiples generados' + (nStock ? ` · ${nStock} piezas de stock en los sobrantes` : '') + (API.on() ? ' · compartiendo con los programadores…' : ''));
   if(API.on()){ S.generando = true; const ok = await subirBorradorComp(S.res); S.generando = false;
     if(ok) toast(programadores().length > 1 ? 'Borrador compartido: ' + nombresProg() + ' ven los mismos múltiples' : 'Borrador compartido en el servidor'); renderAll(); }
 }
@@ -2162,13 +2219,13 @@ async function guardarPrograma(){
   const cq = cuadrePrograma(R);
   if(cq && cq.mal && !confirm(`No cuadra con el programa:${cq.faltan ? `\n• faltan ${cq.faltan} piezas` : ''}${cq.sobran ? `\n• sobran ${cq.sobran} piezas` : ''}\n\nRevisa «Cuadre con el programa» en Múltiples de corte. ¿Aprobar de todas formas?`)) return;
   // la misma OP en dos programas vigentes = piezas cortadas dos veces
-  const opsR = [...new Set(R.grupos.flatMap(g => g.bars.flatMap(b => b.piezas.map(p => String(p.op)))))];
+  const opsR = [...new Set(R.grupos.flatMap(g => g.bars.flatMap(b => b.piezas.filter(p => !esStock(p)).map(p => String(p.op)))))];   // STOCK no es una OP
   const previos = (S.db.programas || []).filter(p => p.estado !== 'Cancelado' && p.id !== R.id).map(p => ({id: p.id, ops: String(p.ops ?? '').split(/\s*,\s*/).filter(o => opsR.includes(o))})).filter(p => p.ops.length);
   if(previos.length && !confirm(`Estas OPs ya están en otro programa guardado:\n${previos.map(p => `• ${p.id}: ${p.ops.join(', ')}`).join('\n')}\n\nSi lo guardas, esas piezas se cortarían dos veces. ¿Guardar de todas formas?`)) return;
   const tramos = [], recNuevos = [], recUsados = [];
   R.grupos.forEach(g => g.bars.forEach((b, i) => {
     tramos.push({id: b.id, programa: R.id, tipo: g.tipo, tipoLabel: g.label, orden: i + 1, largo: b.P, origen: b.origen, recorteUsado: b.recorteId || '', recorteNuevo: b.recorteNuevo || '', largoRecorte: b.recorte, consumo: b.consumo, aprov: b.aprov, estado: 'Pendiente', inicio: '', fin: '', maquina: b.maquina || '',
-      piezas: b.piezas.map(p => Object.assign({x: +p.x.toFixed(1), L: +p.L.toFixed(1), op: p.op, ruta: p.ruta, pieza: p.pieza, fileId: p.fileId, consumo: +p.consumo.toFixed(1)}, p.pzs > 1 ? {pzs: p.pzs} : {}, p.completo ? {completo: true} : {}, normRot(p.rot) ? {rot: normRot(p.rot)} : {}))});
+      piezas: b.piezas.map(p => Object.assign({x: +p.x.toFixed(1), L: +p.L.toFixed(1), op: p.op, ruta: p.ruta, pieza: p.pieza, fileId: p.fileId, consumo: +p.consumo.toFixed(1)}, p.pzs > 1 ? {pzs: p.pzs} : {}, p.completo ? {completo: true} : {}, p.sku ? {sku: p.sku} : {}, normRot(p.rot) ? {rot: normRot(p.rot)} : {}))});
     if(b.recorteId) recUsados.push({id: b.recorteId, estado: 'Reservado', programa: R.id, tramo: b.id});
     if(b.recorteNuevo) recNuevos.push({id: b.recorteNuevo, tipo: g.tipo, tipoLabel: g.label, tipoCorto: g.corto, largo: b.recorte, estado: 'Por generar', origen: b.id, programa: R.id, ubicacion: '', alta: '__NOW__'});
   }));
@@ -2616,8 +2673,9 @@ function svgBar(b, colorOf, opts){
 /* datos del tramo (Leonardo, 2026-11-18: solo lo importante): piezas y aprovechamiento; el resto, al pasar el mouse */
 function pieBar(b){
   const zb = zonaBar(b), ch = zb.ch, sobra = Math.max(0, b.P - b.usado - ch);
-  const tip = `${b.origen === 'recorte' ? 'Recorte ' + (b.recorteId || '') : 'Tramo nuevo'} ${f0(b.P)} mm · usado ${f0(b.usado)} mm · ${b.recorte ? 'recorte a guardar ' + f0(b.recorte) : 'sobra ' + f0(sobra)} mm · ${nomZona(zb)} ${f0(ch)} mm`;
-  return `<span class="bmini" title="${esc(tip)}">${b.piezas.length} ${b.piezas.length === 1 ? 'pieza' : 'piezas'} · <b class="${lvAprov(b.aprov)}">${pct(b.aprov)}</b> aprovechado${b.origen === 'recorte' ? ` · <span class="rec">♻ usa el recorte ${esc(b.recorteId || '')}</span>` : ''}</span>`;
+  const tip = `${b.origen === 'recorte' ? 'Recorte ' + (b.recorteId || '') : 'Tramo nuevo'} ${f0(b.P)} mm · usado ${f0(b.usado)} mm · ${b.recorte ? 'recorte a guardar ' + f0(b.recorte) : 'sobra ' + f0(sobra)} mm · ${nomZona(zb)} ${f0(ch)} mm · uso del tramo ${pct(b.P ? b.piezas.reduce((s, p) => s + (+p.L || 0), 0)/b.P : 0)}`;
+  const nst = b.piezas.filter(esStock).length, np = b.piezas.length - nst;
+  return `<span class="bmini" title="${esc(tip)}">${np} ${np === 1 ? 'pieza' : 'piezas'}${nst ? ` <span class="stk" title="Piezas de stock que llenan el sobrante (OP STOCK)">+ ${nst} de stock</span>` : ''} · <b class="${lvAprov(b.aprov)}">${pct(b.aprov)}</b> aprovechado${b.origen === 'recorte' ? ` · <span class="rec">♻ usa el recorte ${esc(b.recorteId || '')}</span>` : ''}</span>`;
 }
 /* cuántas veces se corta el mismo múltiple (tramos iguales): grande y en palabras, para no confundirlo con las piezas del tramo */
 const vecesChip = (n, extra) => n > 1 ? `<span class="veces" title="${n} tramos iguales: carga este múltiple una vez y córtalo ${n} veces${extra ? ' (' + extra + ')' : ''}">✂ Cortar <b>${n}</b> veces</span>`
@@ -2634,7 +2692,7 @@ const tramosTxt = ids => { const c = ids.map(id => { const s = String(id), m = s
   const txt = c.length === 1 ? 'Tramo ' + c[0] : c.length <= 3 ? 'Tramos ' + c.slice(0, -1).join(', ') + ' y ' + c[c.length - 1] : 'Tramos ' + c[0] + ' … ' + c[c.length - 1];
   return `<b title="${esc(ids.join('\n'))}">${esc(txt)}</b>`; };
 function colorMap(){ const keys = [...new Set(S.items.map(i => i.ruta + '|' + i.pieza))]; (S.db.tramos || []).forEach(t => (t.piezas || []).forEach(p => { const k = p.ruta + '|' + p.pieza; if(!keys.includes(k)) keys.push(k); }));
-  return p => PAL[keys.indexOf(p.ruta + '|' + p.pieza) % PAL.length] || PAL[0]; }
+  return p => esStock(p) ? COLOR_STOCK : PAL[keys.indexOf(p.ruta + '|' + p.pieza) % PAL.length] || PAL[0]; }   // las de stock, con su propio color
 /* hoja de corte: cada múltiple una vez, con cuántas veces se corta, sus piezas por modelo y OP y los recortes que se guardan */
 function hojaCorte(titulo, bars){
   const col = colorMap(), td = 'style="padding:2px 6px;border-bottom:1px solid #ddd"', th = h => `<th style="border-bottom:1px solid #999;text-align:left;padding:2px 6px">${h}</th>`;
@@ -2712,7 +2770,7 @@ function resDeGuardado(pid){
     (G[k] = G[k] || {tipo: t.tipo, grupo: k, maquina: t.maquina || '', label: t.tipoLabel || t.tipo, bars: [], largas: [], completo: false}).bars.push(b); });
   const grupos = Object.values(G).map(g => { const s = skuDe(g.tipo), B = g.bars, L = b => b.piezas.reduce((x, q) => x + (+q.L || 0), 0);
     const tot = {tramos: B.filter(b => b.origen !== 'recorte').length, recUsados: B.filter(b => b.origen === 'recorte').length, recGenerados: B.filter(b => b.recorte).length,
-      consumo: B.reduce((a, b) => a + b.consumo, 0), largoPiezas: B.reduce((a, b) => a + L(b), 0), piezas: B.reduce((a, b) => a + b.piezas.length, 0)};
+      consumo: B.reduce((a, b) => a + b.consumo, 0), largoPiezas: B.reduce((a, b) => a + L(b), 0), piezas: B.reduce((a, b) => a + b.piezas.length, 0), stock: B.reduce((a, b) => a + b.piezas.filter(esStock).length, 0)};
     tot.aprov = tot.consumo ? tot.largoPiezas/tot.consumo : 0;
     return Object.assign(g, {tot, sku: s ? s.sku : '', nSku: skusDe(g.tipo).length, kgm: kgmDe(g.tipo), tramo: tramoDe(g.tipo)}); });
   return {id: pid, fecha: +p.fecha, grupos, archivo: p.archivo || '', guardado: true, aprobado: true, estado: p.estado || 'Pendiente'};
@@ -3026,6 +3084,7 @@ function renderMult(){
     <label class="cfl" style="flex-direction:row;align-items:center;gap:6px">Criterio <select id="mMode" ${dis}><option value="prio" ${CFG.modo === 'prio' ? 'selected' : ''}>Prioridad por hora de inicio de OP</option><option value="max" ${CFG.modo === 'max' ? 'selected' : ''}>Máximo aprovechamiento (todo junto)</option></select></label>
     ${CFG.modo === 'prio' ? `<label class="cfl" style="flex-direction:row;align-items:center;gap:6px" title="Cuántos tramos de piezas siguientes se consideran para llenar cada tramo">Ventana <input type="number" id="mWin" min="1" max="20" step="1" value="${CFG.ventana}" style="width:60px" ${dis}> tramos</label>` : ''}
     <label class="row sm" style="gap:4px"><input type="checkbox" id="mRec" ${CFG.usarRecortes === false ? '' : 'checked'} ${dis}> Usar recortes del inventario (${(S.db.recortes || []).filter(r => r.estado === 'Disponible').length} disponibles)</label>
+    <label class="row sm" style="gap:4px" title="Llena el sobrante (recorte verde) de cada tramo con las piezas de stock del mismo tubular y perfil. La lista está en Configuración › Piezas de stock"><input type="checkbox" id="mStock" ${CFG.usarStock === false ? '' : 'checked'} ${dis}> Llenar sobrantes con piezas de stock (${stockLista().filter(s => s.activo !== false).length})</label>
     <label class="row sm" style="gap:4px" title="Dibuja dentro de cada pieza sus barrenos, ranuras y cortes (de su IGS)"><input type="checkbox" id="mGeo" ${CFG.verGeo === false ? '' : 'checked'}> Ver el dibujo de cada pieza</label>
     <span style="flex:1"></span><button class="pri" id="mGen" ${!prog ? dis : S.items.length ? '' : 'disabled'}>⚙ Generar múltiples</button></div>
     <p class="mut sm" style="margin:8px 0 0" title="${esc(utilTip())}">${utilTxt()} · ${S.items.length ? f0(S.items.length) + ' piezas en ' + Object.keys(TIPOS()).filter(k => S.items.some(i => i.tipo === k)).length + ' tubulares' : 'Carga el programa y la biblioteca'}</p></div>`;
@@ -3034,7 +3093,7 @@ function renderMult(){
   const maqs = [...new Set(R.grupos.map(g => g.maquina).filter(Boolean))].sort();
   const MQ1 = maqs.length ? (maqs.includes(S.multMaq) ? S.multMaq : maqs.includes(MAQ) ? MAQ : maqs[0]) : '';
   S.multMaq = MQ1; const MQ = S.multAmbas && maqs.length > 1 ? '' : MQ1; S.multVis = MQ;   // «Ambas»: las dos máquinas juntas
-  const sumar = gs => gs.reduce((s, g) => { s.tr += g.tot.tramos; s.ru += g.tot.recUsados; s.rg += g.tot.recGenerados; s.c += g.tot.consumo; s.l += g.tot.largoPiezas; s.kg += g.kgm ? g.tot.consumo/1000*g.kgm : 0; s.tra += g.tot.consumo/(g.tramo || CFG.tramo); s.p += g.tot.piezas; return s; }, {tr: 0, ru: 0, rg: 0, c: 0, l: 0, kg: 0, tra: 0, p: 0});
+  const sumar = gs => gs.reduce((s, g) => { s.tr += g.tot.tramos; s.ru += g.tot.recUsados; s.rg += g.tot.recGenerados; s.c += g.tot.consumo; s.l += g.tot.largoPiezas; s.kg += g.kgm ? g.tot.consumo/1000*g.kgm : 0; s.tra += g.tot.consumo/(g.tramo || CFG.tramo); s.p += g.tot.piezas; s.P += g.bars.reduce((a, b) => a + (+b.P || 0), 0); return s; }, {tr: 0, ru: 0, rg: 0, c: 0, l: 0, kg: 0, tra: 0, p: 0, P: 0});
   const vis = R.grupos.map((g, gi) => ({g, gi})).filter(x => !MQ || x.g.maquina === MQ), tot = sumar(vis.map(x => x.g));
   // las tarjetas empiezan contraídas; las que abras se quedan abiertas aunque la pantalla se vuelva a dibujar
   const abiertos = S.multAbiertos || (S.multAbiertos = new Set()), gk = g => (g.maquina || '') + '|' + g.grupo;
@@ -3048,12 +3107,12 @@ function renderMult(){
     ${prog && !['Cortado', 'Cancelado'].includes(R.estado) && R.grupos.some(g => g.bars.some(b => b.estado === 'Pendiente')) ? `<button id="mCancel" title="Cancela los tramos pendientes del programa (GW1 y GW2) y libera sus recortes reservados">✖ Cancelar pendientes</button>` : ''}</div>` : '';
   // solo lo importante (Leonardo, 2026-11-18): tramos, aprovechamiento y consumo; los recortes van en el detalle de tramos
   el.innerHTML = cfgBar + tabs +`<div class="kpis"><div class="kpi"><span>Tramos nuevos${MQ ? ' · ' + esc(MQ) : ''}</span><b>${tot.tr}</b><span>${f0(tot.p)} piezas${tot.ru ? ' · ' + tot.ru + ' recortes usados' : ''}</span></div>
-  <div class="kpi"><span>Aprovechamiento</span><b style="color:var(--${lvAprov(tot.l/tot.c)})">${pct(tot.l/tot.c)}</b></div><div class="kpi"><span>Consumo real</span><b>${u(f2(tot.kg), 'kg')}</b><span>${f2(tot.tra)} TRA</span></div></div>
+  <div class="kpi"><span>Aprovechamiento</span><b style="color:var(--${lvAprov(tot.l/tot.c)})">${pct(tot.l/tot.c)}</b><span title="Largo de piezas ÷ largo de los tramos usados: aquí el recorte cuenta como sobrante. Al llenar el sobrante con piezas de stock, este sube aunque el aprovechamiento (que no cuenta el recorte como consumo) baje">uso del tramo ${pct(tot.P ? tot.l/tot.P : 0)}</span></div><div class="kpi"><span>Consumo real</span><b>${u(f2(tot.kg), 'kg')}</b><span>${f2(tot.tra)} TRA</span></div></div>
   <div class="card"><div class="row"><b style="flex:1">${esc(R.id)} ${R.aprobado ? badge('ok', '✓ Aprobado · ' + (R.estado || 'Pendiente')) : R.guardado ? badge('ok', 'Aprobado') : badge('wa', R.compartido ? 'Borrador compartido · sin aprobar' : 'Sin aprobar')}</b>
   <button id="mPrint" title="Hoja de corte de ${esc(MQ || 'todo el programa')}">🖨 Hoja de corte${MQ ? ' ' + esc(MQ) : ''}</button><button id="mXls">📊 Consumos (Excel)</button><button class="pri" id="mSave" ${R.guardado ? 'disabled' : prog ? '' : 'disabled'} title="${prog ? '' : esc(msgSoloProg()) + '. '}Se guarda el programa completo (GW1 y GW2) y se ve igual en todos los equipos. Los recortes usados quedan reservados y los nuevos se registran Por generar; pasan a Disponible cuando el tramo se marca cortado.">💾 Aprobar y guardar</button></div>${pisoHtml}</div>
   ${cuadreHtml(cuadrePrograma(R))}
   ${vis.map(({g, gi}) => R.aprobado && S.opOcultar && g.bars.every(b => b.estado === 'Cortado') ? '' : `<details class="card" data-gk="${esc(gk(g))}" ${abiertos.has(gk(g)) ? 'open' : ''}><summary>${!MQ && g.maquina ? badge('in', g.maquina) + ' ' : ''}<b>${esc(g.label)}</b>${g.completo ? ' ' + badge('ok', '▣ ' + g.dibujo) : ''} ${g.sku ? '' : badge('wa', 'Sin SKU en el catálogo')}${g.nSku > 1 ? badge('wa', `Hay ${g.nSku} SKU: elige en Configuración`) : ''} ${g.largas.length ? badge('er', g.largas.length + ' piezas no caben') : ''}${perfilAparte(g, R) ? ' ' + badge('wa', 'Perfil distinto (' + perfilTxt(g.perfil) + '): va en su propio IGS') : ''}
-    ${dts(R.aprobado ? dt('Cortados', `${g.bars.filter(b => b.estado === 'Cortado').length} de ${g.bars.length}`, 'tramos', 'ok') : dt('Tramos', g.tot.tramos + g.tot.recUsados), dt('Piezas', g.tot.piezas), dt('Aprovechamiento', pct(g.tot.aprov), '', lvAprov(g.tot.aprov)))}</summary>
+    ${dts(R.aprobado ? dt('Cortados', `${g.bars.filter(b => b.estado === 'Cortado').length} de ${g.bars.length}`, 'tramos', 'ok') : dt('Tramos', g.tot.tramos + g.tot.recUsados), dt('Piezas', g.tot.piezas - (g.tot.stock || 0)), g.tot.stock ? dt('De stock', g.tot.stock, '', 'in') : '', dt('Aprovechamiento', pct(g.tot.aprov), '', lvAprov(g.tot.aprov)))}</summary>
     ${agrupar(g.bars).map(x => { const ref = gi + '|' + g.bars.indexOf(x.b), ep = R.aprobado ? estadoPiso(x, !MQ) : null;
       if(ep && S.opOcultar && ep.e === 'Cortado') return '';
       return `<div class="bar" style="${ep && ep.e === 'Cortado' ? 'opacity:.6' : ''}"><div class="barhd">${tramosTxt(x.ids, R.id)} ${vecesChip(x.n)}${zonaBar(x.b).ext ? ' ' + badge('in', 'Con extensión') : ''}${ep ? ' ' + ep.html : ''} ${pieBar(x.b)}${ep ? ep.recs : ''}${chipsCostura(x.b, g)}<span style="flex:1"></span>
@@ -3077,7 +3136,7 @@ function perfilAparte(g, R){
 function cuadrePrograma(R){
   if(!R || R.aprobado || !S.ops.length || (R.archivo && S.progFile && R.archivo !== S.progFile)) return null;
   const en = new Map(); let conPrio = false;
-  R.grupos.forEach(g => g.bars.forEach(b => b.piezas.forEach(p => { if(p.prio == null) return; conPrio = true; en.set(p.prio, (en.get(p.prio) || 0) + (p.pzs > 1 ? p.pzs : 1)); })));
+  R.grupos.forEach(g => g.bars.forEach(b => b.piezas.forEach(p => { if(p.prio == null || esStock(p)) return; conPrio = true; en.set(p.prio, (en.get(p.prio) || 0) + (p.pzs > 1 ? p.pzs : 1)); })));
   if(!conPrio) return null;
   const filas = S.ops.map(o => {
     const req = Math.round(o.cant || o.progra * o.xMueble) || 0, n = en.get(o.idx) || 0, it = S.items.find(i => i.prio === o.idx), fu = S.fuera.find(x => x.o === o);
@@ -3110,6 +3169,7 @@ function bindMult(){
   $('mMode').onchange = e => { CFG.modo = e.target.value; saveCfg(); renderMult(); };
   if($('mWin')) $('mWin').onchange = e => { CFG.ventana = Math.max(1, +e.target.value || 2); saveCfg(); };
   $('mRec').onchange = e => { CFG.usarRecortes = e.target.checked; saveCfg(); };
+  if($('mStock')) $('mStock').onchange = e => { CFG.usarStock = e.target.checked; saveCfg(); toast(e.target.checked ? 'Al generar, el sobrante de cada tramo se llena con piezas de stock' : 'Sin piezas de stock: el sobrante queda como recorte'); };
   $('mGeo').onchange = e => { CFG.verGeo = e.target.checked; saveCfg(); renderMult(); };
   $('mGen').onclick = generar;
   if($('mVer')) $('mVer').onchange = e => { const v = e.target.value; S.res = v === '__borr' ? S.borrComp : v ? resDeGuardado(v) : leerBorrador(); renderMult(); };
@@ -3352,6 +3412,35 @@ function cardCaraA(){ const v = CFG.caraARegla || '', n = Object.keys(S.carasA |
   return `<details class="card"><summary><b>🅰 Cara A y costura</b> <span class="mut sm">${v ? 'Regla: la cara A va hacia ' + v + ' en los IGS' : 'Sin regla: la cara A se marca en la vista 3D'} · ${n} ${n === 1 ? 'pieza marcada' : 'piezas marcadas'}</span></summary>
     <p class="mut sm" style="margin:10px 0">La cara A (la que queda a la vista en el mueble) no debe llevar la costura del tubular. Cada pieza recuerda su cara A cuando se marca en 🔍 Ver › 3D (columna «Cara A»). Si Ingeniería dibuja todos los IGS con la cara A hacia el mismo eje, elígelo aquí: se usa en las piezas que no estén marcadas. El operador indica en 🔍 Ver de qué lado quedó la costura del lote y gira las piezas que lo necesiten.</p>
     <label class="cfl"><span>En los IGS, la cara A va hacia</span><select id="cCaraA" ${esProgramador() ? '' : 'disabled title="' + esc(msgSoloProg()) + '"'}>${[['', 'Sin regla (se marca en 3D)'], ['+Z', '+Z del IGS'], ['-Z', '−Z del IGS'], ['+Y', '+Y del IGS'], ['-Y', '−Y del IGS'], ['+X', '+X del IGS'], ['-X', '−X del IGS']].map(([k, tx]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${tx}</option>`).join('')}</select></label></details>`; }
+/* piezas de stock que llenan los sobrantes de los múltiples (Leonardo, 2026-11-24) */
+function cardStock(){
+  const L = stockLista(), ed = esProgramador(), dis = ed ? '' : `disabled title="${esc(msgSoloProg())}"`;
+  const lectura = s => { if(!S.lib.length) return '<span class="mut">Conecta la carpeta central para leerla</span>'; const f = stockArchivo(s); if(!f) return badge('er', 'No está en la carpeta central');
+    const m = MEAS[medKey(f)]; if(!m) return '<span class="mut">Sin leer</span>'; if(!m.ok) return badge('er', m.error || 'No se pudo leer');
+    return `${f1(m.len)} mm · ${f1(m.secA)} × ${f1(m.secB)}${m.wall != null ? ' · pared ' + f2(m.wall) : ''}${m.combinable ? '' : ' ' + badge('er', 'no se combina')}`; };
+  return `<details class="card"><summary><b>📦 Piezas de stock para llenar sobrantes</b> <span class="mut sm">${L.filter(s => s.activo !== false).length} activas · ${CFG.usarStock === false ? 'apagado en Múltiples de corte' : 'se usan al generar los múltiples'}</span></summary>
+    <p class="mut sm" style="margin:10px 0">Al generar los múltiples, lo que queda libre en cada tramo (el recorte verde) se llena con estas piezas, solo en tramos del mismo tubular (sección y calibre del programa) y con el mismo perfil dibujado (pared y radio, para que TubesT no tome sus aristas como corte). Van al final del tramo con OP «STOCK», se ven en gris azulado y no cuentan en el cuadre con el programa. «Máx. por programa» en 0 = sin límite.</p>
+    <div class="tw" style="max-height:none"><table><tr><th>Activa</th><th>SKU</th><th>Descripción</th><th>IGS (dentro de la carpeta central)</th><th>Lectura del IGS</th><th title="Calibre del tubular del que se corta: solo llena tramos de ese calibre">Calibre</th><th class="n">Máx. por programa</th><th></th></tr>
+    ${L.map(s => `<tr><td><input type="checkbox" data-stk="${esc(s.sku)}|activo" ${s.activo !== false ? 'checked' : ''} aria-label="Activa" ${dis}></td><td class="sm">${esc(s.sku)}</td>
+      <td><input data-stk="${esc(s.sku)}|desc" value="${esc(s.desc || '')}" style="width:170px" aria-label="Descripción" ${dis}></td>
+      <td><input data-stk="${esc(s.sku)}|ruta" value="${esc(String(s.ruta || '').replace(/\//g, '\\'))}" style="width:100%;min-width:230px" aria-label="Ruta del IGS" ${dis}></td>
+      <td class="sm" style="min-width:200px">${lectura(s)}</td>
+      <td><select data-stk="${esc(s.sku)}|cal" aria-label="Calibre" ${dis}><option value="">Elegir…</option>${Object.keys(CFG.calibres).map(c => `<option value="${c}" ${String(s.cal) === c ? 'selected' : ''}>Cal ${c}</option>`).join('')}</select>${s.cal ? '' : ' ' + badge('wa', 'sin calibre: no se usa')}</td>
+      <td class="n"><input type="number" min="0" step="1" data-stk="${esc(s.sku)}|max" value="${+s.max || 0}" style="width:70px" aria-label="Máximo por programa" ${dis}></td>
+      <td>${ed ? `<button data-stkdel="${esc(s.sku)}" title="Quitar de la lista" aria-label="Quitar">✕</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="mut">Sin piezas de stock.</td></tr>'}</table></div>
+    ${ed ? `<div class="row" style="margin-top:8px"><input id="cStkSku" placeholder="SKU" style="width:110px"><input id="cStkDesc" placeholder="Descripción" style="width:180px"><input id="cStkRuta" placeholder="LÍNEA\\MODELO\\IGS\\archivo.IGS" style="flex:1;min-width:260px"><select id="cStkCal" aria-label="Calibre"><option value="">Calibre…</option>${Object.keys(CFG.calibres).map(c => `<option value="${c}">Cal ${c}</option>`).join('')}</select><button id="cStkAdd">＋ Agregar</button></div>` : ''}</details>`;
+}
+function bindStock(el){
+  el.querySelectorAll('[data-stk]').forEach(i => i.onchange = () => { const [sku, k] = i.dataset.stk.split('|'), s = Object.assign({}, (CFG.stock || {})[sku]);
+    s[k] = k === 'activo' ? i.checked : k === 'max' ? Math.max(0, Math.round(+i.value || 0)) : k === 'ruta' ? i.value.trim().replace(/\\/g, '/') : i.value.trim();
+    CFG.stock = Object.assign({}, CFG.stock, {[sku]: s}); saveCfg(); renderCfg(); toast(S.cfgCompActiva ? 'Guardado para todos los equipos' : 'Guardado');
+    if(k === 'ruta') medirNecesarios().then(renderCfg); });
+  el.querySelectorAll('[data-stkdel]').forEach(b => b.onclick = () => { if(!confirm('¿Quitar ' + b.dataset.stkdel + ' de las piezas de stock?')) return;
+    const o = Object.assign({}, CFG.stock); delete o[b.dataset.stkdel]; CFG.stock = o; saveCfg(); renderCfg(); });
+  if($('cStkAdd')) $('cStkAdd').onclick = () => { const sku = $('cStkSku').value.trim(), desc = $('cStkDesc').value.trim(), ruta = $('cStkRuta').value.trim().replace(/\\/g, '/'), cal = $('cStkCal').value;
+    if(!sku || !ruta || !cal) return toast('Escribe el SKU, la ruta del IGS y el calibre del tubular', 'er');
+    CFG.stock = Object.assign({}, CFG.stock, {[sku]: {desc, ruta, cal, max: 0, activo: true}}); saveCfg(); renderCfg(); toast('Pieza de stock agregada'); medirNecesarios().then(renderCfg); };
+}
 function cardMaquinas(){
   const M = maqsCfg(), P = Object.fromEntries(M.map(m => [m, pmDe(m)])), T = CFG.tramo, tub = tubularesConocidos(), enProg = new Set(S.items.map(i => i.tipo));
   const fila = (k, t, step, tip) => `<tr title="${esc(tip || '')}"><td>${t}</td>${M.map(m => `<td class="n"><input type="number" step="${step || 1}" data-mq="${esc(m)}" data-mk="${k}" value="${P[m][k]}" style="width:90px"></td>`).join('')}</tr>`;
@@ -3380,7 +3469,7 @@ function renderCfg(){
   el.innerHTML = `${comp}${cardProgramadores()}${cardEquipoOp()}<details class="card" open><summary><b>📏 Tramo y corte</b></summary><div class="grid2" style="margin-top:10px">
     ${num('tramo', 'Largo del tramo nuevo (mm)')}${num('minRem', 'Recorte útil mínimo para guardar (mm)')}${num('tolSeccion', 'Tolerancia sección nombre vs IGS (mm)', 0.1)}${num('densidad', 'Densidad del acero (g/cm³)', 0.01)}</div>
     <p class="mut sm">El chuck, el refrentado, la separación y la extensión van por máquina (abajo). Un sobrante se guarda como recorte si, al restarle el chuck (o la extensión) y el refrentado de la máquina, quedan al menos ${f0(CFG.minRem)} mm aprovechables.</p></details>
-  ${cardMaquinas()}${cardCaraA()}
+  ${cardMaquinas()}${cardCaraA()}${cardStock()}
   <details class="card"><summary><b>📐 Espesor por calibre (mm)</b></summary><div class="grid2" style="margin-top:10px">${Object.entries(CFG.calibres).map(([c, v]) => `<label class="cfl"><span>Calibre ${c}</span><input type="number" step="0.01" data-cal="${c}" value="${v}"></label>`).join('')}</div></details>
   ${catHtml()}
   <details class="card" open><summary><b>☁ Conexión con Drive (Apps Script)</b></summary><div style="margin-top:10px">
@@ -3408,6 +3497,7 @@ function renderCfg(){
   $('catAdd').onclick = () => { CFG.catalogo.push({sku: '', desc: 'Tubular ', peso: 0}); saveCfg(); renderCfg(); };
   el.querySelectorAll('[data-pref]').forEach(s => s.onchange = () => { CFG.skuPref[s.dataset.pref] = s.value; saveCfg(); toast('Guardado'); });
   if($('cCaraA')) $('cCaraA').onchange = e => { CFG.caraARegla = e.target.value; saveCfg(); renderCfg(); toast(e.target.value ? 'Regla de cara A guardada: se usa en las piezas sin marcar' : 'Sin regla: la cara A se marca en la vista 3D'); };
+  bindStock(el);
   if($('cVer')) $('cVer').onclick = () => { const i = $('cClave'), ver = i.type === 'password'; i.type = ver ? 'text' : 'password'; $('cVer').textContent = ver ? '🙈' : '👁'; };
   $('cSave').onclick = async () => { CFG.apiUrl = $('cUrl').value.trim() || API_URL; CLAVE = $('cClave').value.trim(); saveCfg(); saveClave(); setConn(); renderCfg();
     if(CFG.apiUrl){ try{ await API.cargar(); renderAll(); toast('Conectado'); }catch(e){ toast(e.message, 'er'); renderCfg(); } } };
@@ -3418,7 +3508,7 @@ function renderCfg(){
       else txt += ' · el Apps Script es anterior y todavía no pide clave';
       $('cMsg').textContent = txt; }catch(e){ $('cMsg').textContent = '✗ ' + e.message; } };
   $('cExp').onclick = () => dl('multiples-tubular_' + hoyId() + '.json', JSON.stringify({cfg: CFG, db: S.db, elecciones: ELEC}, null, 2), 'application/json');
-  $('cImp').onclick = () => { const i = document.createElement('input'); i.type = 'file'; i.accept = '.json'; i.onchange = async () => { try{ const d = JSON.parse(await i.files[0].text()); if(d.cfg){ CFG = Object.assign({}, DEF, d.cfg); CFG.catalogo = JSON.parse(JSON.stringify(CFG.catalogo || [])); CFG.skuPref = Object.assign({}, CFG.skuPref); } if(d.elecciones) ELEC = d.elecciones; saveCfg(); saveElec();
+  $('cImp').onclick = () => { const i = document.createElement('input'); i.type = 'file'; i.accept = '.json'; i.onchange = async () => { try{ const d = JSON.parse(await i.files[0].text()); if(d.cfg){ CFG = Object.assign({}, DEF, d.cfg); CFG.catalogo = JSON.parse(JSON.stringify(CFG.catalogo || [])); CFG.skuPref = Object.assign({}, CFG.skuPref); CFG.stock = JSON.parse(JSON.stringify(CFG.stock || {})); } if(d.elecciones) ELEC = d.elecciones; saveCfg(); saveElec();
     if(d.db && !API.on()){ S.db = d.db; localStorage.setItem('mt-db', JSON.stringify(S.db)); } toast('Respaldo importado'); renderAll(); }catch(e){ toast('Archivo no válido', 'er'); } }; i.click(); };
   $('cDef').onclick = () => { if(confirm('¿Regresar tramo, chuck, separación, calibres y catálogo de tubulares a los valores de fábrica? La URL se conserva.')){ const u = CFG.apiUrl; CFG = JSON.parse(JSON.stringify(DEF)); CFG.apiUrl = u || API_URL; saveCfg(); renderAll(); } };
 }
