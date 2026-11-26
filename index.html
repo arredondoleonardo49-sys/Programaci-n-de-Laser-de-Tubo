@@ -130,7 +130,7 @@ td.n,th.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 .sub{display:block;font-size:11.5px;color:var(--text2);margin-top:3px;line-height:1.35;word-break:break-word;font-weight:400}
 .barhd .op{font-family:var(--mono);font-size:11.5px;color:var(--text2)}
 details.card>summary>.dts{flex-basis:100%;margin:2px 0 0 18px}
-.bar{margin:10px 0 22px}
+.bar{margin:10px 0 22px}.bar[draggable="true"]{cursor:grab}.bar.arrastrando{opacity:.45}.bar.sobre{outline:2px dashed var(--green);outline-offset:4px;border-radius:6px}.bar.sobre.nocabe{outline-color:var(--red)}.arrmsg{font-size:12px;font-weight:600;color:var(--green);margin-left:8px}.nocabe .arrmsg{color:var(--red)}
 .barhd .n2{font-family:var(--mono);font-size:11px;color:var(--text2)}
 /* cuántas veces se corta el mismo múltiple y datos cortos del tramo (2026-11-18) */
 .veces{display:inline-flex;align-items:baseline;gap:5px;padding:2px 12px;border-radius:999px;background:rgba(74,158,255,.16);border:1px solid rgba(74,158,255,.6);color:var(--blue);font-size:13px;font-weight:600;white-space:nowrap}
@@ -890,7 +890,7 @@ const OPT = (() => {
     }
     return res;
   }
-  return {run, knap};
+  return {run, knap, layout, capOf};
 })();
 
 
@@ -2182,6 +2182,92 @@ function stockPara(cands, it0){
     .map(s => ({sku: s.sku, L: s.L, max: +s.max || 0, item: {tipo: it0.tipo, tipoLabel: it0.tipoLabel, tipoCorto: it0.tipoCorto, L: s.L, prio: 1e9, op: OP_STOCK, ruta: 'SKU ' + s.sku, pieza: s.desc || s.f.p.pieza, fileId: s.f.id,
       med: it0.med, cal: it0.cal, pzs: 1, completo: false, perfil: s.perfil, maquina: it0.maquina, grupo: it0.grupo, sku: s.sku}}));
 }
+/* ======================= Juntar tramos arrastrando (Leonardo, 2026-11-26) =======================
+   En Múltiples de corte (antes de aprobar) un tramo se arrastra sobre otro del mismo tubular y máquina. Si sus piezas caben en el
+   destino, se juntan en un solo tramo y el de origen desaparece; si no caben, se quedan igual y el sobrante de los dos se rellena con
+   piezas de stock. Las piezas de stock que ya tenían ceden su lugar a las del programa. Con perfil dibujado distinto se pregunta
+   antes (regla de TubesT). «↶ Deshacer» regresa al estado anterior. */
+const refTramo = ref => { const [gi, bi] = String(ref).split('|').map(Number), G = S.res && S.res.grupos[gi]; return {gi, bi, G, B: G && G.bars[bi]}; };
+function paramsDe(G){ const T = G.tramo || tramoDe(G.tipo) || CFG.tramo; return Object.assign({tramo: T, minRem: CFG.minRem}, paramsGrupo()({maquina: G.maquina, tipo: G.tipo}, T)); }
+function itemDeGrupo(G){
+  const m = String(G.tipo || '').match(/^[A-Z]+-([\d.]+)x([\d.]+)-C(\w+)/i), t = S.items.find(i => i.tipo === G.tipo);
+  return {tipo: G.tipo, tipoLabel: G.label, tipoCorto: G.corto, med: t ? t.med : m ? {a: +m[1], b: +m[2]} : null, cal: t ? t.cal : m ? m[3] : '', perfil: G.perfil || '', maquina: G.maquina, grupo: G.grupo, completo: !!G.completo};
+}
+const reales = b => b.piezas.filter(p => !esStock(p));
+function evalUnion(a, b){
+  const s = refTramo(a), d = refTramo(b);
+  if(!s.B || !d.B) return {base: false, msg: 'No encontré el tramo'};
+  if(s.G.completo || d.G.completo) return {base: false, msg: 'Uno de los dos va con su propio IGS (dibujo completo): no se junta con otros'};
+  if(s.B.solo || d.B.solo) return {base: false, msg: 'Uno de los dos es una pieza larga que va sola en su tramo'};
+  if((s.G.maquina || '') !== (d.G.maquina || '')) return {base: false, msg: `Son de máquinas distintas (${s.G.maquina || '—'} y ${d.G.maquina || '—'})`};
+  if(s.G.tipo !== d.G.tipo) return {base: false, msg: `Tubular distinto: ${s.G.label} y ${d.G.label}`};
+  const c = paramsDe(d.G), cap = OPT.capOf(d.B.P, c), need = reales(s.B).concat(reales(d.B)).reduce((t, p) => t + p.L + c.kerf, 0), faltan = need - cap;
+  const perfilDistinto = (s.G.perfil || '') !== (d.G.perfil || '');
+  return {base: true, ok: faltan <= 1e-6, faltan, perfilDistinto, c, s, d,
+    msg: faltan <= 1e-6 ? `Cabe: ${f0(need - c.kerf)} de ${f0(cap - c.kerf)} mm útiles${perfilDistinto ? ' · perfil dibujado distinto' : ''}` : `No cabe: faltan ${f0(faltan)} mm. Se quedan igual y se rellenan los sobrantes con piezas de stock`};
+}
+/* acomoda de nuevo el tramo y su recorte (ID nuevo si antes no tenía) */
+function reacomodar(G, B){
+  OPT.layout(B, paramsDe(G));
+  if(!B.recorte) B.recorteNuevo = '';
+  else if(!B.recorteNuevo){ const m = String(B.id).match(/-(\d+)$/); B.recorteNuevo = 'R' + (G.corto || '') + '-' + Date.now().toString(36).slice(-4).toUpperCase() + (m ? m[1] : ''); }
+}
+function recalcTot(G){ const B = G.bars, nuevos = B.filter(b => b.origen === 'nuevo'), T = G.tramo || CFG.tramo;
+  G.tot = Object.assign({}, G.tot, {tramos: nuevos.length, recUsados: B.length - nuevos.length, piezas: B.reduce((s, b) => s + b.piezas.length, 0), stock: B.reduce((s, b) => s + b.piezas.filter(esStock).length, 0),
+    largoPiezas: B.reduce((s, b) => s + b.piezas.reduce((t, p) => t + p.L, 0), 0), consumo: B.reduce((s, b) => s + b.consumo, 0), recGenerados: B.filter(b => b.recorte).length, largoRec: B.reduce((s, b) => s + (b.recorte || 0), 0),
+    desecho: B.reduce((s, b) => s + (b.desecho || 0), 0), mmNuevos: nuevos.length*T, mmRecUsados: B.filter(b => b.origen === 'recorte').reduce((s, b) => s + b.P, 0)});
+  G.tot.aprov = G.tot.consumo ? G.tot.largoPiezas/G.tot.consumo : 0; }
+/* llena lo libre de esos tramos con piezas de stock del mismo tubular y perfil; respeta el máximo por programa */
+async function rellenarConStock(G, bars){
+  if(CFG.usarStock === false || G.completo) return 0;
+  const st = stockPara(await candidatosStock(), itemDeGrupo(G)); if(!st.length) return 0;
+  const c = paramsDe(G), usados = sku => S.res.grupos.reduce((n, g) => n + g.bars.reduce((m, b) => m + b.piezas.filter(p => esStock(p) && (p.sku === sku || p.ruta === 'SKU ' + sku)).length, 0), 0);
+  let n = 0, k = 0;
+  bars.forEach(b => { if(b.solo) return; const cap = OPT.capOf(b.P, c) - b.piezas.reduce((s, p) => s + p.L + c.kerf, 0); if(cap < 1) return;
+    const pool = []; st.forEach(s => { const resto = s.max > 0 ? s.max - usados(s.sku) : Infinity, m = Math.min(resto, Math.floor((cap + 1e-6)/(s.L + c.kerf)), 200);
+      for(let i = 0; i < m; i++) pool.push(Object.assign({}, s.item, {uid: 'S' + Date.now().toString(36) + '-' + (k++), _k: c.kerf})); });
+    const sel = OPT.knap(pool, cap); sel.forEach(p => { delete p._k; b.piezas.push(p); }); n += sel.length; });
+  return n;
+}
+async function unirTramos(a, b){
+  const v = evalUnion(a, b); if(!v.base) return toast(v.msg, 'er');
+  const R = S.res, {s, d} = v;
+  if(v.ok && v.perfilDistinto && !confirm(`Las piezas caben en un solo tramo, pero tienen perfil dibujado distinto (${perfilTxt(s.G.perfil) || 'sin leer'} y ${perfilTxt(d.G.perfil) || 'sin leer'}).\n\nEn un mismo IGS, TubesT puede tomar las aristas de unas como corte de las otras. ¿Juntarlos de todas formas?`)) return;
+  const undoPrev = S.undoRes; S.undoRes = JSON.stringify(R);
+  let msg;
+  if(v.ok){
+    const ids = [s.B.id, d.B.id];
+    d.B.piezas = reales(d.B).concat(reales(s.B).map(p => Object.assign({}, p)));
+    s.G.bars.splice(s.bi, 1);
+    const n = await rellenarConStock(d.G, [d.B]); reacomodar(d.G, d.B); recalcTot(d.G);
+    if(s.G.bars.length) recalcTot(s.G); else R.grupos.splice(s.gi, 1);
+    msg = `Juntos: ${idCortoRes(ids[0])} entró en ${idCortoRes(ids[1])} (un tramo menos)${n ? ` · ${n} ${n === 1 ? 'pieza' : 'piezas'} de stock en el sobrante` : ''}`;
+  } else {
+    const n1 = await rellenarConStock(s.G, [s.B]), n2 = await rellenarConStock(d.G, [d.B]);
+    [[s.G, s.B], [d.G, d.B]].forEach(([G, B]) => reacomodar(G, B)); recalcTot(s.G); if(d.G !== s.G) recalcTot(d.G);
+    msg = `No caben juntos (faltan ${f0(v.faltan)} mm). ${n1 + n2 ? `Se rellenaron los sobrantes con ${n1 + n2} ${n1 + n2 === 1 ? 'pieza' : 'piezas'} de stock` : 'No hay piezas de stock del mismo tubular, calibre y perfil para rellenar'}`;
+    if(!(n1 + n2)) S.undoRes = undoPrev;   // no cambió nada: se conserva el deshacer anterior
+  }
+  guardarBorrador(); renderMult(); toast(msg, v.ok ? 'ok' : 'wa');
+  if(R.compartido && API.on()){ const ok = await subirBorradorComp(R); if(ok) toast(msg + ' · borrador compartido actualizado', v.ok ? 'ok' : 'wa'); }
+}
+const idCortoRes = id => { const m = String(id).match(/-(\d+)$/); return 'tramo ' + (m ? m[1] : id); };
+async function deshacerUnion(){
+  if(!S.undoRes) return; const R = JSON.parse(S.undoRes); S.undoRes = null; S.res = R;
+  guardarBorrador(); renderMult(); toast('Se regresó al acomodo anterior');
+  if(R.compartido && API.on()) await subirBorradorComp(R);
+}
+function bindArrastre(el){
+  const limpia = () => { el.querySelectorAll('.bar.sobre').forEach(x => x.classList.remove('sobre', 'nocabe')); el.querySelectorAll('.arrmsg').forEach(x => x.remove()); };
+  el.querySelectorAll('[data-arr]').forEach(d => {
+    d.addEventListener('dragstart', e => { if(e.target.closest && e.target.closest('button')) return e.preventDefault(); S.arr = d.dataset.arr; d.classList.add('arrastrando'); e.dataTransfer.effectAllowed = 'move'; try{ e.dataTransfer.setData('text/plain', d.dataset.arr); }catch(_){} });
+    d.addEventListener('dragend', () => { S.arr = null; d.classList.remove('arrastrando'); limpia(); });
+    d.addEventListener('dragover', e => { if(!S.arr || S.arr === d.dataset.arr) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+      if(!d.classList.contains('sobre')){ limpia(); const v = evalUnion(S.arr, d.dataset.arr); d.classList.add('sobre'); d.classList.toggle('nocabe', !v.base || !v.ok); const hd = d.querySelector('.barhd'); if(hd){ const m = document.createElement('span'); m.className = 'arrmsg'; m.textContent = (v.base && v.ok ? '⇢ ' : '✕ ') + v.msg; hd.appendChild(m); } } });
+    d.addEventListener('dragleave', e => { if(!d.contains(e.relatedTarget)){ d.classList.remove('sobre', 'nocabe'); d.querySelectorAll('.arrmsg').forEach(x => x.remove()); } });
+    d.addEventListener('drop', e => { e.preventDefault(); const src = S.arr; S.arr = null; limpia(); if(src && src !== d.dataset.arr) unirTramos(src, d.dataset.arr); });
+  });
+}
 const TIPOS = () => { const t = {}; S.items.forEach(i => t[i.tipo] = t[i.tipo] || {key: i.tipo, label: i.tipoLabel, corto: i.tipoCorto, med: i.med, cal: i.cal}); (S.db.recortes || []).forEach(r => { if(!t[r.tipo]) t[r.tipo] = {key: r.tipo, label: r.tipoLabel || r.tipo, corto: r.tipoCorto || r.tipo}; }); return t; };
 
 /* ======================= Optimización ======================= */
@@ -3113,13 +3199,15 @@ function renderMult(){
   el.innerHTML = cfgBar + tabs +`<div class="kpis"><div class="kpi"><span>Tramos nuevos${MQ ? ' · ' + esc(MQ) : ''}</span><b>${tot.tr}</b><span>${f0(tot.p)} piezas${tot.ru ? ' · ' + tot.ru + ' recortes usados' : ''}</span></div>
   <div class="kpi"><span>Aprovechamiento</span><b style="color:var(--${lvAprov(tot.l/tot.c)})">${pct(tot.l/tot.c)}</b><span title="Largo de piezas ÷ largo de los tramos usados: aquí el recorte cuenta como sobrante. Al llenar el sobrante con piezas de stock, este sube aunque el aprovechamiento (que no cuenta el recorte como consumo) baje">uso del tramo ${pct(tot.P ? tot.l/tot.P : 0)}</span></div><div class="kpi"><span>Consumo real</span><b>${u(f2(tot.kg), 'kg')}</b><span>${f2(tot.tra)} TRA</span></div></div>
   <div class="card"><div class="row"><b style="flex:1">${esc(R.id)} ${R.aprobado ? badge('ok', '✓ Aprobado · ' + (R.estado || 'Pendiente')) : R.guardado ? badge('ok', 'Aprobado') : badge('wa', R.compartido ? 'Borrador compartido · sin aprobar' : 'Sin aprobar')}</b>
-  <button id="mPrint" title="Hoja de corte de ${esc(MQ || 'todo el programa')}">🖨 Hoja de corte${MQ ? ' ' + esc(MQ) : ''}</button><button id="mXls">📊 Consumos (Excel)</button><button class="pri" id="mSave" ${R.guardado ? 'disabled' : prog ? '' : 'disabled'} title="${prog ? '' : esc(msgSoloProg()) + '. '}Se guarda el programa completo (GW1 y GW2) y se ve igual en todos los equipos. Los recortes usados quedan reservados y los nuevos se registran Por generar; pasan a Disponible cuando el tramo se marca cortado.">💾 Aprobar y guardar</button></div>${pisoHtml}</div>
+  <button id="mPrint" title="Hoja de corte de ${esc(MQ || 'todo el programa')}">🖨 Hoja de corte${MQ ? ' ' + esc(MQ) : ''}</button><button id="mXls">📊 Consumos (Excel)</button><button class="pri" id="mSave" ${R.guardado ? 'disabled' : prog ? '' : 'disabled'} title="${prog ? '' : esc(msgSoloProg()) + '. '}Se guarda el programa completo (GW1 y GW2) y se ve igual en todos los equipos. Los recortes usados quedan reservados y los nuevos se registran Por generar; pasan a Disponible cuando el tramo se marca cortado.">💾 Aprobar y guardar</button>${S.undoRes && !R.aprobado && prog ? '<button id="mUndo" title="Regresa los tramos como estaban antes de la última unión o relleno">↶ Deshacer</button>' : ''}</div>${pisoHtml}
+  ${!R.aprobado && prog ? '<p class="mut sm" style="margin:8px 0 0">✋ Arrastra un tramo sobre otro del mismo tubular y máquina: si caben juntos, se unen en un solo tramo; si no, se quedan igual y sus sobrantes se rellenan con piezas de stock.</p>' : ''}</div>
   ${cuadreHtml(cuadrePrograma(R))}
   ${vis.map(({g, gi}) => R.aprobado && S.opOcultar && g.bars.every(b => b.estado === 'Cortado') ? '' : `<details class="card" data-gk="${esc(gk(g))}" ${abiertos.has(gk(g)) ? 'open' : ''}><summary>${!MQ && g.maquina ? badge('in', g.maquina) + ' ' : ''}<b>${esc(g.label)}</b>${g.completo ? ' ' + badge('ok', '▣ ' + g.dibujo) : ''} ${g.sku ? '' : badge('wa', 'Sin SKU en el catálogo')}${g.nSku > 1 ? badge('wa', `Hay ${g.nSku} SKU: elige en Configuración`) : ''} ${g.largas.length ? badge('er', g.largas.length + ' piezas no caben') : ''}${perfilAparte(g, R) ? ' ' + badge('wa', 'Perfil distinto (' + perfilTxt(g.perfil) + '): va en su propio IGS') : ''}
     ${dts(R.aprobado ? dt('Cortados', `${g.bars.filter(b => b.estado === 'Cortado').length} de ${g.bars.length}`, 'tramos', 'ok') : dt('Tramos', g.tot.tramos + g.tot.recUsados), dt('Piezas', g.tot.piezas - (g.tot.stock || 0)), g.tot.stock ? dt('De stock', g.tot.stock, '', 'in') : '', dt('Aprovechamiento', pct(g.tot.aprov), '', lvAprov(g.tot.aprov)))}</summary>
     ${agrupar(g.bars).map(x => { const ref = gi + '|' + g.bars.indexOf(x.b), ep = R.aprobado ? estadoPiso(x, !MQ) : null;
       if(ep && S.opOcultar && ep.e === 'Cortado') return '';
-      return `<div class="bar" style="${ep && ep.e === 'Cortado' ? 'opacity:.6' : ''}"><div class="barhd">${tramosTxt(x.ids, R.id)} ${vecesChip(x.n)}${zonaBar(x.b).ext ? ' ' + badge('in', 'Con extensión') : ''}${ep ? ' ' + ep.html : ''} ${pieBar(x.b)}${ep ? ep.recs : ''}${chipsCostura(x.b, g)}<span style="flex:1"></span>
+      const arr = !R.aprobado && prog && !g.completo && !x.b.solo;   // se arrastra sobre otro tramo para juntarlos (2026-11-26)
+      return `<div class="bar" style="${ep && ep.e === 'Cortado' ? 'opacity:.6' : ''}"${arr ? ` draggable="true" data-arr="${ref}" title="Arrastra este tramo sobre otro del mismo tubular y máquina: si cabe, se juntan; si no, se rellenan los sobrantes con piezas de stock"` : ''}><div class="barhd">${tramosTxt(x.ids, R.id)} ${vecesChip(x.n)}${zonaBar(x.b).ext ? ' ' + badge('in', 'Con extensión') : ''}${ep ? ' ' + ep.html : ''} ${pieBar(x.b)}${ep ? ep.recs : ''}${chipsCostura(x.b, g)}<span style="flex:1"></span>
       <button data-ver="${ref}" title="Ver el tramo con el dibujo de cada pieza (barrenos, ranuras y cortes), con zoom">🔍 Ver</button><button data-igs="${ref}" title="IGS con las piezas acomodadas a lo largo del tubo${ep ? ' (solo lo baja: el estado lo marca la PC de la máquina)' : ''}">⬇ IGS</button><button data-hoja="${ref}" title="Hoja de corte de este múltiple">🖨</button>${ep && ep.enP && prog ? `<button class="pri" data-mfin="${ref}" title="Marca como cortado${x.n > 1 ? 's los tramos en proceso' : ''}, por si el operador no lo cerró">■ Terminar</button>` : ''}</div>${svgBar(x.b, col, {op: true, ops: x.ops, rutas: x.rutas})}</div>`; }).join('')}
     ${g.largas.length ? `<p style="color:var(--er)" class="sm">Más largas que el tramo: ${[...new Set(g.largas.map(p => p.pieza + ' (' + p.ruta + ')'))].map(esc).join(', ')}</p>` : ''}</details>`).join('') || `<div class="card empty">${esc(MQ)} no tiene tramos en este programa.</div>`}
   ${S.fuera.length ? fueraHtml(MQ) : ''}`;
@@ -3179,6 +3267,8 @@ function bindMult(){
   if($('mVer')) $('mVer').onchange = e => { const v = e.target.value; S.res = v === '__borr' ? S.borrComp : v ? resDeGuardado(v) : leerBorrador(); renderMult(); };
   if(!S.res) return;
   $('mSave').onclick = guardarPrograma; $('mXls').onclick = () => { S.consSel = ''; exportarConsumos(); };
+  if($('mUndo')) $('mUndo').onclick = deshacerUnion;
+  bindArrastre(el);
   const MQ = S.multVis || '';
   $('mPrint').onclick = () => hojaCorte('Programa de corte de tubular ' + S.res.id + (MQ ? ' · ' + MQ : ''), S.res.grupos.filter(g => !MQ || g.maquina === MQ).flatMap(g => g.bars));
   el.querySelectorAll('[data-mq]').forEach(b => b.onclick = () => { if(!b.dataset.mq){ S.multAmbas = true; return renderMult(); }
